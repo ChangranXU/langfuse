@@ -10,6 +10,7 @@ import {
   UsersIcon,
   TerminalIcon,
   Lightbulb,
+  BookOpen,
   Grid2X2,
   Sparkle,
   FileJson,
@@ -42,6 +43,7 @@ export enum RouteGroup {
   Observability = "Observability",
   PromptManagement = "Prompt Management",
   Evaluation = "Evaluation",
+  Experience = "Experience",
 }
 
 export type Route = {
@@ -152,6 +154,13 @@ export const ROUTES: Route[] = [
     group: RouteGroup.Evaluation,
     section: RouteSection.Main,
     icon: AnalysisIcon,
+  },
+  {
+    title: "Summary",
+    pathname: `/project/[projectId]/experience`,
+    group: RouteGroup.Experience,
+    section: RouteSection.Main,
+    icon: BookOpen,
   },
   {
     title: "LLM-as-a-Judge",

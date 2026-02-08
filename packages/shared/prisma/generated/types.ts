@@ -526,6 +526,16 @@ export type EvalTemplate = {
   vars: Generated<string[]>;
   output_schema: unknown;
 };
+export type ExperienceSummary = {
+  id: string;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+  project_id: string;
+  model: string;
+  schema_version: Generated<number>;
+  summary: unknown;
+  cursor_updated_at: Timestamp | null;
+};
 export type JobConfiguration = {
   id: string;
   created_at: Generated<Timestamp>;
@@ -977,6 +987,7 @@ export type DB = {
   default_llm_models: DefaultLlmModel;
   error_analyses: ErrorAnalysis;
   eval_templates: EvalTemplate;
+  experience_summaries: ExperienceSummary;
   job_configurations: JobConfiguration;
   job_executions: JobExecution;
   llm_api_keys: LlmApiKeys;

@@ -880,6 +880,14 @@ export class IngestionService {
     mergedObservationRecord.created_at =
       clickhouseObservationRecord?.created_at ?? createdAtTimestamp.getTime();
     mergedObservationRecord.level = mergedObservationRecord.level ?? "DEFAULT";
+    // If client sent status_message but no level (e.g. SDK/OTLP change), treat as ERROR so Analysis shows the node
+    if (
+      mergedObservationRecord.level === "DEFAULT" &&
+      mergedObservationRecord.status_message &&
+      String(mergedObservationRecord.status_message).trim().length > 0
+    ) {
+      mergedObservationRecord.level = ObservationLevel.ERROR;
+    }
 
     // Search for the first non-null input and output in the observation events and set them on the merged result.
     // Fallback to the ClickHouse input/output if none are found within the events list.

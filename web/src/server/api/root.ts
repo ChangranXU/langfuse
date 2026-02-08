@@ -54,6 +54,7 @@ import { surveysRouter } from "@/src/server/api/routers/surveys";
 import { naturalLanguageFilterRouter } from "@/src/features/natural-language-filters/server/router";
 import { notificationPreferencesRouter } from "@/src/server/api/routers/notificationPreferences";
 import { errorAnalysisRouter } from "@/src/features/error-analysis/server/router";
+import { experienceSummaryRouter } from "@/src/features/experience-summary/server/router";
 
 /**
  * This is the primary router for your server.
@@ -67,6 +68,7 @@ export const appRouter = createTRPCRouter({
   batchExport: batchExportRouter,
   traces: traceRouter,
   errorAnalysis: errorAnalysisRouter,
+  experienceSummary: experienceSummaryRouter,
   sessions: sessionRouter,
   generations: generationsRouter,
   events: eventsRouter,
