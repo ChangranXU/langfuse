@@ -122,6 +122,15 @@ export const observationsTableCols: ColumnDefinition[] = [
     ] as { value: ObservationLevelType }[],
   },
   {
+    name: "Error Type",
+    id: "errorType",
+    type: "stringOptions",
+    // Not a DB column in traces/observations; handled via Postgres error_analyses mapping.
+    internal: "",
+    options: [], // to be added at runtime
+    nullable: true,
+  },
+  {
     name: "Status Message",
     id: "statusMessage",
     type: "string",
@@ -272,6 +281,7 @@ export type ObservationOptions = {
   name: Array<SingleValueOption>;
   traceName: Array<SingleValueOption>;
   environment: Array<SingleValueOption>;
+  errorType: Array<SingleValueOption>;
   scores_avg: Array<string>;
   score_categories: Array<MultiValueOption>;
   promptName: Array<SingleValueOption>;
@@ -299,6 +309,9 @@ export function observationsTableColsWithOptions(
     }
     if (col.id === "environment") {
       return formatColumnOptions(col, options?.environment ?? []);
+    }
+    if (col.id === "errorType") {
+      return formatColumnOptions(col, options?.errorType ?? []);
     }
     if (col.id === "scores_avg") {
       return formatColumnOptions(col, options?.scores_avg ?? []);

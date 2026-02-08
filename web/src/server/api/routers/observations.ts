@@ -3,13 +3,25 @@ import {
   createTRPCRouter,
   protectedGetTraceProcedure,
 } from "@/src/server/api/trpc";
-import { LangfuseNotFoundError, parseIO } from "@langfuse/shared";
+import { parseIO } from "@langfuse/shared";
 import {
   getObservationById,
   getObservationByIdFromEventsTable,
 } from "@langfuse/shared/src/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 import { toDomainWithStringifiedMetadata } from "@/src/utils/clientSideDomainTypes";
+
+/**
+ * Check whether an error is a Langfuse "not-found" error.
+ * We use a property-based check instead of `instanceof` because the monorepo
+ * bundler can produce duplicate class identities for the shared package,
+ * which causes `instanceof` to fail.
+ */
+const isNotFoundError = (e: unknown): e is Error & { httpCode: number } =>
+  e instanceof Error &&
+  "httpCode" in e &&
+  (e as Record<string, unknown>).httpCode === 404;
 
 export const observationsRouter = createTRPCRouter({
   byId: protectedGetTraceProcedure
@@ -34,14 +46,39 @@ export const observationsRouter = createTRPCRouter({
           shouldJsonParse: false,
         },
       };
-      const obs =
-        env.LANGFUSE_ENABLE_EVENTS_TABLE_OBSERVATIONS === "true"
-          ? await getObservationByIdFromEventsTable(queryOpts)
-          : await getObservationById(queryOpts);
+
+      let obs;
+      try {
+        if (env.LANGFUSE_ENABLE_EVENTS_TABLE_OBSERVATIONS === "true") {
+          try {
+            // Prefer events table when enabled (v4), but fall back to legacy
+            // observations table for traces that are not present in events yet.
+            obs = await getObservationByIdFromEventsTable(queryOpts);
+          } catch (e) {
+            if (isNotFoundError(e)) {
+              obs = await getObservationById(queryOpts);
+            } else {
+              throw e;
+            }
+          }
+        } else {
+          obs = await getObservationById(queryOpts);
+        }
+      } catch (e) {
+        if (isNotFoundError(e)) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: e.message,
+          });
+        }
+        throw e;
+      }
+
       if (!obs) {
-        throw new LangfuseNotFoundError(
-          "Observation not found within authorized project",
-        );
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Observation not found within authorized project",
+        });
       }
       return {
         ...toDomainWithStringifiedMetadata(obs),

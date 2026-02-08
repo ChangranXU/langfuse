@@ -28,6 +28,10 @@ import {
   type AgentGraphDataResponse,
 } from "@/src/features/trace-graph-view/types";
 import type * as opentelemetry from "@opentelemetry/api";
+import {
+  applyErrorTypeFilters,
+  getErrorTypeFilterOptions,
+} from "@/src/features/error-analysis/server/errorTypeFilters";
 
 const GetAllEventsInput = EventsTableOptions.extend({
   ...paginationZod,
@@ -75,9 +79,16 @@ export const eventsRouter = createTRPCRouter({
         async (span) => {
           addAttributesToSpan({ span, input, orderBy: input.orderBy });
 
+          const { filterState, hasNoMatches } = await applyErrorTypeFilters({
+            prisma: ctx.prisma,
+            projectId: input.projectId,
+            filterState: (input.filter ?? []) as any,
+          });
+          if (hasNoMatches) return { observations: [] };
+
           return getEventList({
             projectId: ctx.session.projectId,
-            filter: input.filter ?? [],
+            filter: filterState,
             searchQuery: input.searchQuery ?? undefined,
             searchType: input.searchType,
             orderBy: input.orderBy,
@@ -96,9 +107,15 @@ export const eventsRouter = createTRPCRouter({
         },
         async (span) => {
           addAttributesToSpan({ span, input, orderBy: input.orderBy });
+          const { filterState, hasNoMatches } = await applyErrorTypeFilters({
+            prisma: ctx.prisma,
+            projectId: input.projectId,
+            filterState: (input.filter ?? []) as any,
+          });
+          if (hasNoMatches) return { totalCount: 0 };
           return getEventCount({
             projectId: ctx.session.projectId,
-            filter: input.filter ?? [],
+            filter: filterState,
             searchQuery: input.searchQuery ?? undefined,
             searchType: input.searchType,
             orderBy: input.orderBy,
@@ -114,7 +131,7 @@ export const eventsRouter = createTRPCRouter({
         hasParentObservation: zodSchema.boolean().optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return instrumentAsync(
         {
           name: "get-event-filter-options-trpc",
@@ -122,11 +139,16 @@ export const eventsRouter = createTRPCRouter({
 
         async (span) => {
           addAttributesToSpan({ span, input, orderBy: undefined });
-          return getEventFilterOptions({
+          const base = await getEventFilterOptions({
             projectId: input.projectId,
             startTimeFilter: input.startTimeFilter,
             hasParentObservation: input.hasParentObservation,
           });
+          const errorType = await getErrorTypeFilterOptions({
+            prisma: ctx.prisma,
+            projectId: input.projectId,
+          });
+          return { ...base, errorType };
         },
       );
     }),

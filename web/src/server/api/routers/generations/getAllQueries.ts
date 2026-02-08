@@ -9,6 +9,7 @@ import {
 } from "@langfuse/shared/src/server";
 import { env } from "@/src/env.mjs";
 import { applyCommentFilters } from "@langfuse/shared/src/server";
+import { applyErrorTypeFilters } from "@/src/features/error-analysis/server/errorTypeFilters";
 
 const GetAllGenerationsInput = GenerationTableOptions.extend({
   ...paginationZod,
@@ -31,10 +32,19 @@ export const getAllQueries = {
         return { generations: [] };
       }
 
+      const errorTypeApplied = await applyErrorTypeFilters({
+        prisma: ctx.prisma,
+        projectId: input.projectId,
+        filterState: filterState as any,
+      });
+      if (errorTypeApplied.hasNoMatches) {
+        return { generations: [] };
+      }
+
       const { generations } = await getAllGenerations({
         input: {
           ...input,
-          filter: filterState,
+          filter: errorTypeApplied.filterState,
         },
         selectIOAndMetadata: false,
       });
@@ -54,9 +64,18 @@ export const getAllQueries = {
         return { totalCount: 0 };
       }
 
+      const errorTypeApplied = await applyErrorTypeFilters({
+        prisma: ctx.prisma,
+        projectId: input.projectId,
+        filterState: filterState as any,
+      });
+      if (errorTypeApplied.hasNoMatches) {
+        return { totalCount: 0 };
+      }
+
       const queryOpts = {
         projectId: ctx.session.projectId,
-        filter: filterState,
+        filter: errorTypeApplied.filterState,
         limit: 1,
         offset: 0,
       };

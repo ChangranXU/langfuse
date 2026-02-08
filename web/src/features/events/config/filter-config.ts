@@ -54,6 +54,11 @@ export const observationEventsFilterConfig: FilterConfig = {
     },
     {
       type: "categorical" as const,
+      column: "errorType",
+      label: getEventsColumnName("errorType"),
+    },
+    {
+      type: "categorical" as const,
       column: "providedModelName",
       label: getEventsColumnName("providedModelName"),
     },

@@ -81,3 +81,28 @@ export function StatusMessageBadge({
 
   return <Badge variant="tertiary">{statusMessage}</Badge>;
 }
+
+export function ErrorTypeBadge({
+  errorType,
+  errorTypeDescription,
+  errorTypeWhy,
+  errorTypeConfidence,
+}: {
+  errorType: string | null | undefined;
+  errorTypeDescription?: string | null;
+  errorTypeWhy?: string | null;
+  errorTypeConfidence?: number | null;
+}) {
+  if (!errorType) return null;
+
+  const title = [errorTypeDescription, errorTypeWhy].filter(Boolean).join("\n");
+
+  return (
+    <Badge variant="secondary" title={title || undefined}>
+      Type: {errorType}
+      {typeof errorTypeConfidence === "number"
+        ? ` (${errorTypeConfidence.toFixed(2)})`
+        : ""}
+    </Badge>
+  );
+}

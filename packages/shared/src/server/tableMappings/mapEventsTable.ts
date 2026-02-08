@@ -100,6 +100,15 @@ export const eventsTableNativeUiColumnDefinitions: UiColumnMappings = [
     clickhouseSelect: 'e."level"',
   },
   {
+    uiTableName: "Error Type",
+    uiTableId: "errorType",
+    clickhouseTableName: "events",
+    // Stored as a tag in ClickHouse events: "lf:error_type=<key>"
+    // Extract the key portion for filtering/sorting.
+    clickhouseSelect:
+      "substring(arrayFirst(t -> startsWith(t, 'lf:error_type='), e.\"tags\"), length('lf:error_type=') + 1)",
+  },
+  {
     uiTableName: "Status Message",
     uiTableId: "statusMessage",
     clickhouseTableName: "events",

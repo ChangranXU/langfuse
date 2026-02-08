@@ -46,7 +46,12 @@ import {
   BreakdownTooltip,
   calculateAggregatedUsage,
 } from "@/src/components/trace2/components/_shared/BreakdownToolTip";
-import { InfoIcon, PlusCircle } from "lucide-react";
+import { ArrowUpRight, InfoIcon, PlusCircle } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/src/components/ui/tooltip";
 import { UpsertModelFormDialog } from "@/src/features/models/components/UpsertModelFormDialog";
 import { LocalIsoDate } from "@/src/components/LocalIsoDate";
 import { Badge } from "@/src/components/ui/badge";
@@ -74,6 +79,8 @@ import {
   type RefreshInterval,
   REFRESH_INTERVALS,
 } from "@/src/components/table/data-table-refresh-button";
+import Link from "next/link";
+import { Button } from "@/src/components/ui/button";
 
 export type ObservationsTableRow = {
   // Shown by default
@@ -126,6 +133,15 @@ export type ObservationsTableProps = {
   promptVersion?: number;
   modelId?: string;
   omittedFilter?: string[];
+  forcedLevel?: ObservationLevelType;
+  disableDefaultTypeFilter?: boolean;
+  clearTypeFilter?: boolean;
+  filterQueryParamKey?: string;
+  filterStorageKey?: string;
+  /**
+   * Show a per-row button that navigates to the full trace (and highlights the node).
+   */
+  showOpenTraceButton?: boolean;
 };
 
 export default function ObservationsTable({
@@ -133,6 +149,12 @@ export default function ObservationsTable({
   promptName,
   promptVersion,
   modelId,
+  forcedLevel,
+  disableDefaultTypeFilter = false,
+  clearTypeFilter = false,
+  filterQueryParamKey,
+  filterStorageKey,
+  showOpenTraceButton = false,
 }: ObservationsTableProps) {
   const router = useRouter();
   const { viewId } = router.query;
@@ -196,9 +218,9 @@ export default function ObservationsTable({
     "s",
   );
 
-  const [inputFilterState] = useQueryFilterState(
+  const [inputFilterState, setInputFilterState] = useQueryFilterState(
     // If the user loads saved table view presets, we should not apply the default type filter
-    !viewId
+    !viewId && !disableDefaultTypeFilter
       ? [
           {
             column: "type",
@@ -219,6 +241,10 @@ export default function ObservationsTable({
       : [],
     "generations",
     projectId,
+    {
+      queryParamKey: filterQueryParamKey,
+      storageKey: filterStorageKey,
+    },
   );
 
   const [orderByState, setOrderByState] = useOrderByState({
@@ -367,6 +393,11 @@ export default function ObservationsTable({
           count: tn.count !== undefined ? Number(tn.count) : undefined,
         })) ?? undefined,
       level: ["DEFAULT", "DEBUG", "WARNING", "ERROR"],
+      errorType:
+        filterOptions.data?.errorType?.map((t) => ({
+          value: t.value,
+          count: t.count !== undefined ? Number(t.count) : undefined,
+        })) ?? undefined,
       model:
         filterOptions.data?.model?.map((m) => ({
           value: m.value,
@@ -417,6 +448,60 @@ export default function ObservationsTable({
     projectId,
     filterOptions.isPending || environmentFilterOptions.isPending,
   );
+
+  const serializeSidebarFilterState = useCallback((state: FilterState) => {
+    return JSON.stringify(state, (_k, v) =>
+      v instanceof Date ? v.toISOString() : v,
+    );
+  }, []);
+
+  const upsertAnalysisFilters = useCallback(
+    (state: FilterState): FilterState => {
+      let next = state;
+
+      if (clearTypeFilter) {
+        // Stored filters may use either column id ("type") or display name ("Type"/"type").
+        next = next.filter((f) => String(f.column).toLowerCase() !== "type");
+      }
+
+      if (forcedLevel) {
+        next = [
+          // Stored filters may use either column id ("level") or display name ("Level").
+          ...next.filter((f) => String(f.column).toLowerCase() !== "level"),
+          {
+            // Use column ID to avoid infinite oscillation with URL normalization.
+            // The sidebar filter hook normalizes display names ("Level") to IDs ("level")
+            // after URL decoding, causing a mismatch that triggers re-renders in a loop.
+            column: "level",
+            type: "stringOptions",
+            operator: "any of",
+            value: [forcedLevel],
+          },
+        ];
+      }
+
+      return next;
+    },
+    [clearTypeFilter, forcedLevel],
+  );
+
+  useEffect(() => {
+    if (!clearTypeFilter && !forcedLevel) return;
+    const next = upsertAnalysisFilters(queryFilter.filterState);
+    if (
+      serializeSidebarFilterState(next) !==
+      serializeSidebarFilterState(queryFilter.filterState)
+    ) {
+      queryFilter.setFilterState(next);
+    }
+  }, [
+    clearTypeFilter,
+    forcedLevel,
+    queryFilter.filterState,
+    queryFilter.setFilterState,
+    serializeSidebarFilterState,
+    upsertAnalysisFilters,
+  ]);
 
   // Create ref-based wrapper to avoid stale closure when queryFilter updates
   const queryFilterRef = useRef(queryFilter);
@@ -561,8 +646,67 @@ export default function ObservationsTable({
     },
   ];
 
+  const buildTraceHref = useCallback(
+    (params: { traceId: string; observationId: string; timestamp?: Date }) => {
+      const qp = new URLSearchParams();
+      qp.set("observation", params.observationId);
+      if (params.timestamp) {
+        qp.set("timestamp", params.timestamp.toISOString());
+      }
+      return `/project/${projectId}/traces/${encodeURIComponent(params.traceId)}?${qp.toString()}`;
+    },
+    [projectId],
+  );
+
   const columns: LangfuseColumnDef<ObservationsTableRow>[] = [
     selectActionColumn,
+    ...(showOpenTraceButton
+      ? ([
+          {
+            id: "openTrace",
+            accessorKey: "openTrace",
+            header: "",
+            size: 44,
+            enableHiding: false,
+            enableSorting: false,
+            cell: ({ row }) => {
+              const traceId = row.original.traceId;
+              if (!traceId) return null;
+
+              const href = buildTraceHref({
+                traceId,
+                observationId: row.original.id,
+                timestamp: row.original.timestamp ?? row.original.startTime,
+              });
+
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      asChild
+                    >
+                      <Link
+                        href={href}
+                        prefetch={false}
+                        aria-label="Open full trace"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
+                        <ArrowUpRight className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Open full trace</TooltipContent>
+                </Tooltip>
+              );
+            },
+          },
+        ] as LangfuseColumnDef<ObservationsTableRow>[])
+      : []),
     {
       accessorKey: "startTime",
       id: "startTime",

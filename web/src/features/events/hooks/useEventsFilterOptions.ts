@@ -64,6 +64,7 @@ export function useEventsFilterOptions({
       name: filterOptions.data?.name ?? undefined,
       type: filterOptions.data?.type ?? undefined,
       level: filterOptions.data?.level ?? undefined,
+      errorType: filterOptions.data?.errorType ?? undefined,
       providedModelName: filterOptions.data?.providedModelName ?? undefined,
       modelId: filterOptions.data?.modelId ?? undefined,
       promptName: filterOptions.data?.promptName ?? undefined,

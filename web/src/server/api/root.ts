@@ -53,6 +53,7 @@ import { queueAssignmentRouter } from "@/src/features/annotation-queues/server/a
 import { surveysRouter } from "@/src/server/api/routers/surveys";
 import { naturalLanguageFilterRouter } from "@/src/features/natural-language-filters/server/router";
 import { notificationPreferencesRouter } from "@/src/server/api/routers/notificationPreferences";
+import { errorAnalysisRouter } from "@/src/features/error-analysis/server/router";
 
 /**
  * This is the primary router for your server.
@@ -65,6 +66,7 @@ export const appRouter = createTRPCRouter({
   annotationQueueAssignments: queueAssignmentRouter,
   batchExport: batchExportRouter,
   traces: traceRouter,
+  errorAnalysis: errorAnalysisRouter,
   sessions: sessionRouter,
   generations: generationsRouter,
   events: eventsRouter,

@@ -520,9 +520,12 @@ async function getObservationByIdFromEventsTableInternal({
     )
     .whereRaw("span_id = {id: String}", { id })
     .when(Boolean(startTime), (b) =>
-      b.whereRaw("toDate(start_time) = toDate({startTime: DateTime64(3)})", {
-        startTime: convertDateToClickhouseDateTime(startTime!),
-      }),
+      // ClickHouse query params for DateTime64 are strict and reject ISO strings with a trailing "Z".
+      // We accept ISO input by parsing explicitly in SQL.
+      b.whereRaw(
+        "toDate(start_time) = toDate(parseDateTime64BestEffort({startTime: String}, 3))",
+        { startTime: startTime!.toISOString() },
+      ),
     )
     .when(Boolean(type), (b) => b.whereRaw("type = {type: String}", { type }))
     .when(Boolean(traceId), (b) =>
@@ -1256,6 +1259,44 @@ export const updateEvents = async (
       type: "event",
       kind: "update",
       projectId,
+    },
+  });
+};
+
+export const ERROR_TYPE_TAG_PREFIX = "lf:error_type=";
+
+export const setEventErrorTypeTag = async (params: {
+  projectId: string;
+  spanId: string;
+  errorTypeKey: string | null;
+}): Promise<void> => {
+  const { projectId, spanId, errorTypeKey } = params;
+
+  const query = `
+    UPDATE events
+    SET tags = ${
+      errorTypeKey
+        ? "arrayDistinct(arrayConcat(arrayFilter(t -> NOT startsWith(t, {prefix: String}), tags), [{newTag: String}]))"
+        : "arrayFilter(t -> NOT startsWith(t, {prefix: String}), tags)"
+    }
+    WHERE project_id = {projectId: String}
+      AND span_id = {spanId: String}
+  `;
+
+  return await commandClickhouse({
+    query,
+    params: {
+      projectId,
+      spanId,
+      prefix: ERROR_TYPE_TAG_PREFIX,
+      newTag: errorTypeKey ? `${ERROR_TYPE_TAG_PREFIX}${errorTypeKey}` : "",
+    },
+    tags: {
+      type: "event",
+      kind: "update",
+      projectId,
+      feature: "error-analysis",
+      operation_name: "setEventErrorTypeTag",
     },
   });
 };

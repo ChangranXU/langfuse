@@ -36,7 +36,12 @@ import TagList from "@/src/features/tag/components/TagList";
 import useColumnOrder from "@/src/features/column-visibility/hooks/useColumnOrder";
 import { BatchExportTableButton } from "@/src/components/BatchExportTableButton";
 import { BreakdownTooltip } from "@/src/components/trace2/components/_shared/BreakdownToolTip";
-import { InfoIcon, PlusCircle } from "lucide-react";
+import { ArrowUpRight, InfoIcon, PlusCircle } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/src/components/ui/tooltip";
 import { UpsertModelFormDialog } from "@/src/features/models/components/UpsertModelFormDialog";
 import { LocalIsoDate } from "@/src/components/LocalIsoDate";
 import { Badge } from "@/src/components/ui/badge";
@@ -61,7 +66,10 @@ import useColumnVisibility from "@/src/features/column-visibility/hooks/useColum
 import { MemoizedIOTableCell } from "@/src/components/ui/IOTableCell";
 import { useEventsTableData } from "@/src/features/events/hooks/useEventsTableData";
 import { useEventsFilterOptions } from "@/src/features/events/hooks/useEventsFilterOptions";
-import { useEventsViewMode } from "@/src/features/events/hooks/useEventsViewMode";
+import {
+  type EventsViewMode,
+  useEventsViewMode,
+} from "@/src/features/events/hooks/useEventsViewMode";
 import { EventsViewModeToggle } from "@/src/features/events/components/EventsViewModeToggle";
 import { JsonSkeleton } from "@/src/components/ui/CodeJsonViewer";
 import {
@@ -70,6 +78,8 @@ import {
 } from "@/src/components/table/data-table-refresh-button";
 import useSessionStorage from "@/src/components/useSessionStorage";
 import { api } from "@/src/utils/api";
+import Link from "next/link";
+import { Button } from "@/src/components/ui/button";
 
 export type EventsTableRow = {
   // Identity fields
@@ -140,12 +150,34 @@ export type EventsTableProps = {
   projectId: string;
   userId?: string;
   sessionId?: string;
+  forcedLevel?: ObservationLevelType;
+  disableDefaultTypeFilter?: boolean;
+  clearTypeFilter?: boolean;
+  filterQueryParamKey?: string;
+  filterStorageKey?: string;
+  /**
+   * Show a per-row button that navigates to the full trace (and highlights the node).
+   */
+  showOpenTraceButton?: boolean;
+  /**
+   * When set, the table will run in the provided view mode and hide the view-mode toggle.
+   * This is useful for pages like Analysis, where "trace" mode (root-only) would omit
+   * WARNING/ERROR nested inside spans.
+   */
+  forceViewMode?: EventsViewMode;
 };
 
 export default function ObservationsEventsTable({
   projectId,
   userId,
   sessionId,
+  forcedLevel,
+  disableDefaultTypeFilter = false,
+  clearTypeFilter = false,
+  filterQueryParamKey,
+  filterStorageKey,
+  showOpenTraceButton = false,
+  forceViewMode,
 }: EventsTableProps) {
   const router = useRouter();
   const { viewId } = router.query;
@@ -167,9 +199,9 @@ export default function ObservationsEventsTable({
     "s",
   );
 
-  const [inputFilterState] = useQueryFilterState(
+  const [inputFilterState, setInputFilterState] = useQueryFilterState(
     // Default type filter - exclude SPAN and EVENT types
-    !viewId
+    !viewId && !disableDefaultTypeFilter
       ? [
           {
             column: "type",
@@ -190,6 +222,10 @@ export default function ObservationsEventsTable({
       : [],
     "generations", // Use "generations" table name for compatibility
     projectId,
+    {
+      queryParamKey: filterQueryParamKey,
+      storageKey: filterStorageKey,
+    },
   );
 
   const [orderByState, setOrderByState] = useOrderByState({
@@ -200,8 +236,10 @@ export default function ObservationsEventsTable({
   const { timeRange, setTimeRange } = useTableDateRange(projectId);
 
   // View mode toggle (Trace vs Observation)
-  const { viewMode, setViewMode: setViewModeRaw } =
+  const { viewMode: storedViewMode, setViewMode: setStoredViewMode } =
     useEventsViewMode(projectId);
+  const viewMode = forceViewMode ?? storedViewMode;
+  const canChangeViewMode = !forceViewMode;
 
   // For filter options: trace mode filters to root items, observation mode shows all
   const hasParentObservation = viewMode === "observation" ? undefined : false;
@@ -209,10 +247,11 @@ export default function ObservationsEventsTable({
   // Wrap setViewMode to reset pagination when view mode changes
   const setViewMode = useCallback(
     (mode: typeof viewMode) => {
-      setViewModeRaw(mode);
+      if (!canChangeViewMode) return;
+      setStoredViewMode(mode);
       setPaginationState({ page: 1 });
     },
-    [setViewModeRaw, setPaginationState],
+    [canChangeViewMode, setStoredViewMode, setPaginationState],
   );
 
   // for auto data refresh
@@ -301,6 +340,61 @@ export default function ObservationsEventsTable({
     projectId,
     isFilterOptionsPending,
   );
+
+  const serializeSidebarFilterState = useCallback((state: FilterState) => {
+    return JSON.stringify(state, (_k, v) =>
+      v instanceof Date ? v.toISOString() : v,
+    );
+  }, []);
+
+  const upsertAnalysisFilters = useCallback(
+    (state: FilterState): FilterState => {
+      let next = state;
+
+      if (clearTypeFilter) {
+        // Stored filters may use either column id ("type") or display name ("Type").
+        // Always clear both to ensure Analysis can show EVENT/SPAN types as well.
+        next = next.filter((f) => String(f.column).toLowerCase() !== "type");
+      }
+
+      if (forcedLevel) {
+        next = [
+          // Stored filters may use either column id ("level") or display name ("Level").
+          ...next.filter((f) => String(f.column).toLowerCase() !== "level"),
+          {
+            // Use column ID to avoid infinite oscillation with URL normalization.
+            // The sidebar filter hook normalizes display names ("Level") to IDs ("level")
+            // after URL decoding, causing a mismatch that triggers re-renders in a loop.
+            column: "level",
+            type: "stringOptions",
+            operator: "any of",
+            value: [forcedLevel],
+          },
+        ];
+      }
+
+      return next;
+    },
+    [clearTypeFilter, forcedLevel],
+  );
+
+  useEffect(() => {
+    if (!clearTypeFilter && !forcedLevel) return;
+    const next = upsertAnalysisFilters(queryFilter.filterState);
+    if (
+      serializeSidebarFilterState(next) !==
+      serializeSidebarFilterState(queryFilter.filterState)
+    ) {
+      queryFilter.setFilterState(next);
+    }
+  }, [
+    clearTypeFilter,
+    forcedLevel,
+    queryFilter.filterState,
+    queryFilter.setFilterState,
+    serializeSidebarFilterState,
+    upsertAnalysisFilters,
+  ]);
 
   // Create ref-based wrapper to avoid stale closure when queryFilter updates
   const queryFilterRef = useRef(queryFilter);
@@ -418,8 +512,67 @@ export default function ObservationsEventsTable({
     },
   ];
 
+  const buildTraceHref = useCallback(
+    (params: { traceId: string; observationId: string; timestamp?: Date }) => {
+      const qp = new URLSearchParams();
+      qp.set("observation", params.observationId);
+      if (params.timestamp) {
+        qp.set("timestamp", params.timestamp.toISOString());
+      }
+      return `/project/${projectId}/traces/${encodeURIComponent(params.traceId)}?${qp.toString()}`;
+    },
+    [projectId],
+  );
+
   const columns: LangfuseColumnDef<EventsTableRow>[] = [
     selectActionColumn,
+    ...(showOpenTraceButton
+      ? ([
+          {
+            id: "openTrace",
+            accessorKey: "openTrace",
+            header: "",
+            size: 44,
+            enableHiding: false,
+            enableSorting: false,
+            cell: ({ row }) => {
+              const traceId = row.original.traceId;
+              if (!traceId) return null;
+
+              const href = buildTraceHref({
+                traceId,
+                observationId: row.original.id,
+                timestamp: row.original.timestamp ?? row.original.startTime,
+              });
+
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      asChild
+                    >
+                      <Link
+                        href={href}
+                        prefetch={false}
+                        aria-label="Open full trace"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
+                        <ArrowUpRight className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Open full trace</TooltipContent>
+                </Tooltip>
+              );
+            },
+          },
+        ] as LangfuseColumnDef<EventsTableRow>[])
+      : []),
     {
       accessorKey: "startTime",
       id: "startTime",
@@ -1113,10 +1266,12 @@ export default function ObservationsEventsTable({
           timeRange={timeRange}
           setTimeRange={setTimeRange}
           viewModeToggle={
-            <EventsViewModeToggle
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-            />
+            canChangeViewMode ? (
+              <EventsViewModeToggle
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+              />
+            ) : null
           }
           refreshConfig={{
             onRefresh: handleRefresh,

@@ -361,7 +361,13 @@ export function DataTableColumnVisibilityFilter<TData, TValue>({
   );
 
   const { count, total } = calculateColumnCounts(columns, columnVisibility);
-  const columnIdsOrder = columnOrder ?? columns.map((col) => col.accessorKey);
+  const columnIdsOrder = useMemo(() => {
+    const raw = columnOrder ?? columns.map((col) => col.accessorKey);
+    // Defensive: avoid crashing dnd-kit when local storage / columns contain nullish entries.
+    return raw.filter(
+      (id): id is string => typeof id === "string" && id.length > 0,
+    );
+  }, [columnOrder, columns]);
   const isColumnOrderingEnabled = !!setColumnOrder;
 
   function handleDragEnd(event: DragEndEvent) {

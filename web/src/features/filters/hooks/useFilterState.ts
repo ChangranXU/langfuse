@@ -120,12 +120,26 @@ export const useQueryFilterState = (
   initialState: FilterState = [],
   table: TableName,
   projectId?: string, // Passing projectId is expected as filters might differ across projects. However, we can't call hooks conditionally. There is a case in the prompts table where this will only be used if projectId is defined, but it's not defined in all cases.
+  options?: {
+    /**
+     * Query param key used for filter state in the URL.
+     * Defaults to "filter" for backwards compatibility.
+     */
+    queryParamKey?: string;
+    /**
+     * Session storage key used for persisting filter state.
+     * Defaults to the legacy `${table}FilterState(-${projectId})` key for backwards compatibility.
+     */
+    storageKey?: string;
+  },
 ) => {
+  const queryParamKey = options?.queryParamKey ?? "filter";
+  const storageKey =
+    options?.storageKey ??
+    (!!projectId ? `${table}FilterState-${projectId}` : `${table}FilterState`);
+
   const [sessionFilterState, setSessionFilterState] =
-    useSessionStorage<FilterState>(
-      !!projectId ? `${table}FilterState-${projectId}` : `${table}FilterState`,
-      initialState,
-    );
+    useSessionStorage<FilterState>(storageKey, initialState);
   // Merge initial state with session state if filter elements don't exist
   const mergedInitialState = initialState.reduce(
     (acc, filter) => {
@@ -145,7 +159,7 @@ export const useQueryFilterState = (
 
   // Note: `use-query-params` library does not automatically update the URL with the default value
   const [filterState, setFilterState] = useQueryParam(
-    "filter",
+    queryParamKey,
     withDefault(getCommaArrayParam(table), sessionFilterState),
   );
 

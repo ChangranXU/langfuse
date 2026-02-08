@@ -147,6 +147,18 @@ const logErrorByCode = (errorCode: TRPCError["code"], error: TRPCError) => {
     logger.error(`middleware intercepted error with code ${errorCode}`, {
       error,
     });
+
+    // In cloud mode we mask 5xx errors in the response. Ensure we still emit the original
+    // cause + stack in server logs to make local debugging possible.
+    const cause = error.cause;
+    if (cause instanceof Error) {
+      logger.error(`[tRPC] underlying cause: ${cause.message}`, {
+        stack: cause.stack,
+        name: cause.name,
+      });
+    } else if (cause) {
+      logger.error("[tRPC] underlying non-Error cause", { cause });
+    }
   }
 };
 

@@ -15,6 +15,7 @@ import {
   getTracesGroupedByTags,
   tracesTableUiColumnDefinitions,
 } from "@langfuse/shared/src/server";
+import { getErrorTypeFilterOptions } from "@/src/features/error-analysis/server/errorTypeFilters";
 
 export const filterOptionsQuery = protectedProjectProcedure
   .input(
@@ -23,7 +24,7 @@ export const filterOptionsQuery = protectedProjectProcedure
       startTimeFilter: z.array(timeFilter).optional(),
     }),
   )
-  .query(async ({ input }) => {
+  .query(async ({ input, ctx }) => {
     const { startTimeFilter } = input;
 
     // map startTimeFilter to Timestamp column for trace queries
@@ -69,6 +70,7 @@ export const filterOptionsQuery = protectedProjectProcedure
       modelId,
       toolNames,
       calledToolNames,
+      errorType,
     ] = await Promise.all([
       // numeric scores
       getNumericScoresGroupedByName(input.projectId, traceTimestampFilters),
@@ -96,6 +98,11 @@ export const filterOptionsQuery = protectedProjectProcedure
         input.projectId,
         startTimeFilter ?? [],
       ),
+      // error type (from Postgres error_analyses)
+      getErrorTypeFilterOptions({
+        prisma: ctx.prisma,
+        projectId: input.projectId,
+      }),
     ]);
 
     // typecheck filter options, needs to include all columns with options
@@ -123,6 +130,7 @@ export const filterOptionsQuery = protectedProjectProcedure
         .map((i) => ({
           value: i.promptName as string,
         })),
+      errorType: errorType.map((i) => ({ value: i.value, count: i.count })),
       tags: tags
         .filter((i) => i.tag !== null)
         .map((i) => ({

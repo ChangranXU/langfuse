@@ -45,6 +45,11 @@ export const observationFilterConfig: FilterConfig = {
     },
     {
       type: "categorical" as const,
+      column: "errorType",
+      label: "Error Type",
+    },
+    {
+      type: "categorical" as const,
       column: "model",
       label: "Model",
     },

@@ -26,6 +26,8 @@ import { CreateNewAnnotationQueueItem } from "@/src/features/annotation-queues/c
 import { CommentDrawerButton } from "@/src/features/comments/CommentDrawerButton";
 import { JumpToPlaygroundButton } from "@/src/features/playground/page/components/JumpToPlaygroundButton";
 import { PromptBadge } from "@/src/components/trace2/components/_shared/PromptBadge";
+import { ErrorAnalysisButton } from "@/src/features/error-analysis/components/ErrorAnalysisButton";
+import { api } from "@/src/utils/api";
 import {
   LatencyBadge,
   TimeToFirstTokenBadge,
@@ -33,6 +35,7 @@ import {
   VersionBadge,
   LevelBadge,
   StatusMessageBadge,
+  ErrorTypeBadge,
 } from "./ObservationMetadataBadgesSimple";
 import {
   SessionBadge,
@@ -94,6 +97,20 @@ export const ObservationDetailViewHeader = memo(
     const totalUsage = observation.totalUsage;
     const inputUsage = observation.inputUsage;
     const outputUsage = observation.outputUsage;
+
+    const shouldFetchErrorType =
+      observation.level === "ERROR" || observation.level === "WARNING";
+    const { data: errorTypeSummary } = api.errorAnalysis.getSummary.useQuery(
+      {
+        projectId,
+        traceId,
+        observationId: observation.id,
+      },
+      {
+        enabled: shouldFetchErrorType,
+        refetchOnWindowFocus: false,
+      },
+    );
 
     return (
       <div className="flex-shrink-0 space-y-2 border-b p-2 @container">
@@ -239,6 +256,18 @@ export const ObservationDetailViewHeader = memo(
               modelParameters={observation.modelParameters}
             />
             <LevelBadge level={observation.level} />
+            <ErrorTypeBadge
+              errorType={errorTypeSummary?.errorType}
+              errorTypeDescription={errorTypeSummary?.errorTypeDescription}
+              errorTypeWhy={errorTypeSummary?.errorTypeWhy}
+              errorTypeConfidence={errorTypeSummary?.errorTypeConfidence}
+            />
+            <ErrorAnalysisButton
+              projectId={projectId}
+              traceId={traceId}
+              observationId={observation.id}
+              level={observation.level}
+            />
             <StatusMessageBadge statusMessage={observation.statusMessage} />
             {observation.promptId && (
               <PromptBadge

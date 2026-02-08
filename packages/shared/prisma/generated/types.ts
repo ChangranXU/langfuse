@@ -487,6 +487,30 @@ export type DefaultLlmModel = {
   model: string;
   model_params: unknown | null;
 };
+export type ErrorAnalysis = {
+  id: string;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+  project_id: string;
+  trace_id: string;
+  observation_id: string;
+  model: string;
+  root_cause: string;
+  resolve_now: string[];
+  prevention_next_call: string[];
+  relevant_observations: string[];
+  context_sufficient: Generated<boolean>;
+  confidence: number;
+  /**
+   * Optional error/warning type classification derived from analysis.
+   * Stored in Postgres for filtering and shown in UI.
+   */
+  error_type: string | null;
+  error_type_description: string | null;
+  error_type_why: string | null;
+  error_type_confidence: number | null;
+  error_type_from_list: boolean | null;
+};
 export type EvalTemplate = {
   id: string;
   created_at: Generated<Timestamp>;
@@ -951,6 +975,7 @@ export type DB = {
   dataset_runs: DatasetRuns;
   datasets: Dataset;
   default_llm_models: DefaultLlmModel;
+  error_analyses: ErrorAnalysis;
   eval_templates: EvalTemplate;
   job_configurations: JobConfiguration;
   job_executions: JobExecution;

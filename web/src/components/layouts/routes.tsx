@@ -31,6 +31,7 @@ import { useCommandMenu } from "@/src/features/command-k-menu/CommandMenuProvide
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { CloudStatusMenu } from "@/src/features/cloud-status-notification/components/CloudStatusMenu";
 import { type ProductModule } from "@/src/ee/features/ui-customization/productModuleSchema";
+import { AnalysisIcon } from "@/src/components/icons/AnalysisIcon";
 
 export enum RouteSection {
   Main = "main",
@@ -144,6 +145,13 @@ export const ROUTES: Route[] = [
     group: RouteGroup.Evaluation,
     section: RouteSection.Main,
     icon: SquarePercent,
+  },
+  {
+    title: "Analysis",
+    pathname: `/project/[projectId]/analysis`,
+    group: RouteGroup.Evaluation,
+    section: RouteSection.Main,
+    icon: AnalysisIcon,
   },
   {
     title: "LLM-as-a-Judge",

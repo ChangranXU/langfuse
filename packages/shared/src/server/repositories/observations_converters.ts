@@ -20,6 +20,7 @@ import {
 } from "../utils/rendering";
 import { logger } from "../logger";
 import type { Model, Price } from "@prisma/client";
+import { parseJsonPrioritised } from "../../utils/json";
 
 type ModelWithPrice = Model & { Price: Price[] };
 
@@ -205,7 +206,7 @@ export function convertObservationPartial(
     ...(record.model_parameters !== undefined && {
       modelParameters: record.model_parameters
         ? ((typeof record.model_parameters === "string"
-            ? JSON.parse(record.model_parameters)
+            ? parseJsonPrioritised(record.model_parameters)
             : record.model_parameters) ?? null)
         : null,
     }),

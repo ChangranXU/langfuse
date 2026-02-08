@@ -89,6 +89,15 @@ export const eventsTableCols: ColumnDefinition[] = [
     options: [],
   },
   {
+    name: "Error Type",
+    id: "errorType",
+    type: "stringOptions",
+    // Not a ClickHouse column; this filter is handled via Postgres error_analyses mapping.
+    internal: "",
+    options: [], // to be added at runtime
+    nullable: true,
+  },
+  {
     name: "Status Message",
     id: "statusMessage",
     type: "string",

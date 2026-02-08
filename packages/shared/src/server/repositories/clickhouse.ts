@@ -500,7 +500,11 @@ export async function commandClickhouse(opts: {
   );
 }
 
-export function parseClickhouseUTCDateTimeFormat(dateStr: string): Date {
+export function parseClickhouseUTCDateTimeFormat(dateStr: string | Date): Date {
+  // Some ClickHouse client configurations can deserialize DateTime values as `Date`.
+  // Keep this helper resilient so downstream converters never crash on `.replace`.
+  if (dateStr instanceof Date) return dateStr;
+
   return new Date(`${dateStr.replace(" ", "T")}Z`);
 }
 

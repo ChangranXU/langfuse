@@ -174,6 +174,7 @@ model Project {
   PendingDeletion           PendingDeletion[]
   AnnotationQueueAssignment AnnotationQueueAssignment[]
   NotificationPreference    NotificationPreference[]
+  ErrorAnalysis             ErrorAnalysis[]
 
   @@index([orgId])
   @@map("projects")
@@ -1580,4 +1581,37 @@ model CloudSpendAlert {
 
   @@index([orgId])
   @@map("cloud_spend_alerts")
+}
+
+model ErrorAnalysis {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  projectId     String  @map("project_id")
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  traceId       String  @map("trace_id")
+  observationId String  @map("observation_id")
+
+  model                String
+  rootCause            String   @map("root_cause")
+  resolveNow           String[] @map("resolve_now")
+  preventionNextCall   String[] @map("prevention_next_call")
+  relevantObservations String[] @map("relevant_observations")
+  contextSufficient    Boolean  @default(true) @map("context_sufficient")
+  confidence           Float
+
+  /// Optional error/warning type classification derived from analysis.
+  /// Stored in Postgres for filtering and shown in UI.
+  errorType            String?  @map("error_type")
+  errorTypeDescription String?  @map("error_type_description")
+  errorTypeWhy         String?  @map("error_type_why")
+  errorTypeConfidence  Float?   @map("error_type_confidence")
+  errorTypeFromList    Boolean? @map("error_type_from_list")
+
+  @@unique([projectId, observationId])
+  @@index([traceId])
+  @@index([projectId, errorType])
+  @@map("error_analyses")
 }
