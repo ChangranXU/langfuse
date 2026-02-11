@@ -99,6 +99,7 @@ interface DataTableToolbarProps<TData, TValue> {
   columns: LangfuseColumnDef<TData, TValue>[];
   filterColumnDefinition?: ColumnDefinition[];
   searchConfig?: SearchConfig;
+  preViewActionButtons?: React.ReactNode;
   actionButtons?: React.ReactNode;
   filterState?: FilterState;
   setFilterState?:
@@ -131,6 +132,7 @@ export function DataTableToolbar<TData, TValue>({
   columns,
   filterColumnDefinition,
   searchConfig,
+  preViewActionButtons,
   actionButtons,
   filterState,
   setFilterState,
@@ -347,6 +349,7 @@ export function DataTableToolbar<TData, TValue>({
         )}
 
         <div className="flex flex-row flex-wrap gap-2 pr-0.5 @6xl:ml-auto">
+          {preViewActionButtons}
           {!!columnVisibility && !!columnOrder && !!viewConfig && (
             <TableViewPresetsDrawer
               viewConfig={viewConfig}

@@ -1,6 +1,10 @@
 "use client";
 
+import { useCallback, useState } from "react";
+import { Check, Copy } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/src/components/ui/badge";
+import { Button } from "@/src/components/ui/button";
 import {
   Card,
   CardContent,
@@ -8,12 +12,33 @@ import {
   CardHeader,
   CardTitle,
 } from "@/src/components/ui/card";
+import { copyTextToClipboard } from "@/src/utils/clipboard";
 import type { ExperienceSummaryJson } from "../types";
 
 export function ExperienceSummaryView(props: {
   summary: ExperienceSummaryJson;
 }) {
   const { summary } = props;
+  const [copiedPromptKey, setCopiedPromptKey] = useState<string | null>(null);
+
+  const handleCopyPromptAdditions = useCallback(
+    async (params: { key: string; text: string }) => {
+      try {
+        await copyTextToClipboard(params.text);
+        setCopiedPromptKey(params.key);
+        toast.success("Copied prompt additions");
+        window.setTimeout(() => {
+          setCopiedPromptKey((current) =>
+            current === params.key ? null : current,
+          );
+        }, 1500);
+      } catch (error) {
+        console.error("Failed to copy prompt additions", error);
+        toast.error("Failed to copy prompt additions");
+      }
+    },
+    [],
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -87,8 +112,28 @@ export function ExperienceSummaryView(props: {
               <div className="text-xs font-medium text-muted-foreground">
                 Prompt additions
               </div>
-              <div className="mt-2 whitespace-pre-wrap rounded-md border bg-background p-2 font-mono text-xs text-muted-foreground">
-                {exp.promptAdditions.map((l) => `- ${l}`).join("\n")}
+              <div className="group relative mt-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1 z-10 h-6 w-6 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                  onClick={() =>
+                    void handleCopyPromptAdditions({
+                      key: exp.key,
+                      text: exp.promptAdditions.map((l) => `- ${l}`).join("\n"),
+                    })
+                  }
+                  aria-label="Copy prompt additions"
+                >
+                  {copiedPromptKey === exp.key ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                <div className="whitespace-pre-wrap rounded-md border bg-background p-2 pr-10 font-mono text-xs text-muted-foreground">
+                  {exp.promptAdditions.map((l) => `- ${l}`).join("\n")}
+                </div>
               </div>
             </div>
           </CardContent>

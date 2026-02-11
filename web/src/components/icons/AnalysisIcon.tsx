@@ -20,7 +20,9 @@ export const AnalysisIcon = React.forwardRef<SVGSVGElement, LucideProps>(
     return (
       <svg
         ref={ref}
-        viewBox="0 0 256 256"
+        // `analysis.png` contains transparent padding; crop to match other sidebar icons' visual size.
+        // Bounding box (px) in a 200x200 image: (36,35)-(164,165) → scaled into our 256x256 space.
+        viewBox="46.08 44.8 163.84 166.4"
         width={size}
         height={size}
         role="img"

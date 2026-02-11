@@ -91,6 +91,7 @@ export default function AnalysisPage() {
                 clearTypeFilter
                 forceViewMode="observation"
                 showOpenTraceButton
+                showBulkAnalysisButton
               />
             ) : (
               <ObservationsTable
@@ -99,6 +100,7 @@ export default function AnalysisPage() {
                 disableDefaultTypeFilter
                 clearTypeFilter
                 showOpenTraceButton
+                showBulkAnalysisButton
               />
             )}
           </div>

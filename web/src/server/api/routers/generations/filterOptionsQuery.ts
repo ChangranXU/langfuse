@@ -130,7 +130,11 @@ export const filterOptionsQuery = protectedProjectProcedure
         .map((i) => ({
           value: i.promptName as string,
         })),
-      errorType: errorType.map((i) => ({ value: i.value, count: i.count })),
+      errorType: errorType.map((i) => ({
+        value: i.value,
+        count: i.count,
+        displayValue: i.displayValue,
+      })),
       tags: tags
         .filter((i) => i.tag !== null)
         .map((i) => ({

@@ -84,6 +84,7 @@ import {
 } from "@/src/components/table/data-table-refresh-button";
 import Link from "next/link";
 import { Button } from "@/src/components/ui/button";
+import { BulkErrorAnalysisButton } from "@/src/features/error-analysis/components/BulkErrorAnalysisButton";
 
 export type ObservationsTableRow = {
   // Shown by default
@@ -150,6 +151,7 @@ export type ObservationsTableProps = {
   externalFilterState?: FilterState;
   externalDateRange?: TableDateRange;
   limitRows?: number;
+  showBulkAnalysisButton?: boolean;
 };
 
 export default function ObservationsTable({
@@ -167,6 +169,7 @@ export default function ObservationsTable({
   externalFilterState,
   externalDateRange,
   limitRows,
+  showBulkAnalysisButton = false,
 }: ObservationsTableProps) {
   const router = useRouter();
   const { viewId } = router.query;
@@ -412,6 +415,7 @@ export default function ObservationsTable({
         filterOptions.data?.errorType?.map((t) => ({
           value: t.value,
           count: t.count !== undefined ? Number(t.count) : undefined,
+          displayValue: t.displayValue,
         })) ?? undefined,
       model:
         filterOptions.data?.model?.map((m) => ({
@@ -570,6 +574,19 @@ export default function ObservationsTable({
 
   const totalCount = totalCountQuery.data?.totalCount ?? null;
 
+  const visibleObservationIds = useMemo(
+    () => new Set((generations.data?.generations ?? []).map((g) => g.id)),
+    [generations.data?.generations],
+  );
+
+  const selectedObservationIds = useMemo(
+    () =>
+      Object.keys(selectedRows).filter((generationId) =>
+        visibleObservationIds.has(generationId),
+      ),
+    [selectedRows, visibleObservationIds],
+  );
+
   const addToQueueMutation = api.annotationQueueItems.createMany.useMutation({
     onSuccess: (data) => {
       showSuccessToast({
@@ -622,14 +639,9 @@ export default function ObservationsTable({
     projectId: string;
     targetId: string;
   }) => {
-    const selectedGenerationIds = Object.keys(selectedRows).filter(
-      (generationId) =>
-        generations.data?.generations.map((g) => g.id).includes(generationId),
-    );
-
     await addToQueueMutation.mutateAsync({
       projectId,
-      objectIds: selectedGenerationIds,
+      objectIds: selectedObservationIds,
       objectType: AnnotationQueueObjectType.OBSERVATION,
       queueId: targetId,
       isBatchAction: selectAll,
@@ -1418,6 +1430,23 @@ export default function ObservationsTable({
       : [];
   }, [generations]);
 
+  const selectedObservationIdSet = useMemo(
+    () => new Set(selectedObservationIds),
+    [selectedObservationIds],
+  );
+
+  const selectedAnalysisTargets = useMemo(
+    () =>
+      rows
+        .filter((row) => selectedObservationIdSet.has(row.id))
+        .map((row) => ({
+          observationId: row.id,
+          traceId: row.traceId,
+          level: row.level,
+        })),
+    [rows, selectedObservationIdSet],
+  );
+
   return (
     <DataTableControlsProvider>
       <div className="flex h-full w-full flex-col">
@@ -1439,6 +1468,19 @@ export default function ObservationsTable({
               projectId,
               controllers: viewControllers,
             }}
+            preViewActionButtons={
+              showBulkAnalysisButton ? (
+                <BulkErrorAnalysisButton
+                  key="bulk-error-analysis"
+                  projectId={projectId}
+                  targets={selectedAnalysisTargets}
+                  onCompleted={() => {
+                    setSelectedRows({});
+                    setSelectAll(false);
+                  }}
+                />
+              ) : null
+            }
             columnsWithCustomSelect={[
               "model",
               "name",
@@ -1473,11 +1515,7 @@ export default function ObservationsTable({
                 tableName={BatchExportTableName.Observations}
                 key="batchExport"
               />,
-              Object.keys(selectedRows).filter((generationId) =>
-                generations.data?.generations
-                  .map((g) => g.id)
-                  .includes(generationId),
-              ).length > 0 ? (
+              selectedObservationIds.length > 0 ? (
                 <TableActionMenu
                   key="observations-multi-select-actions"
                   projectId={projectId}
@@ -1494,11 +1532,7 @@ export default function ObservationsTable({
             multiSelect={{
               selectAll,
               setSelectAll,
-              selectedRowIds: Object.keys(selectedRows).filter((generationId) =>
-                generations.data?.generations
-                  .map((g) => g.id)
-                  .includes(generationId),
-              ),
+              selectedRowIds: selectedObservationIds,
               setRowSelection: setSelectedRows,
               totalCount,
               ...paginationState,
@@ -1585,9 +1619,7 @@ export default function ObservationsTable({
       {showAddToDatasetDialog && (
         <AddObservationsToDatasetDialog
           projectId={projectId}
-          selectedObservationIds={Object.keys(selectedRows).filter((id) =>
-            generations.data?.generations.map((g) => g.id).includes(id),
-          )}
+          selectedObservationIds={selectedObservationIds}
           query={{
             filter: backendFilterState,
             orderBy: orderByState,
@@ -1603,10 +1635,7 @@ export default function ObservationsTable({
           }}
           exampleObservation={(() => {
             // Get the first selected observation to use for preview
-            const selectedIds = Object.keys(selectedRows).filter((id) =>
-              generations.data?.generations.map((g) => g.id).includes(id),
-            );
-            const firstId = selectedIds[0];
+            const firstId = selectedObservationIds[0];
             const firstGen = generations.data?.generations.find(
               (g) => g.id === firstId,
             );

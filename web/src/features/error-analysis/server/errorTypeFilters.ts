@@ -1,5 +1,9 @@
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import type { FilterState } from "@langfuse/shared";
+import {
+  UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL,
+  UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE,
+} from "../types";
 
 function isErrorTypeColumn(column: unknown): boolean {
   const c = String(column ?? "")
@@ -11,6 +15,14 @@ function isErrorTypeColumn(column: unknown): boolean {
 function normalizeStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((v) => String(v).trim()).filter((v) => v.length > 0);
+}
+
+function isUnclassifiedErrorTypeValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE.toLowerCase() ||
+    normalized === UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL.toLowerCase()
+  );
 }
 
 function parseErrorTypeFilter(filter: any): {
@@ -40,6 +52,29 @@ function parseErrorTypeFilter(filter: any): {
 
   // Unsupported operators/types: strip to avoid breaking ClickHouse mappings.
   return { mode: "unsupported", values: [] };
+}
+
+async function getObservationIdsFromErrorAnalyses(params: {
+  prisma: PrismaClient;
+  projectId: string;
+  whereSql: Prisma.Sql;
+}): Promise<string[] | null> {
+  try {
+    const rows = await params.prisma.$queryRaw<
+      Array<{ observationId: string }>
+    >(
+      Prisma.sql`
+        SELECT DISTINCT ea.observation_id AS "observationId"
+        FROM error_analyses ea
+        WHERE ea.project_id = ${params.projectId}
+          AND (${params.whereSql})
+      `,
+    );
+    return rows.map((r) => r.observationId).filter((id) => Boolean(id));
+  } catch {
+    // If the DB/client doesn't support this table/column yet, don't block the query.
+    return null;
+  }
 }
 
 export async function applyErrorTypeFilters(params: {
@@ -72,66 +107,226 @@ export async function applyErrorTypeFilters(params: {
     return { filterState: params.filterState, hasNoMatches: false };
   }
 
+  const includeUnclassified = [...selectedTypes].some(
+    isUnclassifiedErrorTypeValue,
+  );
+  const excludeUnclassified = [...excludedTypes].some(
+    isUnclassifiedErrorTypeValue,
+  );
+  const selectedClassifiedTypes = [...selectedTypes].filter(
+    (v) => !isUnclassifiedErrorTypeValue(v),
+  );
+  const excludedClassifiedTypes = [...excludedTypes].filter(
+    (v) => !isUnclassifiedErrorTypeValue(v),
+  );
+
   // If the filter was present but had no concrete values (or unsupported operator),
   // treat it as a no-op and keep the rest of the filters.
-  if (selectedTypes.size === 0 && excludedTypes.size === 0) {
+  if (
+    selectedClassifiedTypes.length === 0 &&
+    excludedClassifiedTypes.length === 0 &&
+    !includeUnclassified &&
+    !excludeUnclassified
+  ) {
     return { filterState: remaining, hasNoMatches: false };
   }
 
-  let matches: Array<{ observationId: string }> = [];
-  try {
-    const delegate = (params.prisma as any).errorAnalysis as any;
-    // Prefer explicit include selection.
-    if (selectedTypes.size > 0) {
-      matches = (await delegate.findMany({
-        where: {
-          projectId: params.projectId,
-          errorType: { in: [...selectedTypes] },
-        },
-        select: { observationId: true },
-      })) as Array<{ observationId: string }>;
+  let predicate: Prisma.Sql | null = null;
+
+  if (selectedClassifiedTypes.length > 0 || includeUnclassified) {
+    if (selectedClassifiedTypes.length > 0 && includeUnclassified) {
+      predicate = Prisma.sql`(ea.error_type IN (${Prisma.join(selectedClassifiedTypes)}) OR ea.error_type IS NULL)`;
+    } else if (selectedClassifiedTypes.length > 0) {
+      predicate = Prisma.sql`ea.error_type IN (${Prisma.join(selectedClassifiedTypes)})`;
     } else {
-      // Exclude selection: interpret as "show observations with an explicit errorType
-      // that is NOT in the excluded list".
-      matches = (await delegate.findMany({
-        where: {
-          projectId: params.projectId,
-          errorType: {
-            not: null,
-            ...(excludedTypes.size > 0 ? { notIn: [...excludedTypes] } : {}),
-          },
-        },
-        select: { observationId: true },
-      })) as Array<{ observationId: string }>;
+      predicate = Prisma.sql`ea.error_type IS NULL`;
     }
-  } catch {
-    // If the DB/client doesn't support errorType yet, don't block the query.
-    // But do strip the filter to avoid breaking ClickHouse table mappings.
+  } else {
+    // Exclude mode with support for "unclassified"
+    if (excludedClassifiedTypes.length > 0) {
+      predicate = excludeUnclassified
+        ? Prisma.sql`ea.error_type IS NOT NULL AND ea.error_type NOT IN (${Prisma.join(excludedClassifiedTypes)})`
+        : Prisma.sql`(ea.error_type IS NULL OR ea.error_type NOT IN (${Prisma.join(excludedClassifiedTypes)}))`;
+    } else if (excludeUnclassified) {
+      predicate = Prisma.sql`ea.error_type IS NOT NULL`;
+    }
+  }
+
+  if (!predicate) {
     return { filterState: remaining, hasNoMatches: false };
   }
 
-  const observationIds = matches.map((m) => m.observationId);
-  if (observationIds.length === 0) {
-    return { filterState: remaining, hasNoMatches: true };
+  // NOTE: Observations can be served from ClickHouse "events table" mode where
+  // not all observations exist in Postgres. Therefore, we avoid querying the
+  // Postgres `observations` table here and instead translate errorType filters
+  // into ID filters based solely on `error_analyses`.
+  //
+  // For "unclassified" we interpret it as: observations without a non-null
+  // `error_type` classification (includes: no analysis row, or analysis row with null error_type).
+  //
+  // Since we cannot enumerate "no analysis row" IDs from Postgres, we express
+  // unclassified (and unions involving it) via exclusion of classified IDs.
+
+  // INCLUDE MODE:
+  // - classified only: id IN analyzed IDs for selected types
+  // - unclassified only: id NOT IN IDs with error_type IS NOT NULL
+  // - unclassified + classified: id NOT IN IDs with error_type NOT IN selected types
+  //
+  // EXCLUDE MODE:
+  // - exclude classified types: id NOT IN IDs with error_type IN excluded types
+  // - exclude unclassified: id IN IDs with error_type IS NOT NULL
+  // - exclude unclassified + classified: id IN IDs with error_type IS NOT NULL AND error_type NOT IN excluded types
+
+  const mode =
+    selectedClassifiedTypes.length > 0 || includeUnclassified
+      ? "include"
+      : "exclude";
+
+  if (mode === "include") {
+    // If includeUnclassified is present, we implement a "NOT IN" filter.
+    if (includeUnclassified) {
+      const excludedIdsResult =
+        selectedClassifiedTypes.length > 0
+          ? await getObservationIdsFromErrorAnalyses({
+              prisma: params.prisma,
+              projectId: params.projectId,
+              whereSql:
+                selectedClassifiedTypes.length === 0
+                  ? Prisma.sql`ea.error_type IS NOT NULL`
+                  : Prisma.sql`ea.error_type IS NOT NULL AND ea.error_type NOT IN (${Prisma.join(selectedClassifiedTypes)})`,
+            })
+          : await getObservationIdsFromErrorAnalyses({
+              prisma: params.prisma,
+              projectId: params.projectId,
+              whereSql: Prisma.sql`ea.error_type IS NOT NULL`,
+            });
+
+      if (excludedIdsResult === null) {
+        return { filterState: remaining, hasNoMatches: false };
+      }
+
+      const next: FilterState = [
+        ...remaining,
+        {
+          column: "id",
+          type: "stringOptions",
+          operator: "none of",
+          value: excludedIdsResult,
+        } as any,
+      ];
+
+      return { filterState: next, hasNoMatches: false };
+    }
+
+    const includedIdsResult = await getObservationIdsFromErrorAnalyses({
+      prisma: params.prisma,
+      projectId: params.projectId,
+      whereSql: Prisma.sql`ea.error_type IN (${Prisma.join(selectedClassifiedTypes)})`,
+    });
+    if (includedIdsResult === null) {
+      return { filterState: remaining, hasNoMatches: false };
+    }
+    if (includedIdsResult.length === 0) {
+      return { filterState: remaining, hasNoMatches: true };
+    }
+
+    return {
+      filterState: [
+        ...remaining,
+        {
+          column: "id",
+          type: "stringOptions",
+          operator: "any of",
+          value: includedIdsResult,
+        } as any,
+      ],
+      hasNoMatches: false,
+    };
   }
 
-  const next: FilterState = [
-    ...remaining,
-    {
-      column: "id",
-      type: "stringOptions",
-      operator: "any of",
-      value: observationIds,
-    } as any,
-  ];
+  // EXCLUDE MODE
+  if (excludeUnclassified && excludedClassifiedTypes.length === 0) {
+    const classifiedIdsResult = await getObservationIdsFromErrorAnalyses({
+      prisma: params.prisma,
+      projectId: params.projectId,
+      whereSql: Prisma.sql`ea.error_type IS NOT NULL`,
+    });
+    if (classifiedIdsResult === null) {
+      return { filterState: remaining, hasNoMatches: false };
+    }
+    if (classifiedIdsResult.length === 0) {
+      return { filterState: remaining, hasNoMatches: true };
+    }
+    return {
+      filterState: [
+        ...remaining,
+        {
+          column: "id",
+          type: "stringOptions",
+          operator: "any of",
+          value: classifiedIdsResult,
+        } as any,
+      ],
+      hasNoMatches: false,
+    };
+  }
 
-  return { filterState: next, hasNoMatches: false };
+  if (excludeUnclassified && excludedClassifiedTypes.length > 0) {
+    const allowedIdsResult = await getObservationIdsFromErrorAnalyses({
+      prisma: params.prisma,
+      projectId: params.projectId,
+      whereSql: Prisma.sql`ea.error_type IS NOT NULL AND ea.error_type NOT IN (${Prisma.join(excludedClassifiedTypes)})`,
+    });
+    if (allowedIdsResult === null) {
+      return { filterState: remaining, hasNoMatches: false };
+    }
+    if (allowedIdsResult.length === 0) {
+      return { filterState: remaining, hasNoMatches: true };
+    }
+    return {
+      filterState: [
+        ...remaining,
+        {
+          column: "id",
+          type: "stringOptions",
+          operator: "any of",
+          value: allowedIdsResult,
+        } as any,
+      ],
+      hasNoMatches: false,
+    };
+  }
+
+  // exclude classified types only
+  if (excludedClassifiedTypes.length > 0) {
+    const excludedIdsResult = await getObservationIdsFromErrorAnalyses({
+      prisma: params.prisma,
+      projectId: params.projectId,
+      whereSql: Prisma.sql`ea.error_type IN (${Prisma.join(excludedClassifiedTypes)})`,
+    });
+    if (excludedIdsResult === null) {
+      return { filterState: remaining, hasNoMatches: false };
+    }
+    const next: FilterState = [
+      ...remaining,
+      {
+        column: "id",
+        type: "stringOptions",
+        operator: "none of",
+        value: excludedIdsResult,
+      } as any,
+    ];
+    return { filterState: next, hasNoMatches: false };
+  }
+
+  // Fallback: nothing to do
+  return { filterState: remaining, hasNoMatches: false };
 }
 
 export async function getErrorTypeFilterOptions(params: {
   prisma: PrismaClient;
   projectId: string;
-}): Promise<Array<{ value: string; count: number }>> {
+}): Promise<Array<{ value: string; count?: number; displayValue?: string }>> {
   let grouped: Array<any> = [];
   try {
     const delegate = (params.prisma as any).errorAnalysis as any;
@@ -150,11 +345,23 @@ export async function getErrorTypeFilterOptions(params: {
     return [];
   }
 
-  return grouped
+  const classified = grouped
     .filter((g) => g?.errorType)
     .map((g) => ({
       value: String(g.errorType),
       count: Number(g?._count?.errorType ?? g?._count?._all ?? 0),
-    }))
-    .sort((a, b) => b.count - a.count);
+    }));
+
+  // Always include an "unclassified" option.
+  // We intentionally omit a count here because in events-table mode, not all observations
+  // necessarily exist in Postgres, making a complete count expensive/unreliable.
+  const withUnclassified = [
+    ...classified,
+    {
+      value: UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE,
+      displayValue: UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL,
+    },
+  ];
+
+  return withUnclassified.sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
 }

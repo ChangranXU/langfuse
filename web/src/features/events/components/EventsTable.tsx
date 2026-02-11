@@ -84,6 +84,7 @@ import useSessionStorage from "@/src/components/useSessionStorage";
 import { api } from "@/src/utils/api";
 import Link from "next/link";
 import { Button } from "@/src/components/ui/button";
+import { BulkErrorAnalysisButton } from "@/src/features/error-analysis/components/BulkErrorAnalysisButton";
 
 export type EventsTableRow = {
   // Identity fields
@@ -175,6 +176,10 @@ export type EventsTableProps = {
    * WARNING/ERROR nested inside spans.
    */
   forceViewMode?: EventsViewMode;
+  /**
+   * Show a batch "Analysis" action button in the toolbar.
+   */
+  showBulkAnalysisButton?: boolean;
 };
 
 export default function ObservationsEventsTable({
@@ -192,6 +197,7 @@ export default function ObservationsEventsTable({
   filterStorageKey,
   showOpenTraceButton = false,
   forceViewMode,
+  showBulkAnalysisButton = false,
 }: EventsTableProps) {
   const router = useRouter();
   const { viewId } = router.query;
@@ -1392,6 +1398,36 @@ export default function ObservationsEventsTable({
     return result;
   }, [observations]);
 
+  const visibleObservationIds = useMemo(
+    () => new Set((observations.rows ?? []).map((o) => o.id)),
+    [observations.rows],
+  );
+
+  const selectedObservationIds = useMemo(
+    () =>
+      Object.keys(selectedRows).filter((observationId) =>
+        visibleObservationIds.has(observationId),
+      ),
+    [selectedRows, visibleObservationIds],
+  );
+
+  const selectedObservationIdSet = useMemo(
+    () => new Set(selectedObservationIds),
+    [selectedObservationIds],
+  );
+
+  const selectedAnalysisTargets = useMemo(
+    () =>
+      rows
+        .filter((row) => selectedObservationIdSet.has(row.id))
+        .map((row) => ({
+          observationId: row.id,
+          traceId: row.traceId,
+          level: row.level,
+        })),
+    [rows, selectedObservationIdSet],
+  );
+
   return (
     <DataTableControlsProvider>
       <div className="flex h-full w-full flex-col">
@@ -1413,6 +1449,19 @@ export default function ObservationsEventsTable({
               projectId,
               controllers: viewControllers,
             }}
+            preViewActionButtons={
+              showBulkAnalysisButton ? (
+                <BulkErrorAnalysisButton
+                  key="bulk-error-analysis"
+                  projectId={projectId}
+                  targets={selectedAnalysisTargets}
+                  onCompleted={() => {
+                    setSelectedRows({});
+                    setSelectAll(false);
+                  }}
+                />
+              ) : null
+            }
             columnsWithCustomSelect={[
               "providedModelName",
               "name",
@@ -1453,9 +1502,7 @@ export default function ObservationsEventsTable({
                 tableName={BatchExportTableName.Observations}
                 key="batchExport"
               />,
-              Object.keys(selectedRows).filter((observationId) =>
-                observations.rows?.map((o) => o.id).includes(observationId),
-              ).length > 0 ? (
+              selectedObservationIds.length > 0 ? (
                 <TableActionMenu
                   key="observations-multi-select-actions"
                   projectId={projectId}
@@ -1467,10 +1514,7 @@ export default function ObservationsEventsTable({
             multiSelect={{
               selectAll,
               setSelectAll,
-              selectedRowIds:
-                Object.keys(selectedRows).filter((observationId) =>
-                  observations.rows?.map((o) => o.id).includes(observationId),
-                ) ?? [],
+              selectedRowIds: selectedObservationIds,
               setRowSelection: setSelectedRows,
               totalCount,
               pageSize: paginationState.limit,
