@@ -278,7 +278,12 @@ export default function ObservationsEventsTable({
       setViewModeRaw(mode);
       setPaginationState({ page: 1 });
     },
-    [canChangeViewMode, setUserExplicitChoice, setViewModeRaw, setPaginationState],
+    [
+      canChangeViewMode,
+      setUserExplicitChoice,
+      setViewModeRaw,
+      setPaginationState,
+    ],
   );
 
   // for auto data refresh
