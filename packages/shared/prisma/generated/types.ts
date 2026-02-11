@@ -810,6 +810,7 @@ export type Project = {
   deleted_at: Timestamp | null;
   name: string;
   retention_days: number | null;
+  has_traces: Generated<boolean>;
   metadata: unknown | null;
 };
 export type ProjectMembership = {

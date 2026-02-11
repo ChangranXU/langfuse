@@ -370,6 +370,7 @@ export function convertEventsObservation(
     ...baseObservation,
     userId: record.user_id ?? null,
     sessionId: record.session_id ?? null,
+    traceName: record.trace_name ?? null,
   };
 }
 
