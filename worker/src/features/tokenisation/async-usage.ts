@@ -2,6 +2,7 @@ import { Worker } from "worker_threads";
 import { Model } from "@langfuse/shared";
 import { logger } from "@langfuse/shared/src/server";
 import path from "path";
+import fs from "fs";
 import { env } from "../../env";
 
 interface TokenCountWorkerPool {
@@ -20,13 +21,33 @@ interface TokenCountWorkerPool {
 class TokenCountWorkerManager {
   private pool: TokenCountWorkerPool;
   private readonly workerPath: string;
+  private readonly workerExecArgv: string[] | undefined;
   private readonly poolSize: number;
   private requestCounter = 0;
 
   constructor(poolSize: number) {
     this.poolSize = poolSize;
-    // Use compiled JavaScript file
-    this.workerPath = path.join(__dirname, "worker-thread.js");
+    /**
+     * In production we run compiled JS (`dist/**`), but in local dev we run TS via `tsx`.
+     * Worker threads run in a separate Node context, so we must explicitly enable TS loading
+     * for the worker thread when the compiled output doesn't exist.
+     */
+    const jsWorkerPath = path.join(__dirname, "worker-thread.js");
+    const jsUsagePath = path.join(__dirname, "usage.js");
+    const tsWorkerPath = path.join(__dirname, "worker-thread.ts");
+
+    const hasCompiledTokeniser =
+      fs.existsSync(jsWorkerPath) && fs.existsSync(jsUsagePath);
+    this.workerPath = hasCompiledTokeniser ? jsWorkerPath : tsWorkerPath;
+    /**
+     * The worker thread entrypoint uses CommonJS `require` statements.
+     * On Node 24, spawning it with `--import tsx` can fail with:
+     * "request for '@langfuse/shared' is not in cache".
+     * Using the CJS hook avoids that ESM bridge path while still supporting TS in dev.
+     */
+    this.workerExecArgv = hasCompiledTokeniser
+      ? undefined
+      : ["--require", "tsx/cjs"];
     this.pool = {
       workers: [],
       currentWorkerIndex: 0,
@@ -47,7 +68,9 @@ class TokenCountWorkerManager {
   }
 
   private createWorkerWithListeners(): Worker {
-    const worker = new Worker(this.workerPath);
+    const worker = new Worker(this.workerPath, {
+      execArgv: this.workerExecArgv,
+    });
 
     worker.on(
       "message",
