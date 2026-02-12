@@ -43,6 +43,11 @@ const ExperienceSummaryGetInputSchema = z.object({
   projectId: z.string(),
 });
 
+const ExperienceSummaryIncrementalUpdateStatusSchema = z.object({
+  cursorUpdatedAt: z.date().nullable(),
+  pendingAnalysesCount: z.number().int().min(0),
+});
+
 const ExperienceSummaryRowSchema = z.object({
   projectId: z.string(),
   model: z.string(),
@@ -160,6 +165,29 @@ export const experienceSummaryRouter = createTRPCRouter({
         summary: parsed.data,
         cursorUpdatedAt: row.cursorUpdatedAt,
         updatedAt: row.updatedAt,
+      };
+    }),
+
+  getIncrementalUpdateStatus: protectedProjectProcedure
+    .input(ExperienceSummaryGetInputSchema)
+    .output(ExperienceSummaryIncrementalUpdateStatusSchema)
+    .query(async ({ input, ctx }) => {
+      const existing = await ctx.prisma.experienceSummary.findUnique({
+        where: { projectId: input.projectId },
+        select: { cursorUpdatedAt: true },
+      });
+
+      const cursorUpdatedAt = existing?.cursorUpdatedAt ?? null;
+      const pendingAnalysesCount = await ctx.prisma.errorAnalysis.count({
+        where: {
+          projectId: input.projectId,
+          ...(cursorUpdatedAt ? { updatedAt: { gt: cursorUpdatedAt } } : {}),
+        },
+      });
+
+      return {
+        cursorUpdatedAt,
+        pendingAnalysesCount,
       };
     }),
 

@@ -220,6 +220,12 @@ const EnvSchema = z.object({
   QUEUE_CONSUMER_INGESTION_SECONDARY_QUEUE_IS_ENABLED: z
     .enum(["true", "false"])
     .default("true"),
+  QUEUE_CONSUMER_AUTO_ERROR_ANALYSIS_QUEUE_IS_ENABLED: z
+    .enum(["true", "false"])
+    .default("true"),
+  QUEUE_CONSUMER_AUTO_EXPERIENCE_SUMMARY_QUEUE_IS_ENABLED: z
+    .enum(["true", "false"])
+    .default("false"),
   QUEUE_CONSUMER_DATA_RETENTION_QUEUE_IS_ENABLED: z
     .enum(["true", "false"])
     .default("true"),
@@ -251,6 +257,16 @@ const EnvSchema = z.object({
     .number()
     .positive()
     .default(5 * 60 * 1000), // 5 minutes
+  LANGFUSE_AUTO_ANALYSIS_MAX_INGESTION_AGE_MS: z.coerce
+    .number()
+    .positive()
+    .default(10 * 60 * 1000),
+  LANGFUSE_AUTO_ANALYSIS_MAX_ITEMS_PER_SUMMARY: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(500)
+    .default(50),
 
   // Core data S3 upload - Langfuse Cloud
   LANGFUSE_S3_CORE_DATA_EXPORT_IS_ENABLED: z

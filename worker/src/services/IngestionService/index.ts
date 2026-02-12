@@ -1,6 +1,7 @@
 import { Cluster, Redis } from "ioredis";
 import { v4 } from "uuid";
 import { Decimal } from "decimal.js";
+import { z } from "zod/v4";
 import {
   Model,
   ObservationLevel,
@@ -24,7 +25,9 @@ import {
   ObservationRecordInsertType,
   observationRecordReadSchema,
   PromptService,
+  getQueue,
   QueueJobs,
+  QueueName,
   recordIncrement,
   ScoreEventType,
   DatasetRunItemEventType,
@@ -63,12 +66,31 @@ import {
 import { randomUUID } from "crypto";
 import { SpanKind } from "@opentelemetry/api";
 import { ClickhouseReadSkipCache } from "../../utils/clickhouseReadSkipCache";
+import { env } from "../../env";
 
 type InsertRecord =
   | TraceRecordInsertType
   | ScoreRecordInsertType
   | ObservationRecordInsertType
   | DatasetRunItemRecordInsertType;
+
+const AutoErrorAnalysisModelSchema = z.enum(["gpt-5.2", "gpt-4.1"]);
+type AutoErrorAnalysisModel = z.infer<typeof AutoErrorAnalysisModelSchema>;
+const AutoErrorAnalysisSettingsSchema = z.object({
+  enabled: z.boolean(),
+  model: AutoErrorAnalysisModelSchema,
+});
+type AutoErrorAnalysisSettings = z.infer<
+  typeof AutoErrorAnalysisSettingsSchema
+>;
+
+const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: AutoErrorAnalysisSettings = {
+  enabled: false,
+  model: "gpt-5.2",
+};
+
+// Keep this short so toggling settings reflects quickly during ingestion.
+const AUTO_ERROR_ANALYSIS_SETTINGS_CACHE_TTL_MS = 5_000;
 
 /**
  * Flexible input type for writing events to the events table.
@@ -221,6 +243,10 @@ const immutableEntityKeys: {
 
 export class IngestionService {
   private promptService: PromptService;
+  private autoErrorAnalysisSettingsCache = new Map<
+    string,
+    { settings: AutoErrorAnalysisSettings; expiresAt: number }
+  >();
 
   constructor(
     private redis: Redis | Cluster,
@@ -965,6 +991,38 @@ export class IngestionService {
       finalObservationRecord,
     );
 
+    const shouldAutoAnalyzeLevel =
+      finalObservationRecord.level === ObservationLevel.ERROR ||
+      finalObservationRecord.level === ObservationLevel.WARNING;
+    if (shouldAutoAnalyzeLevel) {
+      const autoErrorAnalysisSettings =
+        await this.getAutoErrorAnalysisSettings(projectId);
+      if (autoErrorAnalysisSettings.enabled) {
+        const autoErrorAnalysisQueue = getQueue(
+          QueueName.AutoErrorAnalysisQueue,
+        );
+        if (autoErrorAnalysisQueue && finalObservationRecord.trace_id) {
+          await autoErrorAnalysisQueue.add(
+            QueueJobs.AutoErrorAnalysisJob,
+            {
+              id: randomUUID(),
+              timestamp: new Date(),
+              name: QueueJobs.AutoErrorAnalysisJob,
+              payload: {
+                projectId,
+                traceId: finalObservationRecord.trace_id,
+                observationId: finalObservationRecord.id,
+                model: autoErrorAnalysisSettings.model,
+              },
+            },
+            {
+              jobId: `auto-error-analysis:${projectId}:${finalObservationRecord.id}`,
+            },
+          );
+        }
+      }
+    }
+
     // Dual-write to staging table for batch propagation to events table
     // Here, we add some additional logic around the first seen timestamp.
     // We "lock" partitions 4min after their creation, i.e. the 15:00:00 partition
@@ -983,6 +1041,48 @@ export class IngestionService {
         stagingRecord,
       );
     }
+  }
+
+  private parseAutoErrorAnalysisSettings(
+    metadata: unknown,
+  ): AutoErrorAnalysisSettings {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS;
+    }
+
+    const maybeSettings = (metadata as Record<string, unknown>)
+      .autoErrorAnalysis;
+    const parsed = AutoErrorAnalysisSettingsSchema.safeParse(maybeSettings);
+    if (!parsed.success) return DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS;
+    return parsed.data;
+  }
+
+  private async getAutoErrorAnalysisSettings(
+    projectId: string,
+    opts?: { forceRefresh?: boolean },
+  ): Promise<AutoErrorAnalysisSettings> {
+    const now = Date.now();
+    if (!opts?.forceRefresh) {
+      const cached = this.autoErrorAnalysisSettingsCache.get(projectId);
+      if (cached && cached.expiresAt > now) return cached.settings;
+    }
+
+    const project = await this.prisma.project.findUnique({
+      where: {
+        id: projectId,
+      },
+      select: {
+        metadata: true,
+      },
+    });
+
+    const settings = this.parseAutoErrorAnalysisSettings(project?.metadata);
+    this.autoErrorAnalysisSettingsCache.set(projectId, {
+      settings,
+      expiresAt: now + AUTO_ERROR_ANALYSIS_SETTINGS_CACHE_TTL_MS,
+    });
+
+    return settings;
   }
 
   private async mergeScoreRecords(params: {

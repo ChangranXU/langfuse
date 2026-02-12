@@ -19,6 +19,50 @@ import {
 import { randomUUID } from "crypto";
 import { StringNoHTMLNonEmpty } from "@langfuse/shared";
 
+const AutoErrorAnalysisModelSchema = z.enum(["gpt-5.2", "gpt-4.1"]);
+const ProjectAutoErrorAnalysisSettingsSchema = z.object({
+  enabled: z.boolean(),
+  model: AutoErrorAnalysisModelSchema,
+});
+type ProjectAutoErrorAnalysisSettings = z.infer<
+  typeof ProjectAutoErrorAnalysisSettingsSchema
+>;
+
+const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: ProjectAutoErrorAnalysisSettings = {
+  enabled: false,
+  model: "gpt-5.2",
+};
+
+function parseAutoErrorAnalysisSettings(
+  metadata: unknown,
+): ProjectAutoErrorAnalysisSettings {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS;
+  }
+
+  const maybeConfig = (metadata as Record<string, unknown>).autoErrorAnalysis;
+  const parsed = ProjectAutoErrorAnalysisSettingsSchema.safeParse(maybeConfig);
+  if (!parsed.success) return DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS;
+  return parsed.data;
+}
+
+function mergeAutoErrorAnalysisSettingsIntoMetadata(params: {
+  metadata: unknown;
+  settings: ProjectAutoErrorAnalysisSettings;
+}) {
+  const metadata =
+    params.metadata &&
+    typeof params.metadata === "object" &&
+    !Array.isArray(params.metadata)
+      ? (params.metadata as Record<string, unknown>)
+      : {};
+
+  return {
+    ...metadata,
+    autoErrorAnalysis: params.settings,
+  };
+}
+
 export const projectsRouter = createTRPCRouter({
   create: protectedOrganizationProcedure
     .input(
@@ -154,6 +198,106 @@ export const projectsRouter = createTRPCRouter({
         after: project,
       });
       return true;
+    }),
+
+  getErrorAnalysisSettings: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+      }),
+    )
+    .output(ProjectAutoErrorAnalysisSettingsSchema)
+    .query(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:read",
+      });
+
+      const project = await ctx.prisma.project.findUnique({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        select: {
+          metadata: true,
+        },
+      });
+
+      if (!project) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      return parseAutoErrorAnalysisSettings(project.metadata);
+    }),
+
+  setErrorAnalysisSettings: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        enabled: z.boolean(),
+        model: AutoErrorAnalysisModelSchema,
+      }),
+    )
+    .output(ProjectAutoErrorAnalysisSettingsSchema)
+    .mutation(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:update",
+      });
+
+      const existingProject = await ctx.prisma.project.findUnique({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        select: {
+          metadata: true,
+        },
+      });
+
+      if (!existingProject) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      const settings: ProjectAutoErrorAnalysisSettings = {
+        enabled: input.enabled,
+        model: input.model,
+      };
+
+      const mergedMetadata = mergeAutoErrorAnalysisSettingsIntoMetadata({
+        metadata: existingProject.metadata,
+        settings,
+      });
+
+      const project = await ctx.prisma.project.update({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        data: {
+          metadata: mergedMetadata as any,
+        },
+      });
+
+      await auditLog({
+        session: ctx.session,
+        resourceType: "project",
+        resourceId: input.projectId,
+        action: "update",
+        after: {
+          autoErrorAnalysis: settings,
+        },
+      });
+
+      return parseAutoErrorAnalysisSettings(project.metadata);
     }),
 
   delete: protectedProjectProcedure

@@ -50,8 +50,28 @@ export function ExperienceSummaryView(props: {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="whitespace-pre-wrap rounded-md border bg-background p-2 font-mono text-xs text-muted-foreground">
-            {(summary.promptPack.lines ?? []).join("\n")}
+          <div className="group relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1 z-10 h-6 w-6 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+              onClick={() =>
+                void handleCopyPromptAdditions({
+                  key: "__prompt_pack__",
+                  text: (summary.promptPack.lines ?? []).join("\n"),
+                })
+              }
+              aria-label="Copy prompt pack"
+            >
+              {copiedPromptKey === "__prompt_pack__" ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </Button>
+            <div className="whitespace-pre-wrap rounded-md border bg-background p-2 pr-10 font-mono text-xs text-muted-foreground">
+              {(summary.promptPack.lines ?? []).join("\n")}
+            </div>
           </div>
         </CardContent>
       </Card>

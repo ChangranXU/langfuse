@@ -73,6 +73,8 @@ import { datasetDeleteProcessor } from "./queues/datasetDelete";
 import { otelIngestionQueueProcessor } from "./queues/otelIngestionQueue";
 import { eventPropagationProcessor } from "./queues/eventPropagationQueue";
 import { notificationQueueProcessor } from "./queues/notificationQueue";
+import { autoErrorAnalysisQueueProcessor } from "./queues/autoErrorAnalysisQueue";
+import { autoExperienceSummaryQueueProcessor } from "./queues/autoExperienceSummaryQueue";
 import {
   BatchProjectCleaner,
   BATCH_DELETION_TABLES,
@@ -317,6 +319,34 @@ if (env.QUEUE_CONSUMER_INGESTION_SECONDARY_QUEUE_IS_ENABLED === "true") {
     {
       concurrency:
         env.LANGFUSE_INGESTION_SECONDARY_QUEUE_PROCESSING_CONCURRENCY,
+    },
+  );
+}
+
+if (env.QUEUE_CONSUMER_AUTO_ERROR_ANALYSIS_QUEUE_IS_ENABLED === "true") {
+  WorkerManager.register(
+    QueueName.AutoErrorAnalysisQueue,
+    autoErrorAnalysisQueueProcessor,
+    {
+      concurrency: 2,
+      limiter: {
+        max: 10,
+        duration: 60_000,
+      },
+    },
+  );
+}
+
+if (env.QUEUE_CONSUMER_AUTO_EXPERIENCE_SUMMARY_QUEUE_IS_ENABLED === "true") {
+  WorkerManager.register(
+    QueueName.AutoExperienceSummaryQueue,
+    autoExperienceSummaryQueueProcessor,
+    {
+      concurrency: 1,
+      limiter: {
+        max: 6,
+        duration: 60_000,
+      },
     },
   );
 }

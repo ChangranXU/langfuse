@@ -304,6 +304,8 @@ export enum QueueName {
   OtelIngestionQueue = "otel-ingestion-queue",
   IngestionQueue = "ingestion-queue", // Process single events with S3-merge
   IngestionSecondaryQueue = "secondary-ingestion-queue", // Separates high priority + high throughput projects from other projects.
+  AutoErrorAnalysisQueue = "auto-error-analysis-queue",
+  AutoExperienceSummaryQueue = "auto-experience-summary-queue",
   CloudUsageMeteringQueue = "cloud-usage-metering-queue",
   CloudSpendAlertQueue = "cloud-spend-alert-queue",
   CloudFreeTierUsageThresholdQueue = "cloud-free-tier-usage-threshold-queue",
@@ -343,6 +345,8 @@ export enum QueueJobs {
   OtelIngestionJob = "otel-ingestion-job",
   IngestionJob = "ingestion-job",
   IngestionSecondaryJob = "secondary-ingestion-job",
+  AutoErrorAnalysisJob = "auto-error-analysis-job",
+  AutoExperienceSummaryJob = "auto-experience-summary-job",
   ExperimentCreateJob = "experiment-create-job",
   PostHogIntegrationJob = "posthog-integration-job",
   PostHogIntegrationProcessingJob = "posthog-integration-processing-job",
@@ -440,6 +444,28 @@ export type TQueueJobTypes = {
     id: string;
     payload: IngestionEventQueueType;
     name: QueueJobs.IngestionJob;
+  };
+  [QueueName.AutoErrorAnalysisQueue]: {
+    timestamp: Date;
+    id: string;
+    payload: {
+      projectId: string;
+      traceId: string;
+      observationId: string;
+      model?: "gpt-5.2" | "gpt-4.1";
+    };
+    name: QueueJobs.AutoErrorAnalysisJob;
+  };
+  [QueueName.AutoExperienceSummaryQueue]: {
+    timestamp: Date;
+    id: string;
+    payload: {
+      projectId: string;
+      mode?: "incremental";
+      model?: "gpt-5.2" | "gpt-4.1";
+      maxItems?: number;
+    };
+    name: QueueJobs.AutoExperienceSummaryJob;
   };
   [QueueName.ExperimentCreate]: {
     timestamp: Date;

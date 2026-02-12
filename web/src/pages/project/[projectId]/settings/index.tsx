@@ -31,6 +31,7 @@ import { Slack } from "lucide-react";
 import { ScoreConfigSettings } from "@/src/features/score-configs/components/ScoreConfigSettings";
 import { env } from "@/src/env.mjs";
 import { NotificationSettings } from "@/src/features/notifications/components/NotificationSettings";
+import { ErrorAnalysisSettings } from "@/src/features/error-analysis/components/ErrorAnalysisSettings";
 
 type ProjectSettingsPage = {
   title: string;
@@ -162,6 +163,12 @@ export const getProjectSettingsPages = ({
     slug: "models",
     cmdKKeywords: ["cost", "token"],
     content: <ModelsSettings projectId={project.id} />,
+  },
+  {
+    title: "Error Analysis",
+    slug: "error-analysis",
+    cmdKKeywords: ["analysis", "error", "warning", "auto"],
+    content: <ErrorAnalysisSettings projectId={project.id} />,
   },
   {
     title: "Protected Prompt Labels",

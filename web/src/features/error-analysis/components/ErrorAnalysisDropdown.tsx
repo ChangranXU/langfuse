@@ -20,6 +20,16 @@ import {
   ErrorAnalysisModelSchema,
 } from "../types";
 
+function formatSummaryStatusTimestamp(value: Date | null | undefined): string {
+  if (!value) return "n/a";
+  return value.toLocaleString();
+}
+
+function truncateMessage(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(0, maxChars - 3))}...`;
+}
+
 function FormattedAnalysisView(props: {
   rendered: ErrorAnalysisAnalyzeOutput["rendered"];
 }) {
@@ -226,6 +236,19 @@ export function ErrorAnalysisDropdown(props: {
     "rendered",
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [autoWaitStartedAt, setAutoWaitStartedAt] = useState<number | null>(
+    null,
+  );
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [autoRetryError, setAutoRetryError] = useState<string | null>(null);
+
+  const autoSettingsQuery = api.projects.getErrorAnalysisSettings.useQuery(
+    { projectId: props.projectId },
+    { enabled: Boolean(props.projectId), refetchOnWindowFocus: false },
+  );
+  const shouldPollForAutoAnalysis = Boolean(
+    autoSettingsQuery.data?.enabled && !result,
+  );
 
   const { data: savedAnalysis } = api.errorAnalysis.get.useQuery(
     {
@@ -236,8 +259,109 @@ export function ErrorAnalysisDropdown(props: {
     {
       enabled: !result,
       refetchOnWindowFocus: false,
+      // Auto-analysis is asynchronous in worker; poll briefly until result appears.
+      refetchInterval: shouldPollForAutoAnalysis ? 2_000 : false,
+      refetchIntervalInBackground: true,
     },
   );
+
+  const autoGenerationStatusQuery =
+    api.errorAnalysis.getAutoGenerationStatus.useQuery(
+      {
+        projectId: props.projectId,
+        traceId: props.traceId,
+        observationId: props.observationId,
+      },
+      {
+        enabled: Boolean(autoSettingsQuery.data?.enabled && !result),
+        refetchOnWindowFocus: false,
+        refetchInterval: 2_000,
+        refetchIntervalInBackground: true,
+      },
+    );
+
+  const retryAutoGeneration = api.errorAnalysis.retryAutoGeneration.useMutation(
+    {
+      onSuccess: () => {
+        setAutoRetryError(null);
+        setAutoWaitStartedAt(Date.now());
+      },
+      onError: (err) => {
+        setAutoRetryError(err.message);
+      },
+    },
+  );
+
+  const summaryUpdateStatusQuery =
+    api.errorAnalysis.getSummaryUpdateStatus.useQuery(
+      {
+        projectId: props.projectId,
+        traceId: props.traceId,
+        observationId: props.observationId,
+      },
+      {
+        enabled: Boolean(autoSettingsQuery.data?.enabled && result),
+        refetchOnWindowFocus: false,
+        refetchInterval: 2_000,
+        refetchIntervalInBackground: true,
+      },
+    );
+
+  const summaryUpdateStatusText = useMemo(() => {
+    if (!autoSettingsQuery.data?.enabled) return null;
+    if (summaryUpdateStatusQuery.isPending) {
+      return "Summary sync status: checking...";
+    }
+    if (summaryUpdateStatusQuery.isError) {
+      return "Summary sync status: unavailable.";
+    }
+
+    const status = summaryUpdateStatusQuery.data;
+    if (!status?.analysisUpdatedAt) {
+      return "Summary sync status: waiting for analysis record...";
+    }
+
+    const batchSize = status.minNewAnalysesToUpdate ?? 10;
+    const pendingCount = status.pendingAnalysesCount ?? 0;
+    const pendingHint =
+      pendingCount > 0 && pendingCount < batchSize
+        ? ` (${pendingCount}/${batchSize} analyses pending)`
+        : pendingCount >= batchSize
+          ? ` (${pendingCount} analyses pending)`
+          : "";
+
+    if (status.synced) {
+      return `Summary sync status: synced (summary updated ${formatSummaryStatusTimestamp(
+        status.summaryUpdatedAt ?? status.summaryCursorUpdatedAt,
+      )}).`;
+    }
+
+    if (!status.summaryCursorUpdatedAt) {
+      if (pendingCount > 0 && pendingCount < batchSize) {
+        return `Summary sync status: pending${pendingHint} (waiting to generate first summary).`;
+      }
+      return `Summary sync status: pending${pendingHint} (summary has not been generated yet).`;
+    }
+
+    if (pendingCount > 0 && pendingCount < batchSize) {
+      return `Summary sync status: pending${pendingHint} (summary ${formatSummaryStatusTimestamp(
+        status.summaryCursorUpdatedAt,
+      )} is behind analysis ${formatSummaryStatusTimestamp(
+        status.analysisUpdatedAt,
+      )}).`;
+    }
+
+    return `Summary sync status: pending${pendingHint} (summary ${formatSummaryStatusTimestamp(
+      status.summaryCursorUpdatedAt,
+    )} is behind analysis ${formatSummaryStatusTimestamp(
+      status.analysisUpdatedAt,
+    )}).`;
+  }, [
+    autoSettingsQuery.data?.enabled,
+    summaryUpdateStatusQuery.data,
+    summaryUpdateStatusQuery.isError,
+    summaryUpdateStatusQuery.isPending,
+  ]);
 
   useEffect(() => {
     if (savedAnalysis && !result) {
@@ -245,6 +369,130 @@ export function ErrorAnalysisDropdown(props: {
       setResultView("rendered");
     }
   }, [savedAnalysis, result]);
+
+  useEffect(() => {
+    if (!shouldPollForAutoAnalysis) {
+      setAutoWaitStartedAt(null);
+      return;
+    }
+
+    if (autoWaitStartedAt == null) {
+      setAutoWaitStartedAt(Date.now());
+    }
+
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1_000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [autoWaitStartedAt, shouldPollForAutoAnalysis]);
+
+  const autoWaitMs =
+    shouldPollForAutoAnalysis && autoWaitStartedAt != null
+      ? Math.max(0, nowMs - autoWaitStartedAt)
+      : 0;
+
+  const pendingAutoMessage = useMemo(() => {
+    if (!autoSettingsQuery.data?.enabled) {
+      return {
+        text: "Click Analyze to generate a structured root cause analysis.",
+        showSettingsLink: false,
+      };
+    }
+
+    if (autoWaitMs < 15_000) {
+      return {
+        text: "Auto-generation is enabled. Waiting for the report to appear...",
+        showSettingsLink: false,
+      };
+    }
+
+    if (autoGenerationStatusQuery.isPending) {
+      return {
+        text: "Auto-generation is enabled. Still waiting; checking worker status...",
+        showSettingsLink: false,
+      };
+    }
+
+    if (autoGenerationStatusQuery.isError) {
+      return {
+        text: "Auto-generation is enabled. Still waiting. If this persists, click Analyze to run immediately.",
+        showSettingsLink: false,
+      };
+    }
+
+    const status = autoGenerationStatusQuery.data;
+    if (!status) {
+      return {
+        text: "Auto-generation is enabled. Still waiting. Click Analyze to run immediately.",
+        showSettingsLink: false,
+      };
+    }
+
+    switch (status.hint) {
+      case "job_pending":
+        return {
+          text: `Auto-generation job is ${status.jobState ?? "pending"}${
+            status.jobEnqueuedAt
+              ? ` (queued ${formatSummaryStatusTimestamp(status.jobEnqueuedAt)})`
+              : ""
+          }.`,
+          showSettingsLink: false,
+        };
+      case "job_completed_no_result":
+        return {
+          text: `Auto-generation job completed, but no analysis was saved. This can happen if the observation/context was not queryable yet when the job ran. Click Analyze to run now.`,
+          showSettingsLink: false,
+        };
+      case "job_failed":
+        return {
+          text: `Auto-generation failed: ${truncateMessage(
+            status.jobFailedReason ?? "unknown reason",
+            180,
+          )}. Click Analyze to retry now.`,
+          showSettingsLink: false,
+        };
+      case "missing_llm_connection":
+        return {
+          text: "Auto-generation cannot run because no OpenAI LLM connection is configured.",
+          showSettingsLink: true,
+        };
+      case "job_not_found":
+        return {
+          text: "No auto-generation job found for this observation. Auto-generation only runs for newly ingested ERROR/WARNING items after enabling. Click Analyze to run now.",
+          showSettingsLink: false,
+        };
+      case "disabled":
+        return {
+          text: "Auto-generation is currently disabled for this project.",
+          showSettingsLink: false,
+        };
+      default:
+        return {
+          text: `Auto-generation is enabled. Still waiting${
+            status.jobState ? ` (job state: ${status.jobState})` : ""
+          }. Click Analyze to run immediately.`,
+          showSettingsLink: false,
+        };
+    }
+  }, [
+    autoGenerationStatusQuery.data,
+    autoGenerationStatusQuery.isError,
+    autoGenerationStatusQuery.isPending,
+    autoSettingsQuery.data?.enabled,
+    autoWaitMs,
+  ]);
+
+  const showRetryAutoButton = Boolean(
+    autoSettingsQuery.data?.enabled &&
+      autoWaitMs >= 15_000 &&
+      autoGenerationStatusQuery.data &&
+      ["job_completed_no_result", "job_not_found", "job_failed"].includes(
+        autoGenerationStatusQuery.data.hint,
+      ),
+  );
 
   const runAnalysis = (params?: { clearExisting?: boolean }) => {
     setErrorMessage(null);
@@ -388,10 +636,48 @@ export function ErrorAnalysisDropdown(props: {
               />
             )}
           </div>
+          {summaryUpdateStatusText ? (
+            <div className="mt-3 border-t pt-2 text-[11px] text-muted-foreground">
+              {summaryUpdateStatusText}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-md border bg-background p-2 text-xs text-muted-foreground">
-          Click Analyze to generate a structured root cause analysis.
+          <div>{pendingAutoMessage.text}</div>
+          {pendingAutoMessage.showSettingsLink ? (
+            <div className="mt-1">
+              <Link className="text-primary underline" href={settingsHref}>
+                Go to Settings → LLM Connections
+              </Link>
+            </div>
+          ) : null}
+          {autoRetryError ? (
+            <div className="mt-2 text-xs text-destructive">
+              {autoRetryError}
+            </div>
+          ) : null}
+          {showRetryAutoButton ? (
+            <div className="mt-2 flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={retryAutoGeneration.isPending}
+                onClick={() => {
+                  retryAutoGeneration.mutate({
+                    projectId: props.projectId,
+                    traceId: props.traceId,
+                    observationId: props.observationId,
+                  });
+                }}
+              >
+                Retry auto-generation
+              </Button>
+              <div className="text-[11px] text-muted-foreground">
+                Re-queues the worker job.
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

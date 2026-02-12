@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { randomUUID } from "crypto";
 import { projectRoleAccessRights } from "@/src/features/rbac/constants/projectAccessRights";
 import {
   createTRPCRouter,
@@ -16,8 +17,11 @@ import {
   fetchLLMCompletion,
   getObservationsForTrace,
   getObservationByIdFromEventsTable,
+  getQueue,
   logger,
   isLLMCompletionError,
+  QueueJobs,
+  QueueName,
   setEventErrorTypeTag,
 } from "@langfuse/shared/src/server";
 import {
@@ -591,6 +595,63 @@ function buildErrorAnalysisUserContent(
   return safeStringify(buildErrorAnalysisContextPayload(params));
 }
 
+const ErrorAnalysisSummaryUpdateStatusInputSchema = z.object({
+  projectId: z.string(),
+  traceId: z.string(),
+  observationId: z.string(),
+});
+
+const AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES = 10;
+
+const ErrorAnalysisSummaryUpdateStatusOutputSchema = z.object({
+  synced: z.boolean(),
+  analysisUpdatedAt: z.date().nullable(),
+  summaryCursorUpdatedAt: z.date().nullable(),
+  summaryUpdatedAt: z.date().nullable(),
+  pendingAnalysesCount: z.number().int().min(0),
+  minNewAnalysesToUpdate: z.number().int().min(1),
+});
+
+const AutoGenerationStatusHintSchema = z.enum([
+  "analysis_ready",
+  "job_pending",
+  "job_completed_no_result",
+  "job_failed",
+  "job_not_found",
+  "missing_llm_connection",
+  "disabled",
+  "unknown",
+]);
+
+const ErrorAnalysisAutoGenerationStatusInputSchema = z.object({
+  projectId: z.string(),
+  traceId: z.string(),
+  observationId: z.string(),
+});
+
+const ErrorAnalysisAutoGenerationStatusOutputSchema = z.object({
+  analysisExists: z.boolean(),
+  analysisUpdatedAt: z.date().nullable(),
+  autoAnalysisEnabled: z.boolean(),
+  hasOpenAiConnection: z.boolean(),
+  jobState: z.string().nullable(),
+  jobFailedReason: z.string().nullable(),
+  jobEnqueuedAt: z.date().nullable(),
+  hint: AutoGenerationStatusHintSchema,
+});
+
+const ErrorAnalysisRetryAutoGenerationInputSchema = z.object({
+  projectId: z.string(),
+  traceId: z.string(),
+  observationId: z.string(),
+});
+
+const ErrorAnalysisRetryAutoGenerationOutputSchema = z.object({
+  jobId: z.string(),
+  delayed: z.boolean(),
+  delayMs: z.number().int().min(0),
+});
+
 function pruneContextWindowOnce(params: {
   focusIndex: number;
   beforeNodes: ContextNode[];
@@ -764,11 +825,9 @@ export const errorAnalysisRouter = createTRPCRouter({
           } catch (e) {
             // Let context-length errors bubble up so the caller can prune and retry.
             if (isContextLengthExceededError(e)) throw e;
-
-            const mapped = mapLLMCompletionErrorToTRPCError(e);
-            if (mapped) throw mapped;
-
-            // Fallback path: plain completion → extract/parse JSON object.
+            // Fallback path: plain completion -> extract/parse JSON object.
+            // Some OpenAI-compatible providers reject JSON schema mode even though
+            // plain completion works (e.g. "Invalid schema" style 400s).
             try {
               return parseJsonObjectFromCompletion(
                 await fetchLLMCompletion({
@@ -791,6 +850,9 @@ export const errorAnalysisRouter = createTRPCRouter({
               const mappedFallback =
                 mapLLMCompletionErrorToTRPCError(fallbackError);
               if (mappedFallback) throw mappedFallback;
+
+              const mappedOriginal = mapLLMCompletionErrorToTRPCError(e);
+              if (mappedOriginal) throw mappedOriginal;
 
               throw fallbackError;
             }
@@ -1168,6 +1230,295 @@ export const errorAnalysisRouter = createTRPCRouter({
         errorTypeWhy: (analysis as any).errorTypeWhy ?? null,
         errorTypeConfidence: (analysis as any).errorTypeConfidence ?? null,
         errorTypeFromList: (analysis as any).errorTypeFromList ?? null,
+      };
+    }),
+
+  getSummaryUpdateStatus: protectedGetTraceProcedure
+    .input(ErrorAnalysisSummaryUpdateStatusInputSchema)
+    .output(ErrorAnalysisSummaryUpdateStatusOutputSchema)
+    .query(async ({ input, ctx }) => {
+      const errorAnalysisDelegate = (
+        ctx.prisma as unknown as {
+          errorAnalysis?: unknown;
+        }
+      ).errorAnalysis;
+      if (!errorAnalysisDelegate) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Server is missing the ErrorAnalysis Prisma model. Please restart the dev server after running prisma generate/migrate.",
+        });
+      }
+
+      const experienceSummaryDelegate = (
+        ctx.prisma as unknown as {
+          experienceSummary?: unknown;
+        }
+      ).experienceSummary;
+      if (!experienceSummaryDelegate) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Server is missing the ExperienceSummary Prisma model. Please restart the dev server after running prisma generate/migrate.",
+        });
+      }
+
+      const analysis = await ctx.prisma.errorAnalysis.findUnique({
+        where: {
+          projectId_observationId: {
+            projectId: input.projectId,
+            observationId: input.observationId,
+          },
+        },
+        select: {
+          updatedAt: true,
+        },
+      });
+
+      if (!analysis) {
+        return {
+          synced: false,
+          analysisUpdatedAt: null,
+          summaryCursorUpdatedAt: null,
+          summaryUpdatedAt: null,
+          pendingAnalysesCount: 0,
+          minNewAnalysesToUpdate: AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
+        };
+      }
+
+      const summary = await ctx.prisma.experienceSummary.findUnique({
+        where: {
+          projectId: input.projectId,
+        },
+        select: {
+          cursorUpdatedAt: true,
+          updatedAt: true,
+        },
+      });
+
+      const summaryCursorUpdatedAt = summary?.cursorUpdatedAt ?? null;
+      const pendingAnalysesCount = await ctx.prisma.errorAnalysis.count({
+        where: {
+          projectId: input.projectId,
+          ...(summaryCursorUpdatedAt
+            ? { updatedAt: { gt: summaryCursorUpdatedAt } }
+            : {}),
+        },
+      });
+      const synced = Boolean(
+        summaryCursorUpdatedAt &&
+          summaryCursorUpdatedAt.getTime() >= analysis.updatedAt.getTime(),
+      );
+
+      return {
+        synced,
+        analysisUpdatedAt: analysis.updatedAt,
+        summaryCursorUpdatedAt,
+        summaryUpdatedAt: summary?.updatedAt ?? null,
+        pendingAnalysesCount,
+        minNewAnalysesToUpdate: AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
+      };
+    }),
+
+  getAutoGenerationStatus: protectedGetTraceProcedure
+    .input(ErrorAnalysisAutoGenerationStatusInputSchema)
+    .output(ErrorAnalysisAutoGenerationStatusOutputSchema)
+    .query(async ({ input, ctx }) => {
+      const analysis = await ctx.prisma.errorAnalysis.findUnique({
+        where: {
+          projectId_observationId: {
+            projectId: input.projectId,
+            observationId: input.observationId,
+          },
+        },
+        select: {
+          updatedAt: true,
+        },
+      });
+
+      if (analysis) {
+        return {
+          analysisExists: true,
+          analysisUpdatedAt: analysis.updatedAt,
+          autoAnalysisEnabled: true,
+          hasOpenAiConnection: true,
+          jobState: null,
+          jobFailedReason: null,
+          jobEnqueuedAt: null,
+          hint: "analysis_ready",
+        };
+      }
+
+      const project = await ctx.prisma.project.findUnique({
+        where: {
+          id: input.projectId,
+        },
+        select: {
+          metadata: true,
+        },
+      });
+      const autoAnalysisEnabled = Boolean(
+        project?.metadata &&
+          typeof project.metadata === "object" &&
+          !Array.isArray(project.metadata) &&
+          (
+            (project.metadata as Record<string, unknown>).autoErrorAnalysis as
+              | Record<string, unknown>
+              | undefined
+          )?.enabled === true,
+      );
+
+      const openAiConnection = await ctx.prisma.llmApiKeys.findFirst({
+        where: {
+          projectId: input.projectId,
+          adapter: LLMAdapter.OpenAI,
+        },
+        select: {
+          id: true,
+        },
+      });
+      const hasOpenAiConnection = Boolean(openAiConnection);
+
+      const queue = getQueue(QueueName.AutoErrorAnalysisQueue);
+      const jobId = `auto-error-analysis:${input.projectId}:${input.observationId}`;
+      const job = queue ? await queue.getJob(jobId) : null;
+
+      const jobState = job ? await job.getState() : null;
+      const jobFailedReason =
+        typeof job?.failedReason === "string" ? job.failedReason : null;
+      const jobEnqueuedAt =
+        typeof job?.timestamp === "number" && Number.isFinite(job.timestamp)
+          ? new Date(job.timestamp)
+          : null;
+
+      let hint: z.infer<typeof AutoGenerationStatusHintSchema> = "unknown";
+      if (!autoAnalysisEnabled) {
+        hint = "disabled";
+      } else if (!hasOpenAiConnection) {
+        hint = "missing_llm_connection";
+      } else if (jobState === "failed") {
+        hint = "job_failed";
+      } else if (jobState === "completed") {
+        hint = "job_completed_no_result";
+      } else if (
+        jobState &&
+        [
+          "waiting",
+          "active",
+          "delayed",
+          "prioritized",
+          "waiting-children",
+          "paused",
+        ].includes(jobState)
+      ) {
+        hint = "job_pending";
+      } else if (!jobState) {
+        hint = "job_not_found";
+      }
+
+      return {
+        analysisExists: false,
+        analysisUpdatedAt: null,
+        autoAnalysisEnabled,
+        hasOpenAiConnection,
+        jobState,
+        jobFailedReason,
+        jobEnqueuedAt,
+        hint,
+      };
+    }),
+
+  retryAutoGeneration: protectedGetTraceProcedure
+    .input(ErrorAnalysisRetryAutoGenerationInputSchema)
+    .output(ErrorAnalysisRetryAutoGenerationOutputSchema)
+    .mutation(async ({ input, ctx }) => {
+      // RBAC: require project membership + LLM key read scope
+      const user = ctx.session?.user;
+      if (!user) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Please sign in to run LLM analysis.",
+        });
+      }
+
+      if (!user.admin) {
+        const projectRole = user.organizations
+          .flatMap((org) => org.projects)
+          .find((p) => p.id === input.projectId)?.role;
+
+        if (
+          !projectRole ||
+          !projectRoleAccessRights[projectRole].includes("llmApiKeys:read")
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "User does not have access to run LLM analysis.",
+          });
+        }
+      }
+
+      const queue = getQueue(QueueName.AutoErrorAnalysisQueue);
+      if (!queue) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Auto error analysis queue is not available (Redis not configured).",
+        });
+      }
+
+      const jobId = `auto-error-analysis:${input.projectId}:${input.observationId}`;
+      const existing = await queue.getJob(jobId);
+      if (existing) {
+        const state = await existing.getState();
+        // If a job is already running/queued, don't create duplicates.
+        if (
+          [
+            "waiting",
+            "active",
+            "delayed",
+            "prioritized",
+            "waiting-children",
+            "paused",
+          ].includes(state)
+        ) {
+          return { jobId, delayed: state === "delayed", delayMs: 0 };
+        }
+
+        // Completed/failed jobs keep their jobId for a while; remove so we can re-add with same ID.
+        try {
+          await existing.remove();
+        } catch (e) {
+          logger.warn("Failed to remove existing auto error analysis job", {
+            jobId,
+            state,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+
+      const delayMs = 5_000;
+      await queue.add(
+        QueueJobs.AutoErrorAnalysisJob,
+        {
+          id: randomUUID(),
+          timestamp: new Date(),
+          name: QueueJobs.AutoErrorAnalysisJob,
+          payload: {
+            projectId: input.projectId,
+            traceId: input.traceId,
+            observationId: input.observationId,
+          },
+        },
+        {
+          jobId,
+          delay: delayMs,
+        },
+      );
+
+      return {
+        jobId,
+        delayed: delayMs > 0,
+        delayMs,
       };
     }),
 

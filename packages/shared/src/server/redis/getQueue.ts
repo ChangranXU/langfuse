@@ -30,6 +30,8 @@ import { EntityChangeQueue } from "./entityChangeQueue";
 import { DatasetDeleteQueue } from "./datasetDelete";
 import { EventPropagationQueue } from "./eventPropagationQueue";
 import { NotificationQueue } from "./notificationQueue";
+import { AutoErrorAnalysisQueue } from "./autoErrorAnalysisQueue";
+import { AutoExperienceSummaryQueue } from "./autoExperienceSummaryQueue";
 
 // IngestionQueue, OtelIngestionQueue, and TraceUpsert are sharded and require a sharding key
 // Use IngestionQueue.getInstance({ shardName: queueName }) or TraceUpsertQueue.getInstance({ shardName: queueName }) directly instead
@@ -78,6 +80,10 @@ export function getQueue(
       return BlobStorageIntegrationProcessingQueue.getInstance();
     case QueueName.IngestionSecondaryQueue:
       return SecondaryIngestionQueue.getInstance();
+    case QueueName.AutoErrorAnalysisQueue:
+      return AutoErrorAnalysisQueue.getInstance();
+    case QueueName.AutoExperienceSummaryQueue:
+      return AutoExperienceSummaryQueue.getInstance();
     case QueueName.CoreDataS3ExportQueue:
       return CoreDataS3ExportQueue.getInstance();
     case QueueName.MeteringDataPostgresExportQueue:

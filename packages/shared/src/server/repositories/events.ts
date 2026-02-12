@@ -2058,8 +2058,16 @@ export async function getAgentGraphDataFromEventsTable(params: {
       e.name as name,
       e.start_time as start_time,
       e.end_time as end_time,
-      mapFromArrays(e.metadata_names, e.metadata_prefixes)['langgraph_node'] AS node,
-      mapFromArrays(e.metadata_names, e.metadata_prefixes)['langgraph_step'] AS step
+      if(
+        notEmpty(mapFromArrays(e.metadata_names, e.metadata_prefixes)['agent_graph_node']),
+        mapFromArrays(e.metadata_names, e.metadata_prefixes)['agent_graph_node'],
+        mapFromArrays(e.metadata_names, e.metadata_prefixes)['langgraph_node']
+      ) AS node,
+      if(
+        notEmpty(mapFromArrays(e.metadata_names, e.metadata_prefixes)['agent_graph_step']),
+        mapFromArrays(e.metadata_names, e.metadata_prefixes)['agent_graph_step'],
+        mapFromArrays(e.metadata_names, e.metadata_prefixes)['langgraph_step']
+      ) AS step
     FROM events e
     WHERE
       e.project_id = {projectId: String}

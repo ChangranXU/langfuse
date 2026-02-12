@@ -1526,8 +1526,16 @@ export async function getAgentGraphData(params: {
             name,
             start_time,
             end_time,
-            metadata['langgraph_node'] AS node,
-            metadata['langgraph_step'] AS step
+            if(
+              notEmpty(metadata['agent_graph_node']),
+              metadata['agent_graph_node'],
+              metadata['langgraph_node']
+            ) AS node,
+            if(
+              notEmpty(metadata['agent_graph_step']),
+              metadata['agent_graph_step'],
+              metadata['langgraph_step']
+            ) AS step
           FROM
             observations
           WHERE

@@ -19,6 +19,7 @@ import {
   type ExperienceSummaryModel,
 } from "@/src/features/experience-summary/types";
 import { ExperienceSummaryView } from "@/src/features/experience-summary/components/ExperienceSummaryView";
+import { buildExperienceCopyAllText } from "@/src/features/experience-summary/utils";
 
 function downloadJson(params: { data: unknown; filename: string }) {
   const blob = new Blob([JSON.stringify(params.data, null, 2)], {
@@ -49,12 +50,37 @@ export default function ExperienceSummaryPage() {
     { enabled: Boolean(projectId), refetchOnWindowFocus: false },
   );
 
+  const incrementalStatusQuery =
+    api.experienceSummary.getIncrementalUpdateStatus.useQuery(
+      { projectId: projectId ?? "" },
+      {
+        enabled: Boolean(projectId),
+        refetchOnWindowFocus: true,
+      },
+    );
+
   const generate = api.experienceSummary.generate.useMutation({
     onSuccess: async () => {
       toast.success("Experience summary updated");
-      await utils.experienceSummary.get.invalidate({
-        projectId: projectId ?? "",
-      });
+      await Promise.allSettled([
+        utils.experienceSummary.get.invalidate({
+          projectId: projectId ?? "",
+        }),
+        utils.experienceSummary.getIncrementalUpdateStatus.invalidate({
+          projectId: projectId ?? "",
+        }),
+        // Refresh any open error-analysis dropdown status widgets.
+        utils.errorAnalysis.getSummaryUpdateStatus.invalidate(),
+      ]);
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+  const createPrompt = api.prompts.create.useMutation({
+    onSuccess: () => {
+      toast.success("Saved prompt");
+      void utils.prompts.invalidate();
     },
     onError: (err) => {
       toast.error(err.message);
@@ -65,6 +91,8 @@ export default function ExperienceSummaryPage() {
   const summary = row?.summary ?? null;
 
   const canAct = Boolean(projectId) && !generate.isPending;
+  const isIncrementalUpToDate =
+    incrementalStatusQuery.data?.pendingAnalysesCount === 0;
 
   return (
     <Page
@@ -118,7 +146,7 @@ export default function ExperienceSummaryPage() {
               variant="outline"
               size="sm"
               loading={generate.isPending}
-              disabled={!canAct}
+              disabled={!canAct || isIncrementalUpToDate}
               onClick={() => {
                 if (!projectId) return;
                 generate.mutate({
@@ -140,11 +168,32 @@ export default function ExperienceSummaryPage() {
               disabled={!summary}
               onClick={async () => {
                 if (!summary) return;
-                await copyTextToClipboard(summary.promptPack.lines.join("\n"));
-                toast.success("Copied prompt pack");
+                await copyTextToClipboard(buildExperienceCopyAllText(summary));
+                toast.success("Copied all prompt lines");
               }}
             >
-              Copy prompt pack
+              Copy all
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!summary || createPrompt.isPending}
+              loading={createPrompt.isPending}
+              onClick={() => {
+                if (!summary || !projectId) return;
+                createPrompt.mutate({
+                  projectId,
+                  name: summary.promptPack.title,
+                  type: "text",
+                  prompt: buildExperienceCopyAllText(summary),
+                  config: {},
+                  labels: [],
+                  tags: ["experience-summary"],
+                  commitMessage: "Save auto-generated experience prompt lines",
+                });
+              }}
+            >
+              Save prompt
             </Button>
             <Button
               variant="outline"
