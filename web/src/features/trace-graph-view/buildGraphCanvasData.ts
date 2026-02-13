@@ -7,6 +7,7 @@ import {
   LANGFUSE_START_NODE_NAME,
   LANGFUSE_END_NODE_NAME,
 } from "./types";
+import { normalizeToolResultNodeName } from "./nodeNameUtils";
 
 export interface GraphParseResult {
   graph: GraphCanvasData;
@@ -22,10 +23,13 @@ export function transformLanggraphToGeneralized(
   );
 
   const transformedData = filteredData.map((obs) => {
+    const normalizedNodeName =
+      normalizeToolResultNodeName(obs.node || obs.name) || obs.name;
     let transformedObs = {
       ...obs,
       // fallback to node name if node empty (shouldn't happen!)
-      name: obs.node || obs.name,
+      name: normalizedNodeName,
+      node: obs.node ? normalizeToolResultNodeName(obs.node) || obs.node : null,
     };
 
     // Transform system nodes to Langfuse system nodes

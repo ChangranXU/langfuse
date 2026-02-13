@@ -4,6 +4,7 @@ import {
   LANGFUSE_START_NODE_NAME,
   LANGFUSE_END_NODE_NAME,
 } from "./types";
+import { normalizeToolResultNodeName } from "./nodeNameUtils";
 
 function buildStepGroups(
   observations: AgentGraphDataResponse[],
@@ -108,7 +109,7 @@ function assignGlobalTimingSteps(
   stepGroups.forEach((group, stepIndex) => {
     group.forEach((obs) => {
       obs.step = stepIndex + 1;
-      obs.node = obs.name;
+      obs.node = normalizeToolResultNodeName(obs.name) || obs.name;
       result.push(obs);
     });
   });
