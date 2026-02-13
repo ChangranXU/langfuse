@@ -25,6 +25,10 @@ import {
   type TraceDomain,
 } from "@langfuse/shared";
 import { type WithStringifiedMetadata } from "@/src/utils/clientSideDomainTypes";
+import {
+  isParserContainerNodeName,
+  normalizeParserNodeNameForGraph,
+} from "@/src/features/trace-graph-view/nodeNameUtils";
 
 type TraceType = Omit<
   WithStringifiedMetadata<TraceDomain>,
@@ -82,24 +86,140 @@ function filterAndPrepareObservations(
   if (list.length === 0)
     return { sortedObservations: [], hiddenObservationsCount: 0 };
 
+  const getUiNodeName = (observationName: string | null | undefined) =>
+    normalizeParserNodeNameForGraph(observationName) ?? observationName ?? "";
+
+  // Always hide internal parser "container" observations from Trace UI.
+  // (Tree/timeline/search/log are all derived from TreeNode.name here.)
+  const listWithoutParserContainers = list.filter(
+    (o) => !isParserContainerNodeName(o.name),
+  );
+
   // Filter for observations with minimum level
-  const mutableList = list.filter((o) =>
+  const mutableList = listWithoutParserContainers.filter((o) =>
     getObservationLevels(minLevel).includes(o.level),
   );
-  const hiddenObservationsCount = list.length - mutableList.length;
+  const hiddenObservationsCount =
+    listWithoutParserContainers.length - mutableList.length;
 
-  // Build a Set of all observation IDs for O(1) lookup
-  const observationIds = new Set(list.map((o) => o.id));
+  // Re-parent observations whose parent is hidden/filtered out (container node or level filter).
+  // This keeps descendants visible and prevents "dangling parent" roots from disappearing.
+  const parentById = new Map<string, string | null>();
+  for (const o of list) {
+    parentById.set(o.id, o.parentObservationId ?? null);
+  }
 
-  // Remove parentObservationId if parent doesn't exist
+  const keptIds = new Set(mutableList.map((o) => o.id));
+
+  // Remove/skip parentObservationId if parent doesn't exist in kept set
   mutableList.forEach((observation) => {
-    if (
-      observation.parentObservationId &&
-      !observationIds.has(observation.parentObservationId)
-    ) {
-      observation.parentObservationId = null;
+    let parentId = observation.parentObservationId ?? null;
+    if (!parentId) {
+      return;
     }
+
+    const visited = new Set<string>();
+    while (parentId && !keptIds.has(parentId)) {
+      if (visited.has(parentId)) {
+        parentId = null;
+        break;
+      }
+      visited.add(parentId);
+      parentId = parentById.get(parentId) ?? null;
+    }
+
+    observation.parentObservationId = parentId;
   });
+
+  // UI-only re-parenting rules for parser-derived nodes.
+  // - parser.<tool>.<n> (tool_result) should live under <tool>.<n>
+  // - parser.turn_XXX.structured_output should live under the corresponding "topic - kernel.xxx"
+  const chronological = [...mutableList].sort(
+    (a, b) => a.startTime.getTime() - b.startTime.getTime(),
+  );
+  const SESSION_TURN_NODE_RE = /^session\.turn\.(?<turn>\d+)$/;
+  const sessionTurns = chronological
+    .map((obs) => {
+      const match = SESSION_TURN_NODE_RE.exec(obs.name ?? "");
+      if (!match?.groups?.turn) {
+        return null;
+      }
+      const start = obs.startTime.getTime();
+      const end = obs.endTime ? obs.endTime.getTime() : null;
+      return { id: obs.id, start, end, turn: Number(match.groups.turn) };
+    })
+    .filter((t) => t !== null)
+    .sort((a, b) => a.start - b.start);
+  const sessionTurnEndBounds = sessionTurns.map((turn, idx) => {
+    // Prefer explicit endTime; otherwise bound by next turn start; otherwise Infinity.
+    if (turn.end != null) {
+      return turn.end;
+    }
+    const next = sessionTurns[idx + 1];
+    return next ? next.start : Number.POSITIVE_INFINITY;
+  });
+
+  const latestObservationIdByName = new Map<string, string>();
+  let latestKernelObservationId: string | null = null;
+  const TOOL_RESULT_UI_NODE_RE = /^parser\.(?<toolName>[^.]+)\.(?<index>\d+)$/;
+  const STRUCTURED_OUTPUT_UI_NODE_RE = /^parser\.turn_\d+\.structured_output$/;
+
+  let activeTurnIndex = 0;
+  for (const obs of chronological) {
+    const uiName = getUiNodeName(obs.name);
+
+    // Assign observations to the active session turn (UI-only grouping).
+    // Ensures: all intermediate nodes between `session.turn.xxx` and `topic - kernel.xxx`
+    // are rendered under the corresponding `session.turn.xxx` node.
+    while (
+      activeTurnIndex < sessionTurns.length &&
+      obs.startTime.getTime() >= sessionTurnEndBounds[activeTurnIndex]!
+    ) {
+      activeTurnIndex++;
+    }
+    const activeTurn = sessionTurns[activeTurnIndex];
+    const activeTurnEndBound = sessionTurnEndBounds[activeTurnIndex];
+    if (
+      activeTurn &&
+      obs.id !== activeTurn.id &&
+      obs.startTime.getTime() >= activeTurn.start &&
+      obs.startTime.getTime() <
+        (activeTurnEndBound ?? Number.POSITIVE_INFINITY) &&
+      obs.parentObservationId == null
+    ) {
+      obs.parentObservationId = activeTurn.id;
+    }
+
+    // (1) Attach parser tool_result nodes under the actual tool node.
+    const toolResultMatch = TOOL_RESULT_UI_NODE_RE.exec(uiName);
+    if (toolResultMatch?.groups?.toolName && toolResultMatch.groups.index) {
+      const targetParentName = `${toolResultMatch.groups.toolName}.${toolResultMatch.groups.index}`;
+      const toolNodeId = latestObservationIdByName.get(targetParentName);
+      if (toolNodeId && toolNodeId !== obs.id) {
+        obs.parentObservationId = toolNodeId;
+      }
+    }
+
+    // (2) Attach structured_output nodes under the most recent kernel topic node.
+    if (
+      STRUCTURED_OUTPUT_UI_NODE_RE.test(uiName) &&
+      latestKernelObservationId &&
+      latestKernelObservationId !== obs.id
+    ) {
+      obs.parentObservationId = latestKernelObservationId;
+    }
+
+    if (typeof obs.name === "string") {
+      latestObservationIdByName.set(obs.name, obs.id);
+    }
+
+    // Matches names like:
+    // - "今日宁波 - kernel.cognitive_core__respond"
+    // - "topic - kernel.some_handler"
+    if (typeof obs.name === "string" && obs.name.includes(" - kernel.")) {
+      latestKernelObservationId = obs.id;
+    }
+  }
 
   // Sort by start time
   const sortedObservations = mutableList.sort(
@@ -280,7 +400,7 @@ function buildTreeNodesBottomUp(
     const treeNode: TreeNode = {
       id: obs.id,
       type: obs.type,
-      name: obs.name ?? "",
+      name: normalizeParserNodeNameForGraph(obs.name) ?? obs.name ?? "",
       startTime: obs.startTime,
       endTime: obs.endTime,
       level: obs.level,

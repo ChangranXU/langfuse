@@ -1,10 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { type ScoreDomain, type Prisma } from "@langfuse/shared";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import useLocalStorage from "@/src/components/useLocalStorage";
 import usePreserveRelativeScroll from "@/src/hooks/usePreserveRelativeScroll";
 import { type MediaReturnType } from "@/src/features/media/validation";
 import { type ExpansionState } from "@/src/components/ui/AdvancedJsonViewer/types";
+import {
+  formatParserNodeName,
+  isParserNodeName,
+} from "@/src/features/trace-graph-view/nodeNameUtils";
 
 import { ViewModeToggle, type ViewMode } from "./components/ViewModeToggle";
 import { IOPreviewJSON, type IOPreviewJSONProps } from "./IOPreviewJSON";
@@ -18,6 +22,21 @@ export type { ViewMode };
 
 const EMPTY_IO_ALERT_ID = "empty-io";
 const STORAGE_KEY = "dismissed-trace-view-notifications";
+
+function getValueShapeLabel(value: unknown): string {
+  if (value === undefined) return "none";
+  if (value === null) return "null";
+  if (Array.isArray(value)) {
+    return `array (${value.length} items)`;
+  }
+  if (typeof value === "string") {
+    return `string (${value.length} chars)`;
+  }
+  if (typeof value === "object") {
+    return `object (${Object.keys(value as Record<string, unknown>).length} keys)`;
+  }
+  return typeof value;
+}
 
 export interface ExpansionStateProps {
   // Per-field expansion state (for formatted and json views)
@@ -149,6 +168,35 @@ export function IOPreview({
   );
   const selectedView = currentView ?? localCurrentView;
   const showViewToggle = currentView === undefined;
+  const isParserObservation = isParserNodeName(observationName);
+  const parserSummaryTitle = formatParserNodeName(observationName, {
+    multiline: false,
+  });
+
+  const parserSummary = useMemo(() => {
+    if (!isParserObservation) {
+      return null;
+    }
+
+    const resolvedInput = parsedInput !== undefined ? parsedInput : input;
+    const resolvedOutput = parsedOutput !== undefined ? parsedOutput : output;
+    const resolvedMetadata =
+      parsedMetadata !== undefined ? parsedMetadata : metadata;
+
+    return [
+      `Input: ${getValueShapeLabel(resolvedInput)}`,
+      `Output: ${getValueShapeLabel(resolvedOutput)}`,
+      `Metadata: ${getValueShapeLabel(resolvedMetadata)}`,
+    ].join(" | ");
+  }, [
+    isParserObservation,
+    input,
+    output,
+    metadata,
+    parsedInput,
+    parsedOutput,
+    parsedMetadata,
+  ]);
 
   const [compensateScrollRef, startPreserveScroll] =
     usePreserveRelativeScroll<HTMLDivElement>([selectedView]);
@@ -214,6 +262,14 @@ export function IOPreview({
           onViewChange={handleViewChange}
           compensateScrollRef={compensateScrollRef}
         />
+      )}
+      {isParserObservation && parserSummary && (
+        <div className="mx-2 mb-2 rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {parserSummaryTitle ?? "Parser step"}
+          </span>
+          <span className="ml-2">{parserSummary}</span>
+        </div>
       )}
 
       {/*

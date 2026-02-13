@@ -7,7 +7,12 @@ import {
   LANGFUSE_START_NODE_NAME,
   LANGFUSE_END_NODE_NAME,
 } from "./types";
-import { normalizeToolResultNodeName } from "./nodeNameUtils";
+import {
+  formatParserNodeName,
+  normalizeParserNodeNameForGraph,
+  normalizeToolResultNodeName,
+  parseParserNodeName,
+} from "./nodeNameUtils";
 
 export interface GraphParseResult {
   graph: GraphCanvasData;
@@ -143,13 +148,72 @@ export function buildGraphFromStepData(
     }
   });
 
+  const parserNodesToPrune = getRedundantParserNodes(stepToNodesMap);
+  if (parserNodesToPrune.size > 0) {
+    for (const [step, nodesAtStep] of stepToNodesMap.entries()) {
+      const remainingNodes = new Set(
+        Array.from(nodesAtStep).filter((node) => !parserNodesToPrune.has(node)),
+      );
+
+      if (remainingNodes.size === 0) {
+        stepToNodesMap.delete(step);
+      } else {
+        stepToNodesMap.set(step, remainingNodes);
+      }
+    }
+
+    parserNodesToPrune.forEach((nodeName) => {
+      nodeToObservationsMap.delete(nodeName);
+    });
+  }
+
+  // Normalize internal parser node names for graph display (ids/edges/map keys),
+  // while keeping the original/raw names available for labels + tooltips.
+  const normalizedToRawNodeName = new Map<string, string>();
+  const normalizedStepToNodesMap = new Map<number, Set<string>>();
+  for (const [step, nodesAtStep] of stepToNodesMap.entries()) {
+    const normalizedSet = new Set<string>();
+    for (const rawNodeName of nodesAtStep) {
+      const normalizedNodeName =
+        normalizeParserNodeNameForGraph(rawNodeName) ?? rawNodeName;
+      normalizedSet.add(normalizedNodeName);
+      if (!normalizedToRawNodeName.has(normalizedNodeName)) {
+        normalizedToRawNodeName.set(normalizedNodeName, rawNodeName);
+      }
+    }
+    normalizedStepToNodesMap.set(step, normalizedSet);
+  }
+
+  const normalizedNodeToObservationsMap = new Map<string, string[]>();
+  for (const [rawNodeName, observationIds] of nodeToObservationsMap.entries()) {
+    const normalizedNodeName =
+      normalizeParserNodeNameForGraph(rawNodeName) ?? rawNodeName;
+    const existing = normalizedNodeToObservationsMap.get(normalizedNodeName);
+    if (existing) {
+      existing.push(...observationIds);
+    } else {
+      normalizedNodeToObservationsMap.set(normalizedNodeName, [
+        ...observationIds,
+      ]);
+    }
+    if (!normalizedToRawNodeName.has(normalizedNodeName)) {
+      normalizedToRawNodeName.set(normalizedNodeName, rawNodeName);
+    }
+  }
+
   // Build nodes from step mapping
-  const allStepNodes = Array.from(stepToNodesMap.values()).flatMap((set) =>
-    Array.from(set),
+  const allStepNodes = Array.from(normalizedStepToNodesMap.values()).flatMap(
+    (set) => Array.from(set),
   );
   const nodeNames = [...new Set([...allStepNodes, LANGFUSE_END_NODE_NAME])];
 
   const nodes: GraphNodeData[] = nodeNames.map((nodeName) => {
+    const rawNodeName = normalizedToRawNodeName.get(nodeName) ?? nodeName;
+    const isParserNode =
+      rawNodeName.startsWith("session.parser.") ||
+      rawNodeName.startsWith("parser.") ||
+      nodeName.startsWith("parser.");
+    const parserLabel = formatParserNodeName(rawNodeName, { multiline: true });
     if (
       nodeName === LANGFUSE_END_NODE_NAME ||
       nodeName === LANGFUSE_START_NODE_NAME
@@ -160,20 +224,69 @@ export function buildGraphFromStepData(
         type: "LANGGRAPH_SYSTEM",
       };
     }
-    const obs = data.find((o) => o.node === nodeName);
+    const obs = data.find((o) => o.node === rawNodeName || o.node === nodeName);
     return {
       id: nodeName,
-      label: nodeName,
-      type: obs?.observationType || "UNKNOWN",
+      label: parserLabel ?? nodeName,
+      type: isParserNode ? "PARSER" : obs?.observationType || "UNKNOWN",
+      title: parserLabel && rawNodeName !== nodeName ? rawNodeName : undefined,
     };
   });
 
-  const edges = generateEdgesWithParallelBranches(stepToNodesMap);
+  const edges = generateEdgesWithParallelBranches(normalizedStepToNodesMap);
 
   return {
     graph: { nodes, edges },
-    nodeToObservationsMap: Object.fromEntries(nodeToObservationsMap.entries()),
+    nodeToObservationsMap: Object.fromEntries(
+      normalizedNodeToObservationsMap.entries(),
+    ),
   };
+}
+
+function getRedundantParserNodes(stepToNodesMap: Map<number, Set<string>>) {
+  const parserNodesByTurn = new Map<
+    number,
+    { nodeName: string; suffix: string; hasSuffix: boolean }[]
+  >();
+
+  stepToNodesMap.forEach((nodesAtStep) => {
+    nodesAtStep.forEach((nodeName) => {
+      const parsed = parseParserNodeName(nodeName);
+      if (!parsed) {
+        return;
+      }
+
+      const suffix = parsed.suffixSegments.join(".");
+      if (!parserNodesByTurn.has(parsed.turn)) {
+        parserNodesByTurn.set(parsed.turn, []);
+      }
+
+      parserNodesByTurn.get(parsed.turn)!.push({
+        nodeName,
+        suffix,
+        hasSuffix: parsed.suffixSegments.length > 0,
+      });
+    });
+  });
+
+  const nodesToPrune = new Set<string>();
+
+  parserNodesByTurn.forEach((turnNodes) => {
+    turnNodes.forEach(({ nodeName, suffix, hasSuffix }) => {
+      const isContainerNode =
+        !hasSuffix ||
+        suffix === "tool_calls" ||
+        suffix === "tool_results" ||
+        suffix === "tool_call" ||
+        suffix === "tool_result";
+
+      if (isContainerNode) {
+        nodesToPrune.add(nodeName);
+      }
+    });
+  });
+
+  return nodesToPrune;
 }
 
 function generateEdgesWithParallelBranches(

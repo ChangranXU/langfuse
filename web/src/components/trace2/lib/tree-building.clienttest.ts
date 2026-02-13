@@ -144,6 +144,193 @@ describe("buildTraceUiData", () => {
       expect(parent.children[1].id).toBe("child-2");
     });
 
+    it("normalizes parser observation names for UI display", () => {
+      const trace = createMockTrace();
+      const observations: ObservationReturnType[] = [
+        createMockObservation({
+          id: "parser-structured",
+          name: "session.parser.turn_002.structured_output",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        createMockObservation({
+          id: "parser-tool-result",
+          name: "session.parser.turn_002.tool_result.web_search.4",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.100Z"),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      const structuredNode = result.nodeMap.get("parser-structured");
+      const toolResultNode = result.nodeMap.get("parser-tool-result");
+
+      expect(structuredNode?.name).toBe("parser.turn_002.structured_output");
+      expect(toolResultNode?.name).toBe("parser.web_search.4");
+    });
+
+    it("re-parents parser tool_result nodes under tool_name.{n}", () => {
+      const trace = createMockTrace();
+      const observations: ObservationReturnType[] = [
+        createMockObservation({
+          id: "tool",
+          type: "TOOL",
+          name: "web_fetch.3",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        createMockObservation({
+          id: "parser-tool-result",
+          type: "SPAN",
+          name: "session.parser.turn_002.tool_result.web_fetch.3",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.010Z"),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      const toolNode = result.nodeMap.get("tool");
+      const parserToolResultNode = result.nodeMap.get("parser-tool-result");
+
+      expect(parserToolResultNode?.name).toBe("parser.web_fetch.3");
+      expect(parserToolResultNode?.parentObservationId).toBe("tool");
+      expect(toolNode?.children.map((c) => c.id)).toContain(
+        "parser-tool-result",
+      );
+    });
+
+    it("re-parents parser structured_output nodes under topic - kernel.xxx", () => {
+      const trace = createMockTrace();
+      const observations: ObservationReturnType[] = [
+        createMockObservation({
+          id: "kernel",
+          type: "AGENT",
+          name: "今日宁波 - kernel.cognitive_core__respond",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        createMockObservation({
+          id: "parser-structured",
+          type: "SPAN",
+          name: "session.parser.turn_002.structured_output",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.010Z"),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      const structuredNode = result.nodeMap.get("parser-structured");
+      const kernelNode = result.nodeMap.get("kernel");
+
+      expect(structuredNode?.name).toBe("parser.turn_002.structured_output");
+      expect(structuredNode?.parentObservationId).toBe("kernel");
+      expect(kernelNode?.children.map((c) => c.id)).toContain(
+        "parser-structured",
+      );
+    });
+
+    it("groups intermediate nodes under session.turn.xxx", () => {
+      const trace = createMockTrace();
+      const observations: ObservationReturnType[] = [
+        createMockObservation({
+          id: "turn",
+          type: "CHAIN",
+          name: "session.turn.002",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+          endTime: new Date("2024-01-01T00:00:10.000Z"),
+        }),
+        createMockObservation({
+          id: "tool",
+          type: "TOOL",
+          name: "web_fetch.3",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:01.000Z"),
+        }),
+        createMockObservation({
+          id: "parser-tool-result",
+          type: "SPAN",
+          name: "session.parser.turn_002.tool_result.web_fetch.3",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:01.100Z"),
+        }),
+        createMockObservation({
+          id: "kernel",
+          type: "AGENT",
+          name: "今日宁波 - kernel.cognitive_core__respond",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:02.000Z"),
+        }),
+        createMockObservation({
+          id: "parser-structured",
+          type: "SPAN",
+          name: "session.parser.turn_002.structured_output",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:02.100Z"),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      const turn = result.nodeMap.get("turn");
+      const tool = result.nodeMap.get("tool");
+      const kernel = result.nodeMap.get("kernel");
+      const parserToolResult = result.nodeMap.get("parser-tool-result");
+      const structured = result.nodeMap.get("parser-structured");
+
+      // Top-level items in the turn should be children of the turn container.
+      expect(tool?.parentObservationId).toBe("turn");
+      expect(kernel?.parentObservationId).toBe("turn");
+
+      // Nested re-parenting still applies.
+      expect(parserToolResult?.parentObservationId).toBe("tool");
+      expect(structured?.parentObservationId).toBe("kernel");
+
+      expect(turn?.children.map((c) => c.id)).toEqual(
+        expect.arrayContaining(["tool", "kernel"]),
+      );
+    });
+
+    it("filters parser container observations and re-parents their children", () => {
+      const trace = createMockTrace();
+      const observations: ObservationReturnType[] = [
+        createMockObservation({
+          id: "parent",
+          name: "Parent",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        createMockObservation({
+          id: "container",
+          name: "session.parser.turn_002.tool_calls",
+          parentObservationId: "parent",
+          startTime: new Date("2024-01-01T00:00:00.010Z"),
+        }),
+        createMockObservation({
+          id: "leaf",
+          name: "session.parser.turn_002.tool_call.web_search.4",
+          parentObservationId: "container",
+          startTime: new Date("2024-01-01T00:00:00.020Z"),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      // Container node should be removed from UI data
+      expect(result.nodeMap.has("container")).toBe(false);
+
+      // Leaf should remain and be re-parented to "parent"
+      const leaf = result.nodeMap.get("leaf");
+      expect(leaf).toBeDefined();
+      expect(leaf?.parentObservationId).toBe("parent");
+
+      const parent = result.nodeMap.get("parent");
+      expect(parent?.children.map((c) => c.id)).toContain("leaf");
+    });
+
     it("populates nodeMap for O(1) lookup", () => {
       const trace = createMockTrace({ id: "trace-1" });
       const observations: ObservationReturnType[] = [

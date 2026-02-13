@@ -4,6 +4,7 @@ export type GraphNodeData = {
   id: string;
   label: string;
   type: string;
+  title?: string;
 };
 
 export type GraphCanvasData = {

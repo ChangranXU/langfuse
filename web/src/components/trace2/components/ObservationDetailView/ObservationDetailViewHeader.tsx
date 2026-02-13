@@ -44,6 +44,7 @@ import {
 import { CostBadge, UsageBadge } from "./ObservationMetadataBadgesTooltip";
 import { ModelBadge } from "./ObservationMetadataBadgeModel";
 import { ModelParametersBadges } from "./ObservationMetadataBadgeModelParameters";
+import { formatParserNodeName } from "@/src/features/trace-graph-view/nodeNameUtils";
 import {
   type WithStringifiedMetadata,
   type MetadataDomainClient,
@@ -97,6 +98,11 @@ export const ObservationDetailViewHeader = memo(
     const totalUsage = observation.totalUsage;
     const inputUsage = observation.inputUsage;
     const outputUsage = observation.outputUsage;
+    const rawObservationName = observation.name || observation.id;
+    const readableObservationName =
+      formatParserNodeName(rawObservationName, { multiline: false }) ??
+      rawObservationName;
+    const hasReadableAlias = readableObservationName !== rawObservationName;
 
     const shouldFetchErrorType =
       observation.level === "ERROR" || observation.level === "WARNING";
@@ -120,8 +126,11 @@ export const ObservationDetailViewHeader = memo(
             <div className="mt-1.5">
               <ItemBadge type={observation.type as ObservationType} isSmall />
             </div>
-            <span className="mb-0 ml-1 line-clamp-2 min-w-0 break-all font-medium md:break-normal md:break-words">
-              {observation.name || observation.id}
+            <span
+              className="mb-0 ml-1 line-clamp-2 min-w-0 break-all font-medium md:break-normal md:break-words"
+              title={hasReadableAlias ? rawObservationName : undefined}
+            >
+              {readableObservationName}
             </span>
             <CopyIdsPopover
               idItems={[

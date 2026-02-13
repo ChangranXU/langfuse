@@ -85,6 +85,12 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
           background: "#f3f4f6", // gray-100
           highlight: { border: "#34d399", background: "#e5e7eb" }, // gray-200
         };
+      case "PARSER":
+        return {
+          border: "#a5b4fc", // indigo-300
+          background: "#f3f4f6", // gray-100
+          highlight: { border: "#818cf8", background: "#e5e7eb" }, // indigo-400
+        };
       case "EMBEDDING":
         return {
           border: "#fbbf24", // amber-300 (former background)
@@ -115,10 +121,12 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   const nodes = useMemo(
     () =>
       graphData.nodes.map((node) => {
+        const hasShortLabel = node.label !== node.id;
         const nodeData = {
           id: node.id,
           label: node.label,
           color: getNodeStyle(node.type),
+          title: node.title ?? (hasShortLabel ? node.id : undefined),
         };
 
         // Special positioning and colors for system nodes
