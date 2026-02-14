@@ -12,6 +12,7 @@ import {
 } from "@/src/components/ui/form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Tabs, TabsList, TabsTrigger } from "@/src/components/ui/tabs";
+import { Badge } from "@/src/components/ui/badge";
 import {
   tracesTableColsWithOptions,
   singleFilter,
@@ -71,7 +72,13 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/src/components/ui/tooltip";
-import { InfoIcon } from "lucide-react";
+import {
+  BetweenHorizonalStart,
+  CircleDot,
+  FlaskConical,
+  InfoIcon,
+  ListTree,
+} from "lucide-react";
 import {
   isDatasetTarget,
   isEventTarget,
@@ -89,7 +96,7 @@ import {
 } from "@/src/features/evals/utils/evaluator-constants";
 import { useEvalConfigFilterOptions } from "@/src/features/evals/hooks/useEvalConfigFilterOptions";
 import { VariableMappingCard } from "@/src/features/evals/components/variable-mapping-card";
-import { useObservationEvals } from "@/src/features/events/hooks/useObservationEvals";
+import { useIsObservationEvalsFullyReleased } from "@/src/features/events/hooks/useObservationEvals";
 import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 
 /**
@@ -214,7 +221,7 @@ const ObservationsPreview = memo(
             Preview sample matched observations
           </span>
           <FormDescription>
-            Sample over the last 24 hours that match these filters
+            Sample over the last 24 hours that match filters
           </FormDescription>
         </div>
         <div className="mb-4 flex max-h-[30dvh] w-full flex-col overflow-hidden border-b border-l border-r">
@@ -267,7 +274,7 @@ export const InnerEvaluatorForm = (props: {
   oldConfigId?: string;
 }) => {
   const [formError, setFormError] = useState<string | null>(null);
-  const isBetaEnabled = useObservationEvals();
+  const isFullyReleased = useIsObservationEvalsFullyReleased();
   const capture = usePostHogClientCapture();
   const router = useRouter();
   const [showTraceConfirmDialog, setShowTraceConfirmDialog] = useState(false);
@@ -298,9 +305,7 @@ export const InnerEvaluatorForm = (props: {
     defaultValues: {
       scoreName:
         props.existingEvaluator?.scoreName ?? `${props.evalTemplate.name}`,
-      target:
-        props.existingEvaluator?.targetObject ??
-        (isBetaEnabled ? EvalTargetObject.EVENT : EvalTargetObject.TRACE),
+      target: props.existingEvaluator?.targetObject ?? EvalTargetObject.EVENT,
       filter: props.existingEvaluator?.filter
         ? z.array(singleFilter).parse(props.existingEvaluator.filter)
         : // For new trace evaluators, exclude internal environments by default
@@ -371,8 +376,7 @@ export const InnerEvaluatorForm = (props: {
     typeof availableTraceEvalVariables | typeof availableDatasetEvalVariables
   >(() =>
     targetState.getAvailableVariables(
-      props.existingEvaluator?.targetObject ??
-        (isBetaEnabled ? EvalTargetObject.EVENT : EvalTargetObject.TRACE),
+      props.existingEvaluator?.targetObject ?? EvalTargetObject.EVENT,
     ),
   );
 
@@ -514,10 +518,9 @@ export const InnerEvaluatorForm = (props: {
       actualTarget = EvalTargetObject.EVENT;
     } else {
       // offline-experiment: only use EXPERIMENT if beta is enabled AND OTEL is selected
-      actualTarget =
-        isBetaEnabled && useOtelDataForExperiment
-          ? EvalTargetObject.EXPERIMENT
-          : EvalTargetObject.DATASET;
+      actualTarget = useOtelDataForExperiment
+        ? EvalTargetObject.EXPERIMENT
+        : EvalTargetObject.DATASET;
     }
 
     // Transform variable mapping for new target type
@@ -582,31 +585,48 @@ export const InnerEvaluatorForm = (props: {
                           field.onChange(actualTarget);
                         }}
                       >
-                        <TabsList className="grid w-fit max-w-fit grid-flow-col">
-                          {isBetaEnabled && (
-                            <TabsTrigger
-                              value="event"
-                              disabled={props.disabled || props.mode === "edit"}
-                              className="min-w-[100px]"
+                        <TabsList className="grid w-fit max-w-fit grid-flow-col gap-4">
+                          <TabsTrigger
+                            value="event"
+                            disabled={props.disabled || props.mode === "edit"}
+                            className="min-w-[100px] gap-1.5"
+                          >
+                            <CircleDot className="h-3.5 w-3.5" />
+                            Live Observations
+                            <Badge
+                              variant="secondary"
+                              size="sm"
+                              className="border border-border font-normal"
                             >
-                              Live Observations [New]
-                            </TabsTrigger>
-                          )}
+                              Beta
+                            </Badge>
+                          </TabsTrigger>
                           {allowLegacy && (
                             <TabsTrigger
                               value="trace"
                               disabled={props.disabled || props.mode === "edit"}
-                              className="min-w-[100px]"
+                              className="min-w-[100px] gap-1.5"
                             >
-                              Live Traces {isBetaEnabled ? "[Legacy]" : ""}
+                              <ListTree className="h-3.5 w-3.5" />
+                              Live Traces
+                              {isFullyReleased && (
+                                <Badge
+                                  variant="secondary"
+                                  size="sm"
+                                  className="border border-border font-normal"
+                                >
+                                  Legacy
+                                </Badge>
+                              )}
                             </TabsTrigger>
                           )}
                           <TabsTrigger
                             value="offline-experiment"
                             disabled={props.disabled || props.mode === "edit"}
-                            className="min-w-[100px]"
+                            className="min-w-[100px] gap-1.5"
                           >
-                            Offline Experiments
+                            <FlaskConical className="h-3.5 w-3.5" />
+                            Experiments
                           </TabsTrigger>
                         </TabsList>
                       </Tabs>
@@ -618,12 +638,11 @@ export const InnerEvaluatorForm = (props: {
             )}
 
             {/* Second tab bar for experiment data source selection */}
-            {isBetaEnabled &&
-              !props.hideTargetSelection &&
+            {!props.hideTargetSelection &&
               userFacingTarget === "offline-experiment" &&
               props.evalCapabilities.allowLegacy && (
                 <div className="flex flex-col gap-2">
-                  <FormLabel className="text-sm">SDK Version</FormLabel>
+                  <FormLabel className="text-sm">Experiment Method</FormLabel>
                   <Tabs
                     value={useOtelDataForExperiment ? "otel" : "non-otel"}
                     onValueChange={(value) => {
@@ -636,10 +655,9 @@ export const InnerEvaluatorForm = (props: {
                       setUseOtelDataForExperiment(useOtel);
 
                       // Update the actual form target: only use EXPERIMENT if beta is enabled
-                      const actualTarget =
-                        isBetaEnabled && useOtel
-                          ? EvalTargetObject.EXPERIMENT
-                          : EvalTargetObject.DATASET;
+                      const actualTarget = useOtel
+                        ? EvalTargetObject.EXPERIMENT
+                        : EvalTargetObject.DATASET;
                       form.setValue("target", actualTarget);
 
                       // Transform variable mapping for new target type
@@ -657,34 +675,45 @@ export const InnerEvaluatorForm = (props: {
                       );
                     }}
                   >
-                    <TabsList className="grid w-fit max-w-fit grid-cols-2">
+                    <TabsList className="grid w-fit max-w-fit grid-flow-col gap-4">
                       <TabsTrigger
                         value="otel"
-                        className="min-w-[150px]"
+                        className="min-w-[100px] gap-1.5"
                         disabled={props.mode === "edit" || props.disabled}
                       >
-                        {"JS SDK >= 4.4.0, Python SDK >= 3.9.0 [New]"}
+                        <FlaskConical className="h-3.5 w-3.5" />
+                        Experiment Runner SDK
+                        <Badge
+                          variant="secondary"
+                          size="sm"
+                          className="border border-border font-normal"
+                        >
+                          Beta
+                        </Badge>
                       </TabsTrigger>
                       <TabsTrigger
                         value="non-otel"
-                        className="min-w-[150px]"
+                        className="min-w-[100px] gap-1.5"
                         disabled={props.mode === "edit" || props.disabled}
                       >
-                        {"JS SDK < 4.4.0, Python SDK < 3.9.0 [Legacy]"}
+                        <BetweenHorizonalStart className="h-3.5 w-3.5" />
+                        Low-level SDK methods
+                        {isFullyReleased && (
+                          <Badge
+                            variant="secondary"
+                            size="sm"
+                            className="border border-border font-normal"
+                          >
+                            Legacy
+                          </Badge>
+                        )}
                       </TabsTrigger>
                     </TabsList>
                   </Tabs>
-                  {!props.disabled && (
-                    <FormDescription>
-                      Check with your technical team to see which version of the
-                      Langfuse SDK you are using.
-                    </FormDescription>
-                  )}
                 </div>
               )}
 
-            {isBetaEnabled &&
-              !props.hideTargetSelection &&
+            {!props.hideTargetSelection &&
               props.mode !== "edit" &&
               !props.disabled && (
                 <EvalVersionCallout
@@ -860,7 +889,7 @@ export const InnerEvaluatorForm = (props: {
                             disabled={props.disabled}
                             columnsWithCustomSelect={
                               isEventTarget(target) || isTraceTarget(target)
-                                ? ["tags"]
+                                ? ["tags", "name"]
                                 : undefined
                             }
                           />

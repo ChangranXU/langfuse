@@ -1499,7 +1499,7 @@ export default function ObservationsEventsTable({
                   searchQuery,
                   searchType,
                 }}
-                tableName={BatchExportTableName.Observations}
+                tableName={BatchExportTableName.Events}
                 key="batchExport"
               />,
               selectedObservationIds.length > 0 ? (
