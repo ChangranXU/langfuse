@@ -659,7 +659,10 @@ export const traceRouter = createTRPCRouter({
           }
 
           const data = parsed.data;
-          const hasLangGraphData = data.step != null && data.node != null;
+          const hasLangGraphData =
+            data.step != null &&
+            data.node != null &&
+            data.node.trim().length > 0;
           const hasAgentData = data.type !== "EVENT"; // Include all types except EVENT
 
           if (hasLangGraphData) {
@@ -672,6 +675,8 @@ export const traceRouter = createTRPCRouter({
               startTime: data.start_time,
               endTime: data.end_time || undefined,
               observationType: data.type,
+              level: data.level,
+              statusMessage: data.status_message,
             };
           } else if (hasAgentData) {
             return {
@@ -683,6 +688,8 @@ export const traceRouter = createTRPCRouter({
               startTime: data.start_time,
               endTime: data.end_time || undefined,
               observationType: data.type,
+              level: data.level,
+              statusMessage: data.status_message,
             };
           }
 

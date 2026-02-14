@@ -294,6 +294,40 @@ describe("buildTraceUiData", () => {
       );
     });
 
+    it("groups nodes until next turn start even if turn endTime is early", () => {
+      const trace = createMockTrace();
+      const observations: ObservationReturnType[] = [
+        createMockObservation({
+          id: "turn-1",
+          type: "CHAIN",
+          name: "session.turn.001",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+          endTime: new Date("2024-01-01T00:00:01.000Z"), // early / unreliable
+        }),
+        createMockObservation({
+          id: "late-child",
+          type: "GENERATION",
+          name: "session.output.turn_001",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:05.000Z"),
+        }),
+        createMockObservation({
+          id: "turn-2",
+          type: "CHAIN",
+          name: "session.turn.002",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:10.000Z"),
+          endTime: new Date("2024-01-01T00:00:20.000Z"),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+      expect(result.nodeMap.get("late-child")?.parentObservationId).toBe(
+        "turn-1",
+      );
+    });
+
     it("filters parser container observations and re-parents their children", () => {
       const trace = createMockTrace();
       const observations: ObservationReturnType[] = [

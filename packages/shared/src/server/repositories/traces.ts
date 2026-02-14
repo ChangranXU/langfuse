@@ -1526,6 +1526,8 @@ export async function getAgentGraphData(params: {
             name,
             start_time,
             end_time,
+            level,
+            status_message,
             if(
               notEmpty(metadata['agent_graph_node']),
               metadata['agent_graph_node'],

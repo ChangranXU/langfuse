@@ -5,6 +5,7 @@ export type GraphNodeData = {
   label: string;
   type: string;
   title?: string;
+  level?: string | null;
 };
 
 export type GraphCanvasData = {
@@ -31,6 +32,8 @@ export const AgentGraphDataSchema = z.object({
   name: z.string(),
   start_time: z.string(),
   end_time: z.string().nullish(),
+  level: z.string().nullish(),
+  status_message: z.string().nullish(),
   node: z.string().nullish(),
   step: z.coerce.number().nullish(),
 });
@@ -44,4 +47,6 @@ export type AgentGraphDataResponse = {
   startTime: string;
   endTime?: string;
   observationType: string;
+  level?: string | null;
+  statusMessage?: string | null;
 };

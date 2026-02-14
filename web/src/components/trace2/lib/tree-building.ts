@@ -151,10 +151,8 @@ function filterAndPrepareObservations(
     .filter((t) => t !== null)
     .sort((a, b) => a.start - b.start);
   const sessionTurnEndBounds = sessionTurns.map((turn, idx) => {
-    // Prefer explicit endTime; otherwise bound by next turn start; otherwise Infinity.
-    if (turn.end != null) {
-      return turn.end;
-    }
+    // Turns often have an endTime earlier than their last "logical" children.
+    // For UI grouping, prefer the next turn's start as the boundary.
     const next = sessionTurns[idx + 1];
     return next ? next.start : Number.POSITIVE_INFINITY;
   });

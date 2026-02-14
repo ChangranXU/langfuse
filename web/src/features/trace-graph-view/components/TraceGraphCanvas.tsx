@@ -41,8 +41,26 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
     onCanvasNodeNameChangeRef.current = onCanvasNodeNameChange;
   }, [onCanvasNodeNameChange]);
 
-  const getNodeStyle = (nodeType: string) => {
-    switch (nodeType) {
+  const getNodeStyle = (params: {
+    nodeType: string;
+    level?: string | null;
+  }) => {
+    if (params.level === "ERROR") {
+      return {
+        border: "#b91c1c", // red-700
+        background: "#fee2e2", // red-100
+        highlight: { border: "#991b1b", background: "#fecaca" }, // red-800 / red-200
+      };
+    }
+    if (params.level === "WARNING") {
+      return {
+        border: "#b45309", // amber-700
+        background: "#ffedd5", // orange-100
+        highlight: { border: "#92400e", background: "#fed7aa" }, // amber-800 / orange-200
+      };
+    }
+
+    switch (params.nodeType) {
       case "AGENT":
         return {
           border: "#c4b5fd", // purple-300 (former background)
@@ -125,7 +143,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
         const nodeData = {
           id: node.id,
           label: node.label,
-          color: getNodeStyle(node.type),
+          color: getNodeStyle({ nodeType: node.type, level: node.level }),
           title: node.title ?? (hasShortLabel ? node.id : undefined),
         };
 
