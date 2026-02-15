@@ -14,6 +14,7 @@ import { api } from "@/src/utils/api";
 import { TRACE_VIEW_CONFIG } from "@/src/components/trace2/config/trace-view-config";
 import { type FlatLogItem } from "./log-view-types";
 import { formatDisplayName } from "./log-view-formatters";
+import { type ObservationIoSource } from "@/src/components/trace2/lib/observationIoSource";
 
 // Max concurrent requests when loading all observation data
 const FETCH_CONCURRENCY = TRACE_VIEW_CONFIG.logView.batchFetch.concurrency;
@@ -22,6 +23,7 @@ export interface UseLogViewAllObservationsIOParams {
   items: FlatLogItem[];
   traceId: string;
   projectId: string;
+  ioSourceByObservationId?: Map<string, ObservationIoSource>;
 }
 
 export interface ObservationIOData {
@@ -67,6 +69,7 @@ export function useLogViewAllObservationsIO({
   items,
   traceId,
   projectId,
+  ioSourceByObservationId,
 }: UseLogViewAllObservationsIOParams) {
   const utils = api.useUtils();
   const queryClient = useQueryClient();
@@ -86,6 +89,7 @@ export function useLogViewAllObservationsIO({
     return items
       .filter((item) => item.node.type !== "TRACE")
       .map((item) => {
+        const ioSource = ioSourceByObservationId?.get(item.node.id);
         const baseData: ObservationIOData = {
           id: item.node.id,
           type: item.node.type,
@@ -97,10 +101,10 @@ export function useLogViewAllObservationsIO({
 
         // Check if we have cached I/O data for this observation
         const queryKey = getObservationQueryKey(
-          item.node.id,
+          ioSource?.observationId ?? item.node.id,
           traceId,
           projectId,
-          item.node.startTime,
+          ioSource?.startTime ?? item.node.startTime,
         );
         const cachedData = queryClient.getQueryData(queryKey) as
           | { input?: unknown; output?: unknown; metadata?: unknown }
@@ -147,10 +151,12 @@ export function useLogViewAllObservationsIO({
 
       for (const item of observationItems) {
         const queryKey = getObservationQueryKey(
-          item.node.id,
+          ioSourceByObservationId?.get(item.node.id)?.observationId ??
+            item.node.id,
           traceId,
           projectId,
-          item.node.startTime,
+          ioSourceByObservationId?.get(item.node.id)?.startTime ??
+            item.node.startTime,
         );
         const cachedData = queryClient.getQueryData(queryKey) as
           | { input?: unknown; output?: unknown; metadata?: unknown }
@@ -196,10 +202,14 @@ export function useLogViewAllObservationsIO({
           itemChunk.map(async (item) => {
             try {
               const result = await utils.observations.byId.fetch({
-                observationId: item.node.id,
+                observationId:
+                  ioSourceByObservationId?.get(item.node.id)?.observationId ??
+                  item.node.id,
                 traceId,
                 projectId,
-                startTime: item.node.startTime,
+                startTime:
+                  ioSourceByObservationId?.get(item.node.id)?.startTime ??
+                  item.node.startTime,
               });
 
               const baseData: ObservationIOData = {
@@ -259,7 +269,7 @@ export function useLogViewAllObservationsIO({
       setIsLoading(false);
       throw new Error("Failed to load observation data");
     }
-  }, [items, traceId, projectId, utils, queryClient]);
+  }, [items, traceId, projectId, utils, queryClient, ioSourceByObservationId]);
 
   return {
     /** Cached/loaded data (null if not yet loaded) */

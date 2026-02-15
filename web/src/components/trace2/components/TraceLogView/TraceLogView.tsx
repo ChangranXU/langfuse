@@ -75,7 +75,7 @@ export const TraceLogView = ({
   projectId,
   currentView = "pretty",
 }: TraceLogViewProps) => {
-  const { roots, observations } = useTraceData();
+  const { roots, observations, observationIoSourceById } = useTraceData();
   const { logViewMode, logViewTreeStyle } = useViewPreferences();
   const { formattedExpansion, setFormattedFieldExpansion } = useJsonExpansion();
 
@@ -186,12 +186,15 @@ export const TraceLogView = ({
   const renderExpanded = useCallback(
     (item: FlatLogItem) => {
       const observationExpansionKey = `log:${item.node.id}`;
+      const ioSource = observationIoSourceById.get(item.node.id);
 
       return (
         <LogViewExpandedContent
           node={item.node}
           traceId={traceId}
           projectId={projectId}
+          ioSourceObservationId={ioSource?.observationId}
+          ioSourceStartTime={ioSource?.startTime}
           currentView={currentView}
           externalExpansionState={formattedExpansion[observationExpansionKey]}
           onExternalExpansionChange={(exp) =>
@@ -209,6 +212,7 @@ export const TraceLogView = ({
       currentView,
       formattedExpansion,
       setFormattedFieldExpansion,
+      observationIoSourceById,
     ],
   );
 
@@ -236,6 +240,7 @@ export const TraceLogView = ({
     items: flatItems,
     traceId,
     projectId,
+    ioSourceByObservationId: observationIoSourceById,
   });
 
   // Track loaded observation count for cache-only mode UX
@@ -243,6 +248,7 @@ export const TraceLogView = ({
     items: flatItems,
     traceId,
     projectId,
+    ioSourceByObservationId: observationIoSourceById,
   });
 
   // Download and copy handlers
@@ -312,6 +318,7 @@ export const TraceLogView = ({
           items={flatItems}
           traceId={traceId}
           projectId={projectId}
+          ioSourceByObservationId={observationIoSourceById}
           isCollapsed={jsonViewCollapsed}
           onToggleCollapse={handleToggleJsonCollapse}
         />

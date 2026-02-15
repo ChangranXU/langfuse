@@ -91,6 +91,8 @@ interface UseParsedObservationParams {
   traceId: string;
   projectId: string;
   startTime?: Date;
+  ioSourceObservationId?: string;
+  ioSourceStartTime?: Date;
   // Base observation to merge IO data into (for events path when beta ON)
   baseObservation?: ObservationReturnType | ObservationReturnTypeWithMetadata;
 }
@@ -192,17 +194,21 @@ export function useParsedObservation({
   traceId,
   projectId,
   startTime,
+  ioSourceObservationId,
+  ioSourceStartTime,
   baseObservation,
 }: UseParsedObservationParams) {
   const { isBetaEnabled } = useV4Beta();
+  const effectiveObservationId = ioSourceObservationId ?? observationId;
+  const effectiveStartTime = ioSourceStartTime ?? startTime;
 
   // Step 1a: Fetch raw observation data from observations table (beta OFF)
   const observationQuery = api.observations.byId.useQuery(
     {
-      observationId,
+      observationId: effectiveObservationId,
       traceId,
       projectId,
-      startTime,
+      startTime: effectiveStartTime,
     },
     {
       enabled: !isBetaEnabled,
@@ -214,9 +220,9 @@ export function useParsedObservation({
   const eventsQuery = api.events.batchIO.useQuery(
     {
       projectId,
-      observations: [{ id: observationId, traceId }],
-      minStartTime: startTime ?? new Date(0),
-      maxStartTime: startTime ?? new Date(),
+      observations: [{ id: effectiveObservationId, traceId }],
+      minStartTime: effectiveStartTime ?? new Date(0),
+      maxStartTime: effectiveStartTime ?? new Date(),
       truncated: false,
     },
     {
@@ -240,7 +246,15 @@ export function useParsedObservation({
       // No base observation provided: return events data as-is (incomplete type)
       return eventsQuery.data;
     }
-    // Beta OFF: return full observation from observations table
+    if (baseObservation && observationQuery.data) {
+      return {
+        ...baseObservation,
+        input: observationQuery.data.input as string,
+        output: observationQuery.data.output as string,
+        metadata: observationQuery.data.metadata,
+      };
+    }
+    // Beta OFF: return full observation from observations table when no base provided
     return observationQuery.data;
   }, [isBetaEnabled, baseObservation, eventsQuery.data, observationQuery.data]);
 

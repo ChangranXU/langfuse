@@ -21,7 +21,7 @@ import { cn } from "@/src/utils/tailwind";
 import { NewDatasetItemFromExistingObject } from "@/src/features/datasets/components/NewDatasetItemFromExistingObject";
 import { CreateNewAnnotationQueueItem } from "@/src/features/annotation-queues/components/CreateNewAnnotationQueueItem";
 import { calculateDisplayTotalCost } from "@/src/components/trace2/lib/helpers";
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type Decimal from "decimal.js";
 import { useIsAuthenticatedAndProjectMember } from "@/src/features/auth/hooks";
 import {
@@ -49,6 +49,7 @@ import { useParsedObservation } from "@/src/hooks/useParsedObservation";
 import { PromptBadge } from "@/src/components/trace2/components/_shared/PromptBadge";
 import { useJsonBetaToggle } from "@/src/components/trace2/hooks/useJsonBetaToggle";
 import { getMostRecentCorrection } from "@/src/features/corrections/utils/getMostRecentCorrection";
+import { buildKernelObservationIoSourceMap } from "@/src/components/trace2/lib/observationIoSource";
 
 export const ObservationPreview = ({
   observations,
@@ -109,6 +110,11 @@ export const ObservationPreview = ({
   const currentObservation = observations.find(
     (o) => o.id === currentObservationId,
   );
+  const observationIoSourceById = useMemo(
+    () => buildKernelObservationIoSourceMap(observations),
+    [observations],
+  );
+  const ioSource = observationIoSourceById.get(currentObservationId);
 
   const currentObservationScores = scores.filter(
     (s) => s.observationId === currentObservationId,
@@ -131,6 +137,8 @@ export const ObservationPreview = ({
     traceId: traceId,
     projectId: projectId,
     startTime: currentObservation?.startTime,
+    ioSourceObservationId: ioSource?.observationId,
+    ioSourceStartTime: ioSource?.startTime,
     baseObservation: currentObservation,
   });
 

@@ -1,6 +1,7 @@
 import { buildGraphFromStepData } from "@/src/features/trace-graph-view/buildGraphCanvasData";
 import {
   formatParserNodeName,
+  normalizeParserNodeNameForGraph,
   parseParserNodeName,
 } from "@/src/features/trace-graph-view/nodeNameUtils";
 import { type AgentGraphDataResponse } from "@/src/features/trace-graph-view/types";
@@ -54,6 +55,13 @@ describe("parser node naming", () => {
     expect(formatParserNodeName("regular.node.name")).toBeNull();
     expect(parseParserNodeName("regular.node.name")).toBeNull();
   });
+
+  it("normalizes pre-tool parser nodes aligned with trace2 tree names", () => {
+    const normalized = normalizeParserNodeNameForGraph(
+      "session.parser.turn_002.pre_web_fetch.3",
+    );
+    expect(normalized).toBe("parser.pre_web_fetch.3");
+  });
 });
 
 describe("buildGraphFromStepData parser pruning", () => {
@@ -102,6 +110,29 @@ describe("buildGraphFromStepData parser pruning", () => {
     const nodeIds = graph.nodes.map((n) => n.id);
 
     expect(nodeIds).not.toContain("parser.turn_002.tool_calls");
+  });
+
+  it("prunes parser structured_output nodes", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "kernel",
+        name: "Topic - kernel.cognitive_core__respond",
+        node: "Topic - kernel.cognitive_core__respond",
+        step: 1,
+        observationType: "AGENT",
+      }),
+      createObservation({
+        id: "structured",
+        name: "session.parser.turn_002.structured_output",
+        node: "session.parser.turn_002.structured_output",
+        step: 2,
+        observationType: "SPAN",
+      }),
+    ];
+
+    const { graph } = buildGraphFromStepData(data);
+    const nodeIds = graph.nodes.map((n) => n.id);
+    expect(nodeIds).not.toContain("parser.turn_002.structured_output");
   });
 
   it("uses normalized node ids/labels aligned with trace2 tree names", () => {
@@ -265,7 +296,114 @@ describe("buildGraphFromStepData parser pruning", () => {
     ];
 
     const { graph } = buildGraphFromStepData(data);
-    expect(graph.edges.some((e) => e.from.startsWith("parser."))).toBe(false);
+    expect(
+      graph.edges.some(
+        (e) =>
+          e.from.startsWith("parser.") && !e.from.startsWith("parser.pre_"),
+      ),
+    ).toBe(false);
+  });
+
+  it("connects parser.pre_tool.{n} -> tool.{n}", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "turn",
+        name: "session.turn.001",
+        node: "session.turn.001",
+        step: 1,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:10.000Z",
+        observationType: "CHAIN",
+      }),
+      createObservation({
+        id: "parser-pre",
+        name: "session.parser.turn_001.pre_web_fetch.3",
+        node: "session.parser.turn_001.pre_web_fetch.3",
+        step: 2,
+        startTime: "2026-01-01T00:00:01.000Z",
+        endTime: "2026-01-01T00:00:01.001Z",
+        observationType: "SPAN",
+      }),
+      createObservation({
+        id: "tool",
+        name: "web_fetch.3",
+        node: "web_fetch.3",
+        step: 3,
+        startTime: "2026-01-01T00:00:01.010Z",
+        endTime: "2026-01-01T00:00:01.011Z",
+        observationType: "TOOL",
+      }),
+    ];
+
+    const { graph } = buildGraphFromStepData(data);
+    expect(
+      graph.edges.some(
+        (e) => e.from === "parser.pre_web_fetch.3" && e.to === "web_fetch.3",
+      ),
+    ).toBe(true);
+    expect(
+      graph.edges.some(
+        (e) =>
+          e.from === "session.turn.001" && e.to === "parser.pre_web_fetch.3",
+      ),
+    ).toBe(true);
+  });
+
+  it("uses parser.pre_tool.{n} in main chain (not tool.{n})", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "turn",
+        name: "session.turn.001",
+        node: "session.turn.001",
+        step: 1,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:10.000Z",
+        observationType: "CHAIN",
+      }),
+      createObservation({
+        id: "parser-pre",
+        name: "session.parser.turn_001.pre_web_fetch.3",
+        node: "session.parser.turn_001.pre_web_fetch.3",
+        step: 2,
+        startTime: "2026-01-01T00:00:01.000Z",
+        endTime: "2026-01-01T00:00:01.001Z",
+        observationType: "SPAN",
+      }),
+      createObservation({
+        id: "tool",
+        name: "web_fetch.3",
+        node: "web_fetch.3",
+        step: 3,
+        startTime: "2026-01-01T00:00:01.010Z",
+        endTime: "2026-01-01T00:00:01.011Z",
+        observationType: "TOOL",
+      }),
+      createObservation({
+        id: "kernel",
+        name: "Topic - kernel.cognitive_core__respond",
+        node: "Topic - kernel.cognitive_core__respond",
+        step: 4,
+        startTime: "2026-01-01T00:00:01.020Z",
+        endTime: "2026-01-01T00:00:01.021Z",
+        observationType: "AGENT",
+      }),
+    ];
+
+    const { graph } = buildGraphFromStepData(data);
+    expect(
+      graph.edges.some(
+        (e) =>
+          e.from === "parser.pre_web_fetch.3" &&
+          e.to === "Topic - kernel.cognitive_core__respond",
+      ),
+    ).toBe(true);
+    expect(
+      graph.edges.some(
+        (e) =>
+          e.from === "web_fetch.3" &&
+          e.to === "Topic - kernel.cognitive_core__respond",
+      ),
+    ).toBe(false);
   });
 
   it("turn grouping uses next turn start (not turn endTime)", () => {

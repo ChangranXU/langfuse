@@ -10,12 +10,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/src/utils/api";
 import { type FlatLogItem } from "./log-view-types";
 import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
+import { type ObservationIoSource } from "@/src/components/trace2/lib/observationIoSource";
 
 export interface UseLogViewObservationIOParams {
   observationId: string;
   traceId: string;
   projectId: string;
   startTime: Date;
+  ioSourceObservationId?: string;
+  ioSourceStartTime?: Date;
   /** Only fetch when true (row is expanded) */
   enabled: boolean;
 }
@@ -31,17 +34,21 @@ export function useLogViewObservationIO({
   traceId,
   projectId,
   startTime,
+  ioSourceObservationId,
+  ioSourceStartTime,
   enabled,
 }: UseLogViewObservationIOParams) {
   const { isBetaEnabled } = useV4Beta();
+  const effectiveObservationId = ioSourceObservationId ?? observationId;
+  const effectiveStartTime = ioSourceStartTime ?? startTime;
 
   // Old path: fetch from observations table (beta OFF)
   const observationsQuery = api.observations.byId.useQuery(
     {
-      observationId,
+      observationId: effectiveObservationId,
       traceId,
       projectId,
-      startTime,
+      startTime: effectiveStartTime,
     },
     {
       enabled: enabled && !isBetaEnabled,
@@ -54,9 +61,9 @@ export function useLogViewObservationIO({
   const eventsQuery = api.events.batchIO.useQuery(
     {
       projectId,
-      observations: [{ id: observationId, traceId }],
-      minStartTime: startTime,
-      maxStartTime: startTime,
+      observations: [{ id: effectiveObservationId, traceId }],
+      minStartTime: effectiveStartTime,
+      maxStartTime: effectiveStartTime,
       truncated: false,
     },
     {
@@ -87,10 +94,12 @@ export function useObservationIOLoadedCount({
   items,
   traceId,
   projectId,
+  ioSourceByObservationId,
 }: {
   items: FlatLogItem[];
   traceId: string;
   projectId: string;
+  ioSourceByObservationId?: Map<string, ObservationIoSource>;
 }): { loaded: number; total: number } {
   const queryClient = useQueryClient();
 
@@ -101,15 +110,16 @@ export function useObservationIOLoadedCount({
 
     let loaded = 0;
     for (const item of observationItems) {
+      const ioSource = ioSourceByObservationId?.get(item.node.id);
       // Build the same query key that tRPC uses
       const queryKey = [
         ["observations", "byId"],
         {
           input: {
-            observationId: item.node.id,
+            observationId: ioSource?.observationId ?? item.node.id,
             traceId,
             projectId,
-            startTime: item.node.startTime,
+            startTime: ioSource?.startTime ?? item.node.startTime,
           },
           type: "query",
         },
@@ -122,5 +132,5 @@ export function useObservationIOLoadedCount({
     }
 
     return { loaded, total };
-  }, [items, traceId, projectId, queryClient]);
+  }, [items, traceId, projectId, queryClient, ioSourceByObservationId]);
 }

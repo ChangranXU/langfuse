@@ -17,6 +17,10 @@ import { type ObservationReturnTypeWithMetadata } from "@/src/server/api/routers
 import { type WithStringifiedMetadata } from "@/src/utils/clientSideDomainTypes";
 import { type TreeNode, type TraceSearchListItem } from "../lib/types";
 import { buildTraceUiData } from "../lib/tree-building";
+import {
+  buildKernelObservationIoSourceMap,
+  type ObservationIoSource,
+} from "../lib/observationIoSource";
 import { useViewPreferences } from "./ViewPreferencesContext";
 import { useMergedScores } from "@/src/features/scores/lib/useMergedScores";
 
@@ -37,6 +41,7 @@ interface TraceDataContextValue {
   roots: TreeNode[];
   nodeMap: Map<string, TreeNode>;
   searchItems: TraceSearchListItem[];
+  observationIoSourceById: Map<string, ObservationIoSource>;
   hiddenObservationsCount: number;
   comments: Map<string, number>;
 }
@@ -78,6 +83,11 @@ export function TraceDataProvider({
     return buildTraceUiData(trace, observations, minObservationLevel);
   }, [trace, observations, minObservationLevel]);
 
+  const observationIoSourceById = useMemo(
+    () => buildKernelObservationIoSourceMap(observations),
+    [observations],
+  );
+
   // Merge scores with optimistic cache
   const mergedScores = useMergedScores(
     serverScores,
@@ -98,6 +108,7 @@ export function TraceDataProvider({
       roots: uiData.roots,
       nodeMap: uiData.nodeMap,
       searchItems: uiData.searchItems,
+      observationIoSourceById,
       hiddenObservationsCount: uiData.hiddenObservationsCount,
       comments,
     }),
@@ -108,6 +119,7 @@ export function TraceDataProvider({
       mergedScores,
       corrections,
       uiData,
+      observationIoSourceById,
       comments,
     ],
   );

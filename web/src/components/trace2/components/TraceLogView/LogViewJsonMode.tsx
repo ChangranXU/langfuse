@@ -12,11 +12,13 @@ import { Loader2 } from "lucide-react";
 import { JSONView } from "@/src/components/ui/CodeJsonViewer";
 import { type FlatLogItem } from "./log-view-types";
 import { useLogViewAllObservationsIO } from "./useLogViewAllObservationsIO";
+import { type ObservationIoSource } from "@/src/components/trace2/lib/observationIoSource";
 
 export interface LogViewJsonModeProps {
   items: FlatLogItem[];
   traceId: string;
   projectId: string;
+  ioSourceByObservationId?: Map<string, ObservationIoSource>;
   /** Whether JSON view is collapsed */
   isCollapsed: boolean;
   /** Callback to toggle collapse state */
@@ -31,6 +33,7 @@ export const LogViewJsonMode = memo(function LogViewJsonMode({
   items,
   traceId,
   projectId,
+  ioSourceByObservationId,
   isCollapsed,
   onToggleCollapse,
 }: LogViewJsonModeProps) {
@@ -39,6 +42,7 @@ export const LogViewJsonMode = memo(function LogViewJsonMode({
       items,
       traceId,
       projectId,
+      ioSourceByObservationId,
     });
 
   // Auto-load data when JSON mode is rendered

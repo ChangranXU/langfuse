@@ -6,6 +6,8 @@ const PARSER_NODE_RE =
 const SESSION_PARSER_NODE_RE = /^session\.parser\.(?<rest>.+)$/;
 const PARSER_TURN_TOOL_RESULT_RE =
   /^parser\.turn_(?<turn>\d+)\.tool_result\.(?<toolName>[^.]+)\.(?<index>\d+)$/;
+const PARSER_TURN_TOOL_PRE_RE =
+  /^parser\.turn_(?<turn>\d+)\.pre_(?<toolName>[^.]+)\.(?<index>\d+)$/;
 
 type ParserNodeParts = {
   turn: number;
@@ -30,6 +32,7 @@ export function isParserContainerNodeName(
   // - session.parser.turn_002.tool_results
   // - session.parser.turn_002.tool_call
   // - session.parser.turn_002.tool_result
+  // - session.parser.turn_002.structured_output
   const [kind, ...rest] = parsed.suffixSegments;
   if (rest.length > 0) {
     return false;
@@ -39,7 +42,9 @@ export function isParserContainerNodeName(
     kind === "tool_calls" ||
     kind === "tool_results" ||
     kind === "tool_call" ||
-    kind === "tool_result"
+    kind === "tool_result" ||
+    kind === "structured_output" ||
+    kind === "strucutured_output"
   );
 }
 
@@ -116,6 +121,14 @@ export function normalizeParserNodeNameForGraph(
   }
 
   const withoutSession = `parser.${sessionMatch.groups.rest}`;
+  const toolPreMatch = PARSER_TURN_TOOL_PRE_RE.exec(withoutSession);
+  if (
+    toolPreMatch?.groups?.toolName &&
+    toolPreMatch.groups.index &&
+    /^\d+$/.test(toolPreMatch.groups.index)
+  ) {
+    return `parser.pre_${toolPreMatch.groups.toolName}.${toolPreMatch.groups.index}`;
+  }
   const toolResultMatch = PARSER_TURN_TOOL_RESULT_RE.exec(withoutSession);
   if (
     toolResultMatch?.groups?.toolName &&

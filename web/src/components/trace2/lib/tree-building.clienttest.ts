@@ -7,6 +7,7 @@
 import { buildTraceUiData } from "./tree-building";
 import { type ObservationReturnType } from "@/src/server/api/routers/traces";
 import Decimal from "decimal.js";
+import { buildKernelObservationIoSourceMap } from "./observationIoSource";
 
 // Helper to create mock observations
 const createMockObservation = (
@@ -148,25 +149,17 @@ describe("buildTraceUiData", () => {
       const trace = createMockTrace();
       const observations: ObservationReturnType[] = [
         createMockObservation({
-          id: "parser-structured",
-          name: "session.parser.turn_002.structured_output",
-          parentObservationId: null,
-          startTime: new Date("2024-01-01T00:00:00.000Z"),
-        }),
-        createMockObservation({
           id: "parser-tool-result",
           name: "session.parser.turn_002.tool_result.web_search.4",
           parentObservationId: null,
-          startTime: new Date("2024-01-01T00:00:00.100Z"),
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
         }),
       ];
 
       const result = buildTraceUiData(trace, observations);
 
-      const structuredNode = result.nodeMap.get("parser-structured");
       const toolResultNode = result.nodeMap.get("parser-tool-result");
 
-      expect(structuredNode?.name).toBe("parser.turn_002.structured_output");
       expect(toolResultNode?.name).toBe("parser.web_search.4");
     });
 
@@ -201,7 +194,36 @@ describe("buildTraceUiData", () => {
       );
     });
 
-    it("re-parents parser structured_output nodes under topic - kernel.xxx", () => {
+    it("re-parents tool_name.{n} under parser.pre_tool_name.{n}", () => {
+      const trace = createMockTrace();
+      const observations: ObservationReturnType[] = [
+        createMockObservation({
+          id: "parser-pre",
+          type: "SPAN",
+          name: "session.parser.turn_002.pre_web_fetch.3",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        createMockObservation({
+          id: "tool",
+          type: "TOOL",
+          name: "web_fetch.3",
+          parentObservationId: null,
+          startTime: new Date("2024-01-01T00:00:00.010Z"),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      const parserPreNode = result.nodeMap.get("parser-pre");
+      const toolNode = result.nodeMap.get("tool");
+
+      expect(parserPreNode?.name).toBe("parser.pre_web_fetch.3");
+      expect(toolNode?.parentObservationId).toBe("parser-pre");
+      expect(parserPreNode?.children.map((c) => c.id)).toContain("tool");
+    });
+
+    it("hides parser structured_output nodes from trace tree data", () => {
       const trace = createMockTrace();
       const observations: ObservationReturnType[] = [
         createMockObservation({
@@ -225,9 +247,9 @@ describe("buildTraceUiData", () => {
       const structuredNode = result.nodeMap.get("parser-structured");
       const kernelNode = result.nodeMap.get("kernel");
 
-      expect(structuredNode?.name).toBe("parser.turn_002.structured_output");
-      expect(structuredNode?.parentObservationId).toBe("kernel");
-      expect(kernelNode?.children.map((c) => c.id)).toContain(
+      expect(structuredNode).toBeUndefined();
+      expect(kernelNode).toBeDefined();
+      expect(kernelNode?.children.map((c) => c.id)).not.toContain(
         "parser-structured",
       );
     });
@@ -287,7 +309,7 @@ describe("buildTraceUiData", () => {
 
       // Nested re-parenting still applies.
       expect(parserToolResult?.parentObservationId).toBe("tool");
-      expect(structured?.parentObservationId).toBe("kernel");
+      expect(structured).toBeUndefined();
 
       expect(turn?.children.map((c) => c.id)).toEqual(
         expect.arrayContaining(["tool", "kernel"]),
@@ -479,6 +501,57 @@ describe("buildTraceUiData", () => {
       expect(traceNode.totalCost?.toNumber()).toBe(0.5);
       expect(traceNode.depth).toBe(-1);
       expect(traceNode.startTimeSinceTrace).toBe(0);
+    });
+  });
+
+  describe("kernel IO source mapping", () => {
+    it("maps kernel node IO source to parser structured_output in same turn", () => {
+      const observations: ObservationReturnType[] = [
+        createMockObservation({
+          id: "turn-1",
+          type: "CHAIN",
+          name: "session.turn.001",
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+          endTime: new Date("2024-01-01T00:00:10.000Z"),
+        }),
+        createMockObservation({
+          id: "kernel-1",
+          type: "AGENT",
+          name: "Topic - kernel.cognitive_core__respond",
+          startTime: new Date("2024-01-01T00:00:01.000Z"),
+        }),
+        createMockObservation({
+          id: "structured-1",
+          type: "SPAN",
+          name: "session.parser.turn_001.structured_output",
+          startTime: new Date("2024-01-01T00:00:02.000Z"),
+        }),
+      ];
+
+      const ioSourceMap = buildKernelObservationIoSourceMap(observations);
+      expect(ioSourceMap.get("kernel-1")?.observationId).toBe("structured-1");
+    });
+
+    it("supports typo strucutured_output in parser node name", () => {
+      const observations: ObservationReturnType[] = [
+        createMockObservation({
+          id: "kernel-1",
+          type: "AGENT",
+          name: "Topic - kernel.cognitive_core__respond",
+          startTime: new Date("2024-01-01T00:00:01.000Z"),
+        }),
+        createMockObservation({
+          id: "structured-typo",
+          type: "SPAN",
+          name: "session.parser.turn_001.strucutured_output",
+          startTime: new Date("2024-01-01T00:00:02.000Z"),
+        }),
+      ];
+
+      const ioSourceMap = buildKernelObservationIoSourceMap(observations);
+      expect(ioSourceMap.get("kernel-1")?.observationId).toBe(
+        "structured-typo",
+      );
     });
   });
 

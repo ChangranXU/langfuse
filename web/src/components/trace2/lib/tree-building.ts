@@ -133,7 +133,7 @@ function filterAndPrepareObservations(
 
   // UI-only re-parenting rules for parser-derived nodes.
   // - parser.<tool>.<n> (tool_result) should live under <tool>.<n>
-  // - parser.turn_XXX.structured_output should live under the corresponding "topic - kernel.xxx"
+  // - parser.turn_XXX.structured_output is hidden as a parser container node
   const chronological = [...mutableList].sort(
     (a, b) => a.startTime.getTime() - b.startTime.getTime(),
   );
@@ -158,9 +158,9 @@ function filterAndPrepareObservations(
   });
 
   const latestObservationIdByName = new Map<string, string>();
-  let latestKernelObservationId: string | null = null;
+  const latestParserPreIdByToolNodeName = new Map<string, string>();
   const TOOL_RESULT_UI_NODE_RE = /^parser\.(?<toolName>[^.]+)\.(?<index>\d+)$/;
-  const STRUCTURED_OUTPUT_UI_NODE_RE = /^parser\.turn_\d+\.structured_output$/;
+  const TOOL_PRE_UI_NODE_RE = /^parser\.pre_(?<toolName>[^.]+)\.(?<index>\d+)$/;
 
   let activeTurnIndex = 0;
   for (const obs of chronological) {
@@ -198,24 +198,27 @@ function filterAndPrepareObservations(
       }
     }
 
-    // (2) Attach structured_output nodes under the most recent kernel topic node.
+    // (1b) Record parser.pre_{tool}.{n} and attach <tool>.<n> under it.
+    // This supports kernel "instruction parser pre tool call" nodes that should be parents
+    // of the corresponding tool invocation/result node in trace2 tree/timeline/log views.
+    const toolPreMatch = TOOL_PRE_UI_NODE_RE.exec(uiName);
+    if (toolPreMatch?.groups?.toolName && toolPreMatch.groups.index) {
+      const toolNodeName = `${toolPreMatch.groups.toolName}.${toolPreMatch.groups.index}`;
+      latestParserPreIdByToolNodeName.set(toolNodeName, obs.id);
+    }
     if (
-      STRUCTURED_OUTPUT_UI_NODE_RE.test(uiName) &&
-      latestKernelObservationId &&
-      latestKernelObservationId !== obs.id
+      obs.type === "TOOL" &&
+      typeof uiName === "string" &&
+      latestParserPreIdByToolNodeName.has(uiName)
     ) {
-      obs.parentObservationId = latestKernelObservationId;
+      const parserPreId = latestParserPreIdByToolNodeName.get(uiName);
+      if (parserPreId && parserPreId !== obs.id) {
+        obs.parentObservationId = parserPreId;
+      }
     }
 
     if (typeof obs.name === "string") {
       latestObservationIdByName.set(obs.name, obs.id);
-    }
-
-    // Matches names like:
-    // - "今日宁波 - kernel.cognitive_core__respond"
-    // - "topic - kernel.some_handler"
-    if (typeof obs.name === "string" && obs.name.includes(" - kernel.")) {
-      latestKernelObservationId = obs.id;
     }
   }
 

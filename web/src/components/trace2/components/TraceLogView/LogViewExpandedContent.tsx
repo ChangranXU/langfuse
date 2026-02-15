@@ -15,6 +15,8 @@ export interface LogViewExpandedContentProps {
   node: TreeNode;
   traceId: string;
   projectId: string;
+  ioSourceObservationId?: string;
+  ioSourceStartTime?: Date;
   currentView?: "pretty" | "json" | "json-beta";
   /** Optional external expansion state for JSON tree (non-virtualized mode) */
   externalExpansionState?: Record<string, boolean> | boolean;
@@ -32,6 +34,8 @@ export const LogViewExpandedContent = memo(function LogViewExpandedContent({
   node,
   traceId,
   projectId,
+  ioSourceObservationId,
+  ioSourceStartTime,
   currentView = "pretty",
   externalExpansionState,
   onExternalExpansionChange,
@@ -42,6 +46,8 @@ export const LogViewExpandedContent = memo(function LogViewExpandedContent({
     traceId,
     projectId,
     startTime: node.startTime,
+    ioSourceObservationId,
+    ioSourceStartTime,
     enabled: true, // Always enabled when mounted (row is expanded)
   });
 

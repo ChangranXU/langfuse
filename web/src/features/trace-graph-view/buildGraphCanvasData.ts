@@ -318,10 +318,12 @@ export function buildGraphFromStepData(
   });
 
   const TOOL_RESULT_UI_NODE_RE = /^parser\.(?<toolName>[^.]+)\.(?<index>\d+)$/;
+  const TOOL_PRE_UI_NODE_RE = /^parser\.pre_(?<toolName>[^.]+)\.(?<index>\d+)$/;
   const STRUCTURED_OUTPUT_UI_NODE_RE = /^parser\.turn_\d+\.structured_output$/;
 
   let latestKernelNodeName: string | null = null;
   let activeTurnIndex = 0;
+  const latestPreByToolNodeName = new Map<string, string>();
 
   for (const o of obsChrono) {
     // Group non-parser nodes under session.turn.xxx (node-level).
@@ -355,6 +357,31 @@ export function buildGraphFromStepData(
       }
     }
 
+    // Attach tool_name.{n} under parser.pre_tool_name.{n} when present.
+    // This mirrors trace2 tree-building UI semantics for pre-tool parser nodes.
+    const toolPreMatch = TOOL_PRE_UI_NODE_RE.exec(o.normalizedNodeName);
+    if (toolPreMatch?.groups?.toolName && toolPreMatch.groups.index) {
+      const toolNodeName = `${toolPreMatch.groups.toolName}.${toolPreMatch.groups.index}`;
+      latestPreByToolNodeName.set(toolNodeName, o.normalizedNodeName);
+      if (
+        activeTurn &&
+        nodeExists(activeTurn.nodeName) &&
+        nodeExists(o.normalizedNodeName)
+      ) {
+        forcedParentByNodeName.set(o.normalizedNodeName, activeTurn.nodeName);
+      }
+    }
+    if (
+      !o.normalizedNodeName.startsWith("parser.") &&
+      nodeExists(o.normalizedNodeName) &&
+      latestPreByToolNodeName.has(o.normalizedNodeName)
+    ) {
+      const preNodeName = latestPreByToolNodeName.get(o.normalizedNodeName);
+      if (preNodeName && nodeExists(preNodeName)) {
+        forcedParentByNodeName.set(o.normalizedNodeName, preNodeName);
+      }
+    }
+
     // Track kernel nodes (topic - kernel.xxx)
     if (typeof o.name === "string" && o.name.includes(" - kernel.")) {
       if (nodeExists(o.normalizedNodeName)) {
@@ -378,8 +405,9 @@ export function buildGraphFromStepData(
     if (!from || !to || from === to) return;
     if (to === LANGFUSE_START_NODE_NAME) return;
     if (from === LANGFUSE_END_NODE_NAME) return;
-    // Parser-related nodes are UI-details; never allow outgoing edges from them.
-    if (from.startsWith("parser.")) return;
+    // Parser-related nodes are UI-details; never allow outgoing edges from them,
+    // except for parser.pre_* nodes which act as "pre tool call" parents.
+    if (from.startsWith("parser.") && !from.startsWith("parser.pre_")) return;
     edgesSet.add(`${from}→${to}`);
   };
 
@@ -426,12 +454,30 @@ export function buildGraphFromStepData(
       }
 
       // Build per-turn main-chain candidate nodes (non-parser only).
-      if (
-        !o.normalizedNodeName.startsWith("parser.") &&
-        nodeExists(o.normalizedNodeName)
-      ) {
+      const isMainChainCandidate =
+        nodeExists(o.normalizedNodeName) &&
+        (!o.normalizedNodeName.startsWith("parser.") ||
+          o.normalizedNodeName.startsWith("parser.pre_"));
+      if (isMainChainCandidate) {
         const map = byTurnNodeName.get(activeTurn.nodeName);
-        if (map && !map.has(o.normalizedNodeName)) {
+        if (!map) continue;
+
+        // If we have a parser.pre_{tool}.{n} node, treat it as the main-chain node
+        // and keep the actual tool node as a child/leaf detail node.
+        const toolNodeMatch = /^(?<toolName>[^.]+)\.(?<index>\d+)$/.exec(
+          o.normalizedNodeName,
+        );
+        if (toolNodeMatch?.groups?.toolName && toolNodeMatch.groups.index) {
+          const preNodeName = `parser.pre_${toolNodeMatch.groups.toolName}.${toolNodeMatch.groups.index}`;
+          if (nodeExists(preNodeName)) {
+            if (!map.has(preNodeName)) {
+              map.set(preNodeName, { firstStartMs: o.startMs });
+            }
+            continue;
+          }
+        }
+
+        if (!map.has(o.normalizedNodeName)) {
           map.set(o.normalizedNodeName, { firstStartMs: o.startMs });
         }
       }
@@ -479,9 +525,12 @@ export function buildGraphFromStepData(
     // Attach parser nodes:
     // - parser.<tool>.<n> (tool_result) → <tool>.<n>
     // - parser.turn_XXX.tool_call.<tool>.<n> → <tool>.<n>
+    // - parser.pre_<tool>.<n> → <tool>.<n>  (pre-tool parser node is parent)
     // - parser.turn_XXX.structured_output → latest kernel node for that turn
     const TOOL_CALL_UI_NODE_RE =
       /^parser\.turn_\d+\.tool_call\.(?<toolName>[^.]+)\.(?<index>\d+)$/;
+    const TOOL_PRE_UI_NODE_RE =
+      /^parser\.pre_(?<toolName>[^.]+)\.(?<index>\d+)$/;
     const SESSION_OUTPUT_NODE_RE = /^session\.output\.turn_(?<turn>\d+)$/;
 
     // Find which turn a node belongs to by time window (based on first occurrence).
@@ -505,6 +554,15 @@ export function buildGraphFromStepData(
 
     for (const nodeName of normalizedNodeToObservationsMap.keys()) {
       if (!nodeName.startsWith("parser.")) continue;
+
+      const toolPreMatch = TOOL_PRE_UI_NODE_RE.exec(nodeName);
+      if (toolPreMatch?.groups?.toolName && toolPreMatch.groups.index) {
+        const toolNode = `${toolPreMatch.groups.toolName}.${toolPreMatch.groups.index}`;
+        if (nodeExists(toolNode)) {
+          addEdge(nodeName, toolNode);
+        }
+        continue;
+      }
 
       const toolResultMatch = TOOL_RESULT_UI_NODE_RE.exec(nodeName);
       if (toolResultMatch?.groups?.toolName && toolResultMatch.groups.index) {
@@ -633,7 +691,9 @@ function getRedundantParserNodes(stepToNodesMap: Map<number, Set<string>>) {
         suffix === "tool_calls" ||
         suffix === "tool_results" ||
         suffix === "tool_call" ||
-        suffix === "tool_result";
+        suffix === "tool_result" ||
+        suffix === "structured_output" ||
+        suffix === "strucutured_output";
 
       if (isContainerNode) {
         nodesToPrune.add(nodeName);

@@ -83,7 +83,8 @@ export function ObservationDetailView({
 
   // V4 beta mode and observations for log tab
   const { isBetaEnabled: isV4BetaEnabled } = useV4Beta();
-  const { observations, roots, nodeMap } = useTraceData();
+  const { observations, roots, nodeMap, observationIoSourceById } =
+    useTraceData();
   const showLogViewTab = isV4BetaEnabled && observations.length > 0;
   const isLogViewVirtualized =
     observations.length >= TRACE_VIEW_CONFIG.logView.virtualizationThreshold;
@@ -194,6 +195,7 @@ export function ObservationDetailView({
   );
 
   const outputCorrection = getMostRecentCorrection(observationCorrections);
+  const ioSource = observationIoSourceById.get(observation.id);
 
   // Fetch and parse observation input/output in background (Web Worker)
   // This combines tRPC fetch + non-blocking JSON parsing
@@ -209,6 +211,8 @@ export function ObservationDetailView({
     traceId: traceId,
     projectId: projectId,
     startTime: observation.startTime,
+    ioSourceObservationId: ioSource?.observationId,
+    ioSourceStartTime: ioSource?.startTime,
     baseObservation: observation,
   });
 
