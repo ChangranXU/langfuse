@@ -40,7 +40,12 @@ import TagList from "@/src/features/tag/components/TagList";
 import useColumnOrder from "@/src/features/column-visibility/hooks/useColumnOrder";
 import { BatchExportTableButton } from "@/src/components/BatchExportTableButton";
 import { BreakdownTooltip } from "@/src/components/trace2/components/_shared/BreakdownToolTip";
-import { ArrowUpRight, InfoIcon, LightbulbIcon, PlusCircle } from "lucide-react";
+import {
+  ArrowUpRight,
+  InfoIcon,
+  LightbulbIcon,
+  PlusCircle,
+} from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -286,7 +291,12 @@ export default function ObservationsEventsTable({
       setViewModeRaw(mode);
       setPaginationState({ page: 1, limit: paginationState.limit });
     },
-    [canChangeViewMode, paginationState.limit, setPaginationState, setViewModeRaw],
+    [
+      canChangeViewMode,
+      paginationState.limit,
+      setPaginationState,
+      setViewModeRaw,
+    ],
   );
 
   // for auto data refresh

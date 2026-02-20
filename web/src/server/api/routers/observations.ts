@@ -7,6 +7,7 @@ import { parseIO } from "@langfuse/shared";
 import {
   getObservationById,
   getObservationByIdFromEventsTable,
+  logger,
 } from "@langfuse/shared/src/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
@@ -55,11 +56,18 @@ export const observationsRouter = createTRPCRouter({
             // observations table for traces that are not present in events yet.
             obs = await getObservationByIdFromEventsTable(queryOpts);
           } catch (e) {
-            if (isNotFoundError(e)) {
-              obs = await getObservationById(queryOpts);
-            } else {
-              throw e;
+            if (!isNotFoundError(e)) {
+              logger.warn(
+                "observations.byId events-table lookup failed, falling back to legacy observations lookup",
+                {
+                  observationId: input.observationId,
+                  traceId: input.traceId,
+                  projectId: input.projectId,
+                  error: e instanceof Error ? e.message : String(e),
+                },
+              );
             }
+            obs = await getObservationById(queryOpts);
           }
         } else {
           obs = await getObservationById(queryOpts);
