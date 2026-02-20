@@ -225,7 +225,7 @@ const EnvSchema = z.object({
     .default("true"),
   QUEUE_CONSUMER_AUTO_EXPERIENCE_SUMMARY_QUEUE_IS_ENABLED: z
     .enum(["true", "false"])
-    .default("false"),
+    .default("true"),
   QUEUE_CONSUMER_DATA_RETENTION_QUEUE_IS_ENABLED: z
     .enum(["true", "false"])
     .default("true"),

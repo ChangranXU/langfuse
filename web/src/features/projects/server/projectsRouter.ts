@@ -18,11 +18,19 @@ import {
 } from "@langfuse/shared/src/server";
 import { randomUUID } from "crypto";
 import { StringNoHTMLNonEmpty } from "@langfuse/shared";
+import { isAbsolute } from "path";
 
 const AutoErrorAnalysisModelSchema = z.enum(["gpt-5.2", "gpt-4.1"]);
 const ProjectAutoErrorAnalysisSettingsSchema = z.object({
   enabled: z.boolean(),
   model: AutoErrorAnalysisModelSchema,
+  minNewErrorNodesForSummary: z.number().int().min(1).nullable().default(null),
+  summaryAppendMarkdownAbsolutePath: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .default(null),
 });
 type ProjectAutoErrorAnalysisSettings = z.infer<
   typeof ProjectAutoErrorAnalysisSettingsSchema
@@ -31,6 +39,8 @@ type ProjectAutoErrorAnalysisSettings = z.infer<
 const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: ProjectAutoErrorAnalysisSettings = {
   enabled: false,
   model: "gpt-5.2",
+  minNewErrorNodesForSummary: null,
+  summaryAppendMarkdownAbsolutePath: null,
 };
 
 function parseAutoErrorAnalysisSettings(
@@ -240,6 +250,20 @@ export const projectsRouter = createTRPCRouter({
         projectId: z.string(),
         enabled: z.boolean(),
         model: AutoErrorAnalysisModelSchema,
+        minNewErrorNodesForSummary: z
+          .number()
+          .int()
+          .min(1)
+          .nullable()
+          .optional()
+          .default(null),
+        summaryAppendMarkdownAbsolutePath: z
+          .string()
+          .trim()
+          .min(1)
+          .nullable()
+          .optional()
+          .default(null),
       }),
     )
     .output(ProjectAutoErrorAnalysisSettingsSchema)
@@ -267,9 +291,32 @@ export const projectsRouter = createTRPCRouter({
         });
       }
 
+      if (
+        input.summaryAppendMarkdownAbsolutePath !== null &&
+        !isAbsolute(input.summaryAppendMarkdownAbsolutePath)
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Summary markdown path must be an absolute path.",
+        });
+      }
+
+      if (
+        input.summaryAppendMarkdownAbsolutePath !== null &&
+        !input.summaryAppendMarkdownAbsolutePath.toLowerCase().endsWith(".md")
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Summary markdown path must point to a .md file.",
+        });
+      }
+
       const settings: ProjectAutoErrorAnalysisSettings = {
         enabled: input.enabled,
         model: input.model,
+        minNewErrorNodesForSummary: input.minNewErrorNodesForSummary ?? null,
+        summaryAppendMarkdownAbsolutePath:
+          input.summaryAppendMarkdownAbsolutePath ?? null,
       };
 
       const mergedMetadata = mergeAutoErrorAnalysisSettingsIntoMetadata({

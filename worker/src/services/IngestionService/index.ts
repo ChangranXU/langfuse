@@ -92,6 +92,14 @@ const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: AutoErrorAnalysisSettings = {
 // Keep this short so toggling settings reflects quickly during ingestion.
 const AUTO_ERROR_ANALYSIS_SETTINGS_CACHE_TTL_MS = 5_000;
 
+const NON_ERROR_STATUS_MESSAGE_PREFIXES = ["results for:", "search results"];
+
+const ERROR_STATUS_MESSAGE_PATTERNS = [
+  /^(error|exception|fatal|panic|traceback)\b/i,
+  /\b(failed|failure|timed out|timeout|rate limit(?:ed)?|unauthorized|forbidden|not found|bad request|service unavailable|internal server error|cannot|unable to)\b/i,
+  /\b(http|status)\s*(4\d{2}|5\d{2})\b/i,
+];
+
 /**
  * Flexible input type for writing events to the events table.
  * This is intentionally loose to allow for iteration as the events
@@ -906,11 +914,13 @@ export class IngestionService {
     mergedObservationRecord.created_at =
       clickhouseObservationRecord?.created_at ?? createdAtTimestamp.getTime();
     mergedObservationRecord.level = mergedObservationRecord.level ?? "DEFAULT";
-    // If client sent status_message but no level (e.g. SDK/OTLP change), treat as ERROR so Analysis shows the node
+    // If client sent status_message but no explicit level, only promote to ERROR
+    // when the message itself strongly looks like an error.
     if (
       mergedObservationRecord.level === "DEFAULT" &&
-      mergedObservationRecord.status_message &&
-      String(mergedObservationRecord.status_message).trim().length > 0
+      IngestionService.isLikelyErrorStatusMessage(
+        mergedObservationRecord.status_message,
+      )
     ) {
       mergedObservationRecord.level = ObservationLevel.ERROR;
     }
@@ -1206,6 +1216,28 @@ export class IngestionService {
 
       return aTimestamp - bTimestamp;
     });
+  }
+
+  private static isLikelyErrorStatusMessage(
+    statusMessage: unknown,
+  ): statusMessage is string {
+    if (typeof statusMessage !== "string") return false;
+
+    const trimmedStatusMessage = statusMessage.trim();
+    if (trimmedStatusMessage.length === 0) return false;
+
+    const normalized = trimmedStatusMessage.toLowerCase();
+    if (
+      NON_ERROR_STATUS_MESSAGE_PREFIXES.some((prefix) =>
+        normalized.startsWith(prefix),
+      )
+    ) {
+      return false;
+    }
+
+    return ERROR_STATUS_MESSAGE_PATTERNS.some((pattern) =>
+      pattern.test(trimmedStatusMessage),
+    );
   }
 
   private async getPrompt(

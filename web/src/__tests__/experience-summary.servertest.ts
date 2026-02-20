@@ -1,5 +1,9 @@
 /** @jest-environment node */
 
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 const mockFetchLLMCompletion = jest.fn();
 
 jest.mock("@langfuse/shared/src/server", () => {
@@ -230,5 +234,124 @@ describe("experienceSummary.generate RPC", () => {
         maxItems: 50,
       }),
     ).rejects.toThrow(/invalid summary payload/i);
+  });
+
+  it("should replace (not append) the # HINT section in the configured markdown file", async () => {
+    await prisma.llmApiKeys.create({
+      data: {
+        projectId,
+        provider: "openai",
+        adapter: LLMAdapter.OpenAI,
+        displaySecretKey: "...test",
+        secretKey: "test-secret",
+        baseURL: null,
+        customModels: [],
+        withDefaultModels: true,
+        extraHeaders: null,
+        extraHeaderKeys: [],
+        config: null,
+      },
+    });
+
+    await prisma.errorAnalysis.create({
+      data: {
+        projectId,
+        traceId: "trace-1",
+        observationId: "obs-1",
+        model: "gpt-5.2",
+        rootCause: "root cause",
+        resolveNow: ["step 1"],
+        preventionNextCall: ["add a schema validator"],
+        relevantObservations: ["obs-1"],
+        contextSufficient: true,
+        confidence: 0.9,
+      },
+    });
+
+    const dir = await mkdtemp(join(tmpdir(), "langfuse-experience-summary-"));
+    const summaryPath = join(dir, "summary.md");
+    await writeFile(
+      summaryPath,
+      [
+        "# Intro",
+        "",
+        "Some content",
+        "",
+        "# HINT",
+        "",
+        "old hint 1",
+        "",
+        "# HINT",
+        "",
+        "old hint 2",
+        "",
+        "# HINT",
+        "",
+        "old hint 3",
+        "",
+        "# After",
+        "",
+        "Keep me",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        metadata: {
+          autoErrorAnalysis: {
+            summaryAppendMarkdownAbsolutePath: summaryPath,
+          },
+        } as any,
+      },
+    });
+
+    mockFetchLLMCompletion.mockResolvedValueOnce({
+      schemaVersion: 1,
+      experiences: [],
+      promptPack: {
+        title: "Pack v1",
+        lines: ["Line v1"],
+      },
+    });
+
+    await caller.experienceSummary.generate({
+      projectId,
+      mode: "full",
+      model: "gpt-5.2",
+      maxItems: 50,
+    });
+
+    const firstMarkdown = await readFile(summaryPath, "utf8");
+    expect((firstMarkdown.match(/^#\s*HINT\s*$/gim) ?? []).length).toBe(1);
+    expect(firstMarkdown).toContain("Pack v1");
+    expect(firstMarkdown).not.toContain("old hint 1");
+    expect(firstMarkdown).not.toContain("old hint 2");
+    expect(firstMarkdown).not.toContain("old hint 3");
+    expect(firstMarkdown).toContain("# After");
+    expect(firstMarkdown).toContain("Keep me");
+
+    mockFetchLLMCompletion.mockResolvedValueOnce({
+      schemaVersion: 1,
+      experiences: [],
+      promptPack: {
+        title: "Pack v2",
+        lines: ["Line v2"],
+      },
+    });
+
+    await caller.experienceSummary.generate({
+      projectId,
+      mode: "full",
+      model: "gpt-5.2",
+      maxItems: 50,
+    });
+
+    const secondMarkdown = await readFile(summaryPath, "utf8");
+    expect((secondMarkdown.match(/^#\s*HINT\s*$/gim) ?? []).length).toBe(1);
+    expect(secondMarkdown).toContain("Pack v2");
+    expect(secondMarkdown).not.toContain("Pack v1");
   });
 });

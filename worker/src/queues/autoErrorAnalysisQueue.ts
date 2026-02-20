@@ -26,14 +26,23 @@ type AutoErrorAnalysisModel = z.infer<typeof AutoErrorAnalysisModelSchema>;
 const AutoErrorAnalysisSettingsSchema = z.object({
   enabled: z.boolean(),
   model: AutoErrorAnalysisModelSchema,
+  minNewErrorNodesForSummary: z.number().int().min(1).nullable().default(null),
+  summaryAppendMarkdownAbsolutePath: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .default(null),
 });
 
 const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS = {
   enabled: false,
   model: "gpt-5.2" as AutoErrorAnalysisModel,
+  minNewErrorNodesForSummary: null as number | null,
+  summaryAppendMarkdownAbsolutePath: null as string | null,
 };
 
-const AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES = 10;
+const DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES = 5;
 
 const AutoErrorAnalysisResultSchema = z.object({
   rootCause: z.string(),
@@ -367,6 +376,8 @@ function buildIssueLabel(params: {
 function parseAutoErrorAnalysisSettings(metadata: unknown): {
   enabled: boolean;
   model: AutoErrorAnalysisModel;
+  minNewErrorNodesForSummary: number | null;
+  summaryAppendMarkdownAbsolutePath: string | null;
 } {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS;
@@ -507,7 +518,7 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       })),
     },
     instruction:
-      "Analyze the ERROR/WARNING. Return only JSON matching schema with rootCause, resolveNow, preventionNextCall, relevantObservations, contextSufficient, confidence.",
+      'Analyze the ERROR/WARNING and return ONLY JSON matching the schema (rootCause, resolveNow, preventionNextCall, relevantObservations, contextSufficient, confidence). Keep it concise: rootCause max 2 sentences; resolveNow max 3 items; preventionNextCall max 5 items. Treat policy constraints as required safety/privacy/compliance protections.\n\nWhen the failure is access/blocked/forbidden/rate-limit related (e.g., HTTP 401/403/429 or similar), explicitly name what was blocked and by what: include the domain/URL/host (or best identifier available) and the tool/provider/adapter if present in issue/statusMessage/input/output/metadata. Do not invent missing identifiers; if not present, write "unknown".\n\nIn resolveNow and preventionNextCall, include only prompt-level actions that can be applied in the next LLM call (edits to system/developer/user prompt text, format constraints, tool-use instructions, or context selection). Avoid generic advice that omits identifiers when identifiers are available. Exclude implementation-heavy or non-prompt actions (code/config changes, retries/backoff/circuit-breaker logic, scheduler or long-running behavior changes, model/provider/account changes). Never suggest bypassing, weakening, or evading policy controls. If no valid prompt-only action exists, return an empty list for that field.',
   };
 
   const messages: ChatMessage[] = [
@@ -515,7 +526,7 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       type: ChatMessageType.System,
       role: ChatMessageRole.System,
       content:
-        "You are an expert at analyzing LLM pipeline ERROR/WARNING events. Return ONLY JSON matching the schema.",
+        "You are an expert at analyzing LLM pipeline ERROR/WARNING events. Policy gates are intentional safeguards for security, privacy, and compliance. Keep output concise and prevention-oriented.\n\nIf the error indicates blocked/forbidden/unauthorized/rate-limited access, explicitly identify (from the provided context) what was blocked (domain/URL/host) and which tool/provider/adapter was involved; do not fabricate identifiers.\n\nRecommend only prompt-level actions that are directly applicable in the next LLM call; reject implementation-heavy proposals such as retries/backoff/circuit breakers, system settings, infrastructure/config changes, or persistent behavior changes. Do not provide workaround or bypass suggestions. Return ONLY JSON matching the schema.",
     },
     {
       type: ChatMessageType.User,
@@ -786,13 +797,17 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       },
     });
 
-    if (pendingCount < AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES) {
+    const minNewAnalysesForSummary =
+      settings.minNewErrorNodesForSummary ??
+      DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES;
+
+    if (pendingCount < minNewAnalysesForSummary) {
       logger.debug(
         "Skipping auto experience summary enqueue: insufficient new analyses",
         {
           projectId,
           pendingCount,
-          minNewAnalyses: AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
+          minNewAnalyses: minNewAnalysesForSummary,
         },
       );
       return;

@@ -321,7 +321,7 @@ export function ErrorAnalysisDropdown(props: {
       return "Summary sync status: waiting for analysis record...";
     }
 
-    const batchSize = status.minNewAnalysesToUpdate ?? 10;
+    const batchSize = status.minNewAnalysesToUpdate ?? 5;
     const pendingCount = status.pendingAnalysesCount ?? 0;
     const pendingHint =
       pendingCount > 0 && pendingCount < batchSize

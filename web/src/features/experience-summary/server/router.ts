@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
+import { mkdir, readFile, writeFile } from "fs/promises";
+import { dirname, isAbsolute } from "path";
 import {
   protectedProjectProcedure,
   createTRPCRouter,
@@ -38,6 +40,18 @@ function resolveDemoOpenAIModel(
 ) {
   return model === "gpt-5.2" ? "gpt-5.2-2025-12-11" : "gpt-4.1";
 }
+
+const AutoErrorAnalysisSummarySettingsSchema = z.object({
+  summaryAppendMarkdownAbsolutePath: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .default(null),
+});
+
+const HINT_SECTION_HEADING = "# HINT";
+const NEXT_TOP_LEVEL_HEADING_REGEX = /^#(?!#)\s*.+$/m;
 
 const ExperienceSummaryGetInputSchema = z.object({
   projectId: z.string(),
@@ -83,6 +97,162 @@ type ErrorAnalysisCompact = {
   confidence: number;
 };
 
+function resolveSummaryMarkdownPath(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+
+  const parsed = AutoErrorAnalysisSummarySettingsSchema.safeParse(
+    (metadata as Record<string, unknown>).autoErrorAnalysis,
+  );
+  if (!parsed.success) return null;
+
+  const pathFromSettings = parsed.data.summaryAppendMarkdownAbsolutePath;
+  if (
+    !pathFromSettings ||
+    !isAbsolute(pathFromSettings) ||
+    !pathFromSettings.toLowerCase().endsWith(".md")
+  ) {
+    return null;
+  }
+
+  return pathFromSettings;
+}
+
+function normalizeMarkdownLine(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function buildCompleteHintSectionContent(params: {
+  summary: z.infer<typeof ExperienceSummaryJsonSchema>;
+}) {
+  const lines: string[] = [];
+  lines.push(`_Last updated: ${new Date().toISOString()}_`);
+  lines.push("");
+  lines.push("## Prompt pack");
+  lines.push(
+    `- title: ${normalizeMarkdownLine(params.summary.promptPack.title)}`,
+  );
+  if (params.summary.promptPack.lines.length === 0) {
+    lines.push("- lines:");
+    lines.push("  - (none)");
+  } else {
+    lines.push("- lines:");
+    for (const line of params.summary.promptPack.lines) {
+      lines.push(`  - ${normalizeMarkdownLine(line)}`);
+    }
+  }
+  lines.push("");
+  lines.push("## Experiences");
+  if (params.summary.experiences.length === 0) {
+    lines.push("- (none)");
+  } else {
+    for (const experience of params.summary.experiences) {
+      lines.push(`### ${experience.key}`);
+      lines.push(`- when: ${normalizeMarkdownLine(experience.when)}`);
+      lines.push(
+        `- relatedErrorTypes: ${
+          experience.relatedErrorTypes?.length
+            ? experience.relatedErrorTypes.join(", ")
+            : "n/a"
+        }`,
+      );
+      lines.push("- possibleProblems:");
+      if (experience.possibleProblems.length === 0) {
+        lines.push("  - (none)");
+      } else {
+        for (const problem of experience.possibleProblems) {
+          lines.push(`  - ${normalizeMarkdownLine(problem)}`);
+        }
+      }
+      lines.push("- avoidanceAndNotes:");
+      if (experience.avoidanceAndNotes.length === 0) {
+        lines.push("  - (none)");
+      } else {
+        for (const note of experience.avoidanceAndNotes) {
+          lines.push(`  - ${normalizeMarkdownLine(note)}`);
+        }
+      }
+      lines.push("- promptAdditions:");
+      if (experience.promptAdditions.length === 0) {
+        lines.push("  - (none)");
+      } else {
+        for (const addition of experience.promptAdditions) {
+          lines.push(`  - ${normalizeMarkdownLine(addition)}`);
+        }
+      }
+      lines.push("");
+    }
+  }
+
+  return lines.join("\n").trimEnd();
+}
+
+function replaceHintSection(params: {
+  markdown: string;
+  replacementContent: string;
+}) {
+  const replacementSection = `${HINT_SECTION_HEADING}\n\n${params.replacementContent}\n`;
+  const match = /^\s*#\s*hint\s*$/im.exec(params.markdown);
+  if (!match || match.index == null) {
+    if (params.markdown.trim().length === 0) return replacementSection;
+    return `${params.markdown.replace(/\s*$/, "")}\n\n${replacementSection}`;
+  }
+
+  const afterHeadingIndex = params.markdown.indexOf("\n", match.index);
+  const sectionContentStart =
+    afterHeadingIndex === -1 ? params.markdown.length : afterHeadingIndex + 1;
+  const restAfterHeading = params.markdown.slice(sectionContentStart);
+  const nextTopHeadingRegex = new RegExp(
+    NEXT_TOP_LEVEL_HEADING_REGEX.source,
+    "gm",
+  );
+  let sectionEnd = sectionContentStart + restAfterHeading.length;
+  let nextTopHeading: RegExpExecArray | null;
+  while (
+    (nextTopHeading = nextTopHeadingRegex.exec(restAfterHeading)) != null
+  ) {
+    const headingLine = nextTopHeading[0] ?? "";
+    if (/^\s*#\s*hint\s*$/i.test(headingLine)) continue;
+    sectionEnd = sectionContentStart + nextTopHeading.index;
+    break;
+  }
+
+  const before = params.markdown.slice(0, match.index).replace(/\s*$/, "");
+  const after = params.markdown.slice(sectionEnd).replace(/^\s*/, "");
+  return [before, replacementSection.trimEnd(), after]
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+}
+
+async function replaceSummaryHintSectionInMarkdown(params: {
+  absolutePath: string;
+  summary: z.infer<typeof ExperienceSummaryJsonSchema>;
+}) {
+  await mkdir(dirname(params.absolutePath), { recursive: true });
+
+  let existingContent = "";
+  try {
+    existingContent = await readFile(params.absolutePath, "utf8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") throw error;
+  }
+
+  const replacementContent = buildCompleteHintSectionContent({
+    summary: params.summary,
+  });
+  const updatedMarkdown = replaceHintSection({
+    markdown: existingContent,
+    replacementContent,
+  });
+  await writeFile(
+    params.absolutePath,
+    `${updatedMarkdown.replace(/\s*$/, "")}\n`,
+    "utf8",
+  );
+}
+
 function compactErrorAnalysisRow(row: any): ErrorAnalysisCompact {
   return {
     observationId: String(row.observationId),
@@ -119,8 +289,12 @@ function buildUserPayload(params: {
       "You MUST output ONLY the JSON object that matches the provided schema.",
       "Merge with previousSummary when present. Keep keys stable and snake_case; dedupe by key.",
       "Each experience item should be written as: when -> possibleProblems -> avoidanceAndNotes -> promptAdditions.",
-      "promptAdditions should be directly pasteable lines for a user's prompt (guardrails/checklist).",
+      "Keep entries concise and directly useful for preventing recurrence.",
+      "promptAdditions should be directly pasteable lines for a user's prompt (guardrails/checklist), and should be generic/reusable.",
       "Prefer actionable, specific, and generalizable advice over vague statements.",
+      "Exclude non-prompt or implementation-heavy suggestions: code/config/system changes, retries/backoff/circuit breakers, scheduler or long-running behavior changes, model/provider/account changes.",
+      "Avoid hardcoded operational playbooks unless explicitly required by repeated evidence in newAnalyses.",
+      "For blocked/forbidden/unauthorized/rate-limit cases, include the identifiable target (domain/URL/host) and tool/provider/adapter from newAnalyses when present; do not fabricate missing identifiers (use unknown).",
     ].join("\n"),
   };
 }
@@ -288,7 +462,7 @@ export const experienceSummaryRouter = createTRPCRouter({
           type: ChatMessageType.System,
           role: ChatMessageRole.System,
           content:
-            "You are an expert at preventing recurring LLM pipeline errors. Return ONLY the structured JSON object that matches the provided schema.",
+            "You are an expert at preventing recurring LLM pipeline errors. Keep output concise and focused on what can be changed in prompts for future LLM calls. Exclude implementation-heavy proposals (code/config/system changes, retries/backoff/circuit breakers, scheduler/long-running behavior changes, model/provider/account changes). Return ONLY the structured JSON object that matches the provided schema.",
         },
         {
           type: ChatMessageType.User,
@@ -377,6 +551,31 @@ export const experienceSummaryRouter = createTRPCRouter({
           cursorUpdatedAt: maxUpdatedAt,
         },
       });
+
+      const projectForSettings = await ctx.prisma.project.findUnique({
+        where: { id: input.projectId },
+        select: { metadata: true },
+      });
+      const summaryMarkdownPath = resolveSummaryMarkdownPath(
+        projectForSettings?.metadata,
+      );
+      if (summaryMarkdownPath) {
+        try {
+          await replaceSummaryHintSectionInMarkdown({
+            absolutePath: summaryMarkdownPath,
+            summary: validated.data,
+          });
+        } catch (error) {
+          logger.warn(
+            "Failed to replace summary hint section in markdown file",
+            {
+              projectId: input.projectId,
+              path: summaryMarkdownPath,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
+        }
+      }
 
       return {
         updated: true,

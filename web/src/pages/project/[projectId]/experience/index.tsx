@@ -91,8 +91,13 @@ export default function ExperienceSummaryPage() {
   const summary = row?.summary ?? null;
 
   const canAct = Boolean(projectId) && !generate.isPending;
+  const pendingAnalysesCount =
+    incrementalStatusQuery.data?.pendingAnalysesCount;
+  const hasIncrementalStatus = typeof pendingAnalysesCount === "number";
   const isIncrementalUpToDate =
-    incrementalStatusQuery.data?.pendingAnalysesCount === 0;
+    hasIncrementalStatus && pendingAnalysesCount === 0;
+  const canRunIncremental =
+    canAct && hasIncrementalStatus && !isIncrementalUpToDate;
 
   return (
     <Page
@@ -146,7 +151,14 @@ export default function ExperienceSummaryPage() {
               variant="outline"
               size="sm"
               loading={generate.isPending}
-              disabled={!canAct || isIncrementalUpToDate}
+              disabled={!canRunIncremental}
+              title={
+                !hasIncrementalStatus
+                  ? "Checking incremental status..."
+                  : isIncrementalUpToDate
+                    ? "Summary is already up to date."
+                    : undefined
+              }
               onClick={() => {
                 if (!projectId) return;
                 generate.mutate({

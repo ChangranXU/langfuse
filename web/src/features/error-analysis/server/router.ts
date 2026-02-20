@@ -584,7 +584,7 @@ function buildErrorAnalysisContextPayload(params: {
     ),
     note: {
       instruction:
-        "Analyze the ERROR/WARNING. Output MUST match the schema. Also decide whether the provided contextWindow is sufficient to support your conclusion. If not sufficient, set contextSufficient=false and still provide best-effort hypotheses. Provide (a) root cause, (b) how to resolve now (if applicable), (c) how to prevent in the NEXT call, (d) relevant observation ids, (e) confidence score (0-1).",
+        'Analyze the ERROR/WARNING. Output MUST match the schema. Keep concise: rootCause max 2 sentences; resolveNow max 3 items; preventionNextCall max 5 items. Decide whether contextWindow is sufficient; if not, set contextSufficient=false and provide best-effort hypotheses.\n\nIf the failure is access/blocked/forbidden/unauthorized/rate-limit related (e.g., HTTP 401/403/429 or similar), explicitly include what was blocked and by what: domain/URL/host (or best available identifier) and the tool/provider/adapter if present in the payload. Do not fabricate missing identifiers; if not present, write "unknown".\n\nFor resolveNow and preventionNextCall, include only prompt-level actions directly applicable in the next LLM call (edits to system/developer/user prompt text, output-format constraints, tool-use instructions, or context selection). Avoid generic advice that omits identifiers when identifiers are available. Exclude non-prompt or implementation-heavy actions (code/config/system changes, retries/backoff/circuit-breaker logic, scheduler/long-running behavior changes, model/provider/account changes). Never suggest bypassing policy/safety constraints.',
     },
   };
 }
@@ -601,7 +601,67 @@ const ErrorAnalysisSummaryUpdateStatusInputSchema = z.object({
   observationId: z.string(),
 });
 
-const AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES = 10;
+const DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES = 5;
+const AutoErrorAnalysisSummarySettingsSchema = z.object({
+  minNewErrorNodesForSummary: z.number().int().min(1).nullable().default(null),
+});
+
+const AutoErrorAnalysisEnqueueSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  minNewErrorNodesForSummary: z.number().int().min(1).nullable().default(null),
+});
+
+function resolveMinNewAnalysesToUpdate(metadata: unknown): number {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES;
+  }
+
+  const autoErrorAnalysis = (metadata as Record<string, unknown>)
+    .autoErrorAnalysis;
+  const parsed =
+    AutoErrorAnalysisSummarySettingsSchema.safeParse(autoErrorAnalysis);
+
+  if (!parsed.success) {
+    return DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES;
+  }
+
+  return (
+    parsed.data.minNewErrorNodesForSummary ??
+    DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES
+  );
+}
+
+function resolveAutoExperienceSummaryEnqueueSettings(metadata: unknown): {
+  enabled: boolean;
+  minNewAnalysesToEnqueue: number;
+} {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return {
+      enabled: false,
+      minNewAnalysesToEnqueue: DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
+    };
+  }
+
+  const autoErrorAnalysis = (metadata as Record<string, unknown>)
+    .autoErrorAnalysis;
+  const parsed =
+    AutoErrorAnalysisEnqueueSettingsSchema.safeParse(autoErrorAnalysis);
+  if (!parsed.success) {
+    return {
+      enabled: false,
+      minNewAnalysesToEnqueue: DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
+    };
+  }
+
+  const minNewAnalysesToEnqueue =
+    parsed.data.minNewErrorNodesForSummary ??
+    DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES;
+
+  return {
+    enabled: parsed.data.enabled === true,
+    minNewAnalysesToEnqueue,
+  };
+}
 
 const ErrorAnalysisSummaryUpdateStatusOutputSchema = z.object({
   synced: z.boolean(),
@@ -880,7 +940,7 @@ export const errorAnalysisRouter = createTRPCRouter({
               type: ChatMessageType.System,
               role: ChatMessageRole.System,
               content:
-                "You are an expert debugger for LLM application traces. Return ONLY the structured JSON object that matches the provided schema.",
+                "You are an expert debugger for LLM application traces. Keep output concise and focused on preventing repeat failures.\n\nIf the error indicates blocked/forbidden/unauthorized/rate-limited access, explicitly identify (from the provided payload) what was blocked (domain/URL/host) and which tool/provider/adapter was involved; do not fabricate identifiers.\n\nRecommend only prompt-level actions directly applicable in the next LLM call; reject implementation-heavy proposals (retries/backoff/circuit breakers, system settings, infrastructure/config updates, persistent behavior changes). Return ONLY the structured JSON object that matches the provided schema.",
             },
             {
               type: ChatMessageType.User,
@@ -1181,6 +1241,103 @@ export const errorAnalysisRouter = createTRPCRouter({
         });
       }
 
+      // Best-effort: enqueue an incremental experience summary update when the
+      // project has auto error analysis enabled and enough new ErrorAnalysis rows exist.
+      // (This keeps "auto summary update" working even when analyses were generated manually.)
+      try {
+        const queue = getQueue(QueueName.AutoExperienceSummaryQueue);
+        const experienceSummaryDelegate = (ctx.prisma as any)
+          .experienceSummary as typeof ctx.prisma.experienceSummary | undefined;
+        if (queue && experienceSummaryDelegate) {
+          const projectForSettings = await ctx.prisma.project.findUnique({
+            where: { id: input.projectId },
+            select: { metadata: true },
+          });
+          const enqueueSettings = resolveAutoExperienceSummaryEnqueueSettings(
+            projectForSettings?.metadata,
+          );
+
+          if (enqueueSettings.enabled) {
+            const summaryJobId = `auto-summary:${input.projectId}`;
+            const existingSummary =
+              await ctx.prisma.experienceSummary.findUnique({
+                where: { projectId: input.projectId },
+                select: { cursorUpdatedAt: true },
+              });
+            const cursor = existingSummary?.cursorUpdatedAt ?? null;
+
+            const pendingCount = await ctx.prisma.errorAnalysis.count({
+              where: {
+                projectId: input.projectId,
+                ...(cursor ? { updatedAt: { gt: cursor } } : {}),
+              },
+            });
+
+            if (pendingCount >= enqueueSettings.minNewAnalysesToEnqueue) {
+              const existingJob = await queue.getJob(summaryJobId);
+              if (existingJob) {
+                const state = await existingJob.getState();
+                if (
+                  [
+                    "waiting",
+                    "active",
+                    "delayed",
+                    "prioritized",
+                    "waiting-children",
+                    "paused",
+                  ].includes(state)
+                ) {
+                  // Job is already queued/running and will pick up all analyses since cursor.
+                  return { rendered, original: final.data };
+                }
+
+                // Completed/failed jobs keep their jobId in Redis; remove so we can re-add with same ID.
+                try {
+                  await existingJob.remove();
+                } catch (e) {
+                  logger.warn(
+                    "Failed to remove existing auto experience summary job",
+                    {
+                      jobId: summaryJobId,
+                      state,
+                      error: e instanceof Error ? e.message : String(e),
+                    },
+                  );
+                }
+              }
+
+              await queue.add(
+                QueueJobs.AutoExperienceSummaryJob,
+                {
+                  id: randomUUID(),
+                  timestamp: new Date(),
+                  name: QueueJobs.AutoExperienceSummaryJob,
+                  payload: {
+                    projectId: input.projectId,
+                    mode: "incremental",
+                    model: input.model,
+                    maxItems: 50,
+                  },
+                },
+                {
+                  jobId: summaryJobId,
+                },
+              );
+            }
+          }
+        }
+      } catch (e) {
+        logger.warn(
+          "Failed to enqueue auto experience summary update from analyze",
+          {
+            ...formatUnknownErrorForLog(e),
+            projectId: input.projectId,
+            traceId: input.traceId,
+            observationId: input.observationId,
+          },
+        );
+      }
+
       return { rendered, original: final.data };
     }),
 
@@ -1263,6 +1420,18 @@ export const errorAnalysisRouter = createTRPCRouter({
         });
       }
 
+      const project = await ctx.prisma.project.findUnique({
+        where: {
+          id: input.projectId,
+        },
+        select: {
+          metadata: true,
+        },
+      });
+      const minNewAnalysesToUpdate = resolveMinNewAnalysesToUpdate(
+        project?.metadata,
+      );
+
       const analysis = await ctx.prisma.errorAnalysis.findUnique({
         where: {
           projectId_observationId: {
@@ -1282,7 +1451,7 @@ export const errorAnalysisRouter = createTRPCRouter({
           summaryCursorUpdatedAt: null,
           summaryUpdatedAt: null,
           pendingAnalysesCount: 0,
-          minNewAnalysesToUpdate: AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
+          minNewAnalysesToUpdate,
         };
       }
 
@@ -1316,7 +1485,7 @@ export const errorAnalysisRouter = createTRPCRouter({
         summaryCursorUpdatedAt,
         summaryUpdatedAt: summary?.updatedAt ?? null,
         pendingAnalysesCount,
-        minNewAnalysesToUpdate: AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
+        minNewAnalysesToUpdate,
       };
     }),
 
