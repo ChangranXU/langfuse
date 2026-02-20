@@ -26,6 +26,7 @@ import {
   splitOnUnescapedPipe,
   unescapePipeInValue,
 } from "../lib/filter-query-encoding";
+import { usePeekTableState } from "@/src/components/table/peek/contexts/PeekTableStateContext";
 
 const DEBUG_QUERY_STATE = false;
 
@@ -136,7 +137,9 @@ export const useQueryFilterState = (
   const queryParamKey = options?.queryParamKey ?? "filter";
   const storageKey =
     options?.storageKey ??
-    (!!projectId ? `${table}FilterState-${projectId}` : `${table}FilterState`);
+    (projectId ? `${table}FilterState-${projectId}` : `${table}FilterState`);
+
+  const peekContext = usePeekTableState();
 
   const [sessionFilterState, setSessionFilterState] =
     useSessionStorage<FilterState>(storageKey, initialState);
@@ -162,6 +165,16 @@ export const useQueryFilterState = (
     queryParamKey,
     withDefault(getCommaArrayParam(table), sessionFilterState),
   );
+
+  if (peekContext) {
+    const setState = (newFilters: FilterState) => {
+      peekContext.setTableState({
+        ...peekContext.tableState,
+        filters: newFilters,
+      });
+    };
+    return [peekContext.tableState.filters, setState] as const;
+  }
 
   const setFilterStateWithSession = (newState: FilterState): void => {
     setFilterState(newState);

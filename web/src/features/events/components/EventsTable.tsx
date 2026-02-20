@@ -6,8 +6,8 @@ import {
 } from "@/src/components/table/data-table-controls";
 import { ResizableFilterLayout } from "@/src/components/table/resizable-filter-layout";
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
-import { NumberParam, useQueryParams, withDefault } from "use-query-params";
 import { useQueryFilterState } from "@/src/features/filters/hooks/useFilterState";
+import { usePaginationState } from "@/src/hooks/usePaginationState";
 import { useSidebarFilterState } from "@/src/features/filters/hooks/useSidebarFilterState";
 import {
   getEventsColumnName,
@@ -23,6 +23,7 @@ import {
   TableViewPresetTableName,
   BatchActionType,
   ActionId,
+  RESOURCE_LIMIT_ERROR_MESSAGE,
 } from "@langfuse/shared";
 import { cn } from "@/src/utils/tailwind";
 import { LevelColors } from "@/src/components/level-colors";
@@ -39,7 +40,7 @@ import TagList from "@/src/features/tag/components/TagList";
 import useColumnOrder from "@/src/features/column-visibility/hooks/useColumnOrder";
 import { BatchExportTableButton } from "@/src/components/BatchExportTableButton";
 import { BreakdownTooltip } from "@/src/components/trace2/components/_shared/BreakdownToolTip";
-import { ArrowUpRight, InfoIcon, PlusCircle } from "lucide-react";
+import { ArrowUpRight, InfoIcon, LightbulbIcon, PlusCircle } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -62,7 +63,10 @@ import { TableSelectionManager } from "@/src/features/table/components/TableSele
 import { useSelectAll } from "@/src/features/table/hooks/useSelectAll";
 import { TableActionMenu } from "@/src/features/table/components/TableActionMenu";
 import { type TableAction } from "@/src/features/table/types";
-import { type DataTablePeekViewProps } from "@/src/components/table/peek";
+import {
+  type DataTablePeekViewProps,
+  TablePeekView,
+} from "@/src/components/table/peek";
 import { useScoreColumns } from "@/src/features/scores/hooks/useScoreColumns";
 import { scoreFilters } from "@/src/features/scores/lib/scoreColumns";
 import useColumnVisibility from "@/src/features/column-visibility/hooks/useColumnVisibility";
@@ -74,7 +78,6 @@ import {
   type EventsViewMode,
 } from "@/src/features/events/hooks/useEventsViewMode";
 import { EventsViewModeToggle } from "@/src/features/events/components/EventsViewModeToggle";
-import { useObservationCountCheck } from "@/src/features/events/hooks/useObservationCountCheck";
 import { JsonSkeleton } from "@/src/components/ui/CodeJsonViewer";
 import {
   type RefreshInterval,
@@ -85,6 +88,7 @@ import { api } from "@/src/utils/api";
 import Link from "next/link";
 import { Button } from "@/src/components/ui/button";
 import { BulkErrorAnalysisButton } from "@/src/features/error-analysis/components/BulkErrorAnalysisButton";
+import { RunEvaluationDialog } from "@/src/features/batch-actions/components/RunEvaluationDialog/index";
 
 export type EventsTableRow = {
   // Identity fields
@@ -208,11 +212,9 @@ export default function ObservationsEventsTable({
     useFullTextSearch();
 
   const { selectAll, setSelectAll } = useSelectAll(projectId, "observations");
+  const [showRunEvaluationDialog, setShowRunEvaluationDialog] = useState(false);
 
-  const [paginationState, setPaginationState] = useQueryParams({
-    page: withDefault(NumberParam, 1),
-    limit: withDefault(NumberParam, 50),
-  });
+  const [paginationState, setPaginationState] = usePaginationState(1, 50);
 
   const [rowHeight, setRowHeight] = useRowHeightLocalStorage(
     "observations",
@@ -255,41 +257,36 @@ export default function ObservationsEventsTable({
 
   const { timeRange, setTimeRange } = useTableDateRange(projectId);
 
+  // Disabled for now because perhaps confusing — replaced by "Is Root Observation"
+  // boolean facet in the sidebar (see filter-config.ts).
+  //
+  // RE-ENABLING THE VIEW MODE TOGGLE:
+  // To re-enable, uncomment the code below AND the viewModeFilter, viewModeToggle,
+  // auto-switch logic, and imports further down. However, note that the sidebar now
+  // has an "Is Root Observation" boolean facet that also controls `hasParentObservation`.
+  // Having BOTH active would create duplicate/conflicting filters. Pick one:
+  //   - Sidebar facet only (current): remove this commented code entirely
+  //   - Toolbar toggle only: uncomment this code, remove the boolean facet from
+  //     web/src/features/events/config/filter-config.ts, and re-add
+  //     `hasParentObservation` param to the useEventsFilterOptions call below
+  //   - Both: would need deduplication logic to prevent conflicting filters
+  //
   // View mode toggle (Trace vs Observation)
   const { viewMode: storedViewMode, setViewMode: setViewModeRaw } =
     useEventsViewMode(projectId);
   const viewMode = forceViewMode ?? storedViewMode;
   const canChangeViewMode = !forceViewMode;
 
-  // if the user explicitly choose to filter for trace, we don't want to auto switch them even if there are no "traces" aka root observations
-  const [userExplicitChoice, setUserExplicitChoice] =
-    useSessionStorage<EventsViewMode | null>(
-      `eventsViewModeUserChoice-${projectId}`,
-      null,
-    );
-
-  // Track date range(s) for which we've auto-switched (to avoid repeated switches)
-  const [autoSwitchedForRange, setAutoSwitchedForRange] = useSessionStorage<
-    string | null
-  >(`eventsAutoSwitchRange-${projectId}`, null);
-
   // For filter options: trace mode filters to root items, observation mode shows all
   const hasParentObservation = viewMode === "observation" ? undefined : false;
 
-  // Wrap setViewMode to reset pagination and track explicit user choice
   const setViewMode = useCallback(
     (mode: EventsViewMode) => {
       if (!canChangeViewMode) return;
-      setUserExplicitChoice(mode); // Track explicit choice
       setViewModeRaw(mode);
-      setPaginationState({ page: 1 });
+      setPaginationState({ page: 1, limit: paginationState.limit });
     },
-    [
-      canChangeViewMode,
-      setUserExplicitChoice,
-      setViewModeRaw,
-      setPaginationState,
-    ],
+    [canChangeViewMode, paginationState.limit, setPaginationState, setViewModeRaw],
   );
 
   // for auto data refresh
@@ -367,7 +364,7 @@ export default function ObservationsEventsTable({
 
   const oldFilterState = inputFilterState.concat(dateRangeFilter);
 
-  // Fetch filter options (scoped to current view mode)
+  // Fetch filter options
   const { filterOptions, isFilterOptionsPending } = useEventsFilterOptions({
     projectId,
     oldFilterState,
@@ -446,7 +443,6 @@ export default function ObservationsEventsTable({
     [],
   );
 
-  // Create view mode filter (not shown in sidebar)
   const viewModeFilter: FilterState =
     viewMode === "trace"
       ? [
@@ -454,10 +450,17 @@ export default function ObservationsEventsTable({
             column: "hasParentObservation",
             type: "boolean",
             operator: "=",
-            value: false, // Only root-level items (no parent)
+            value: false,
           },
         ]
       : [];
+
+  const sidebarFilterState = useMemo(() => {
+    if (viewMode !== "trace") return queryFilter.filterState;
+    return queryFilter.filterState.filter(
+      (f) => String(f.column).toLowerCase() !== "hasparentobservation",
+    );
+  }, [queryFilter.filterState, viewMode]);
 
   // Create user ID filter if userId is provided
   const userIdFilter: FilterState = userId
@@ -482,59 +485,14 @@ export default function ObservationsEventsTable({
       ]
     : [];
 
-  const combinedFilterState = queryFilter.filterState
+  const combinedFilterState = sidebarFilterState
     .concat(dateRangeFilter)
-    .concat(viewModeFilter)
     .concat(userIdFilter)
-    .concat(sessionIdFilter);
+    .concat(sessionIdFilter)
+    .concat(viewModeFilter);
 
   // Use external filter state if provided, otherwise use combined filter state
   const filterState = externalFilterState || combinedFilterState;
-  // Filter state WITHOUT viewModeFilter - for auto-switch observation count check
-  const filterStateWithoutViewMode = useMemo(() => {
-    const filters: FilterState = [...queryFilter.filterState];
-
-    if (dateRange?.from) {
-      filters.push({
-        column: "startTime",
-        type: "datetime",
-        operator: ">=",
-        value: dateRange.from,
-      });
-    }
-    if (dateRange?.to) {
-      filters.push({
-        column: "startTime",
-        type: "datetime",
-        operator: "<=",
-        value: dateRange.to,
-      });
-    }
-    if (userId) {
-      filters.push({
-        column: "User ID",
-        type: "string",
-        operator: "=",
-        value: userId,
-      });
-    }
-    if (sessionId) {
-      filters.push({
-        column: "Session ID",
-        type: "string",
-        operator: "=",
-        value: sessionId,
-      });
-    }
-
-    return filters;
-  }, [
-    queryFilter.filterState,
-    dateRange?.from,
-    dateRange?.to,
-    userId,
-    sessionId,
-  ]);
 
   // Use the custom hook for observations data fetching
   const {
@@ -543,6 +501,7 @@ export default function ObservationsEventsTable({
     handleAddToAnnotationQueue,
     dataUpdatedAt,
     ioLoading,
+    isSilencedError,
   } = useEventsTableData({
     projectId,
     filterState,
@@ -557,65 +516,9 @@ export default function ObservationsEventsTable({
     setSelectedRows,
   });
 
+  // Disabled for now because perhaps confusing
   // === Auto-switch to observation mode when trace view is empty ===
-
-  const dateRangeKey = useMemo(() => {
-    if (!dateRange?.from) return null;
-    return `${dateRange.from.getTime()}-${dateRange.to?.getTime() ?? "now"}`;
-  }, [dateRange]);
-
-  // Reset auto-switch tracking when date range changes
-  useEffect(() => {
-    if (
-      dateRangeKey &&
-      autoSwitchedForRange &&
-      dateRangeKey !== autoSwitchedForRange
-    ) {
-      setAutoSwitchedForRange(null);
-    }
-  }, [dateRangeKey, autoSwitchedForRange, setAutoSwitchedForRange]);
-
-  // Determine if we should check observation count for auto-switch
-  const shouldCheckObservationCount =
-    viewMode === "trace" &&
-    totalCount === 0 &&
-    observations.status === "success" &&
-    userExplicitChoice !== "trace" &&
-    dateRangeKey !== null &&
-    autoSwitchedForRange !== dateRangeKey;
-
-  const {
-    observationCount,
-    isSuccess: obsCountSuccess,
-    isPending: obsCountPending,
-  } = useObservationCountCheck({
-    projectId,
-    filterStateWithoutViewMode,
-    enabled: shouldCheckObservationCount,
-  });
-
-  // Auto-switch to observation mode when conditions are met
-  useEffect(() => {
-    if (
-      shouldCheckObservationCount &&
-      obsCountSuccess &&
-      observationCount !== null &&
-      observationCount > 0 &&
-      dateRangeKey
-    ) {
-      setViewModeRaw("observation");
-      setAutoSwitchedForRange(dateRangeKey);
-    }
-  }, [
-    shouldCheckObservationCount,
-    obsCountSuccess,
-    observationCount,
-    dateRangeKey,
-    setViewModeRaw,
-    setAutoSwitchedForRange,
-  ]);
-
-  const isAutoSwitchPending = shouldCheckObservationCount && obsCountPending;
+  // (commented out along with view mode toggle)
 
   useEffect(() => {
     if (observations.status === "success") {
@@ -657,6 +560,17 @@ export default function ObservationsEventsTable({
       execute: handleAddToAnnotationQueue,
       accessCheck: {
         scope: "annotationQueues:CUD",
+      },
+    },
+    {
+      id: ActionId.ObservationBatchEvaluation,
+      type: BatchActionType.Create,
+      label: "Evaluate",
+      description: "Run evaluations on selected observations.",
+      customDialog: true,
+      icon: <LightbulbIcon className="mr-2 h-4 w-4" />,
+      accessCheck: {
+        scope: "evalJob:CUD",
       },
     },
   ];
@@ -1329,10 +1243,9 @@ export default function ObservationsEventsTable({
       customTitlePrefix: "Observation ID:",
       detailNavigationKey: "observations",
       children: <PeekViewObservationDetail projectId={projectId} />,
-      tableDataUpdatedAt: dataUpdatedAt,
       ...peekNavigationProps,
     };
-  }, [projectId, dataUpdatedAt, peekNavigationProps, hideControls]);
+  }, [projectId, peekNavigationProps, hideControls]);
 
   const rows: EventsTableRow[] = useMemo(() => {
     const result =
@@ -1508,6 +1421,11 @@ export default function ObservationsEventsTable({
                   projectId={projectId}
                   actions={tableActions}
                   tableName={BatchExportTableName.Observations}
+                  onCustomAction={(actionType) => {
+                    if (actionType === ActionId.ObservationBatchEvaluation) {
+                      setShowRunEvaluationDialog(true);
+                    }
+                  }}
                 />
               ) : null,
             ]}
@@ -1537,21 +1455,32 @@ export default function ObservationsEventsTable({
               columns={columns}
               peekView={peekConfig}
               data={
-                observations.status === "loading" ||
-                isViewLoading ||
-                isAutoSwitchPending
+                observations.status === "loading" || isViewLoading
                   ? { isLoading: true, isError: false }
                   : observations.status === "error"
-                    ? {
-                        isLoading: false,
-                        isError: true,
-                        error: "",
-                      }
+                    ? isSilencedError
+                      ? {
+                          isLoading: false,
+                          isError: false,
+                          data: [],
+                        }
+                      : {
+                          isLoading: false,
+                          isError: true,
+                          error: "",
+                        }
                     : {
                         isLoading: false,
                         isError: false,
                         data: rows,
                       }
+              }
+              noResultsMessage={
+                isSilencedError ? (
+                  <span className="text-muted-foreground">
+                    {RESOURCE_LIMIT_ERROR_MESSAGE}
+                  </span>
+                ) : undefined
               }
               pagination={
                 limitRows
@@ -1617,7 +1546,31 @@ export default function ObservationsEventsTable({
             />
           </div>
         </ResizableFilterLayout>
+        {peekConfig && <TablePeekView peekView={peekConfig} />}
       </div>
+
+      {showRunEvaluationDialog && (
+        <RunEvaluationDialog
+          projectId={projectId}
+          selectedObservationIds={(() => {
+            const rowIds = new Set(observations.rows?.map((o) => o.id));
+            return Object.keys(selectedRows).filter((id) => rowIds.has(id));
+          })()}
+          query={{
+            filter: filterState,
+            orderBy: orderByState,
+            searchQuery: searchQuery ?? undefined,
+            searchType,
+          }}
+          selectAll={selectAll}
+          totalCount={totalCount ?? 0}
+          onClose={() => {
+            setShowRunEvaluationDialog(false);
+            setSelectedRows({});
+            setSelectAll(false);
+          }}
+        />
+      )}
     </DataTableControlsProvider>
   );
 }
