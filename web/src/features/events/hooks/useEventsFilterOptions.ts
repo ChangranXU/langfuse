@@ -78,6 +78,10 @@ export function useEventsFilterOptions({
       experimentName: filterOptions.data?.experimentName ?? undefined,
       hasParentObservation:
         filterOptions.data?.hasParentObservation ?? undefined,
+      toolNames: filterOptions.data?.toolNames ?? undefined,
+      calledToolNames: filterOptions.data?.calledToolNames ?? undefined,
+      toolDefinitions: [],
+      toolCalls: [],
       latency: [],
       timeToFirstToken: [],
       tokensPerSecond: [],

@@ -94,6 +94,7 @@ import Link from "next/link";
 import { Button } from "@/src/components/ui/button";
 import { BulkErrorAnalysisButton } from "@/src/features/error-analysis/components/BulkErrorAnalysisButton";
 import { RunEvaluationDialog } from "@/src/features/batch-actions/components/RunEvaluationDialog/index";
+import { AddObservationsToDatasetDialog } from "@/src/features/batch-actions/components/AddObservationsToDatasetDialog/index";
 
 export type EventsTableRow = {
   // Identity fields
@@ -148,6 +149,10 @@ export type EventsTableRow = {
   // Performance metrics
   latency?: number;
   timeToFirstToken?: number;
+
+  // Tool fields
+  toolDefinitions?: number;
+  toolCalls?: number;
 
   input?: string;
   output?: string;
@@ -218,6 +223,7 @@ export default function ObservationsEventsTable({
 
   const { selectAll, setSelectAll } = useSelectAll(projectId, "observations");
   const [showRunEvaluationDialog, setShowRunEvaluationDialog] = useState(false);
+  const [showAddToDatasetDialog, setShowAddToDatasetDialog] = useState(false);
 
   const [paginationState, setPaginationState] = usePaginationState(1, 50);
 
@@ -573,6 +579,16 @@ export default function ObservationsEventsTable({
       },
     },
     {
+      id: ActionId.ObservationAddToDataset,
+      type: BatchActionType.Create,
+      label: "Add to Dataset",
+      description: "Add selected observations to a dataset",
+      customDialog: true,
+      accessCheck: {
+        scope: "datasets:CUD",
+      },
+    },
+    {
       id: ActionId.ObservationBatchEvaluation,
       type: BatchActionType.Create,
       label: "Evaluate",
@@ -915,6 +931,36 @@ export default function ObservationsEventsTable({
           enableSorting,
         },
       ],
+    },
+    {
+      accessorKey: "toolDefinitions",
+      id: "toolDefinitions",
+      header: getEventsColumnName("toolDefinitions"),
+      size: 120,
+      enableHiding: true,
+      enableSorting,
+      defaultHidden: true,
+      cell: ({ row }) => {
+        const value: number | undefined = row.getValue("toolDefinitions");
+        return value !== undefined ? (
+          <span>{numberFormatter(value, 0)}</span>
+        ) : undefined;
+      },
+    },
+    {
+      accessorKey: "toolCalls",
+      id: "toolCalls",
+      header: getEventsColumnName("toolCalls"),
+      size: 100,
+      enableHiding: true,
+      enableSorting,
+      defaultHidden: true,
+      cell: ({ row }) => {
+        const value: number | undefined = row.getValue("toolCalls");
+        return value !== undefined ? (
+          <span>{numberFormatter(value, 0)}</span>
+        ) : undefined;
+      },
     },
     {
       accessorKey: "timeToFirstToken",
@@ -1314,6 +1360,12 @@ export default function ObservationsEventsTable({
               userId: observation.userId ?? undefined,
               sessionId: observation.sessionId ?? undefined,
               completionStartTime: observation.completionStartTime ?? undefined,
+              toolDefinitions: observation.toolDefinitions
+                ? Object.keys(observation.toolDefinitions).length
+                : undefined,
+              toolCalls: observation.toolCalls
+                ? observation.toolCalls.length
+                : undefined,
             };
           })
         : [];
@@ -1321,18 +1373,10 @@ export default function ObservationsEventsTable({
     return result;
   }, [observations]);
 
-  const visibleObservationIds = useMemo(
-    () => new Set((observations.rows ?? []).map((o) => o.id)),
-    [observations.rows],
-  );
-
-  const selectedObservationIds = useMemo(
-    () =>
-      Object.keys(selectedRows).filter((observationId) =>
-        visibleObservationIds.has(observationId),
-      ),
-    [selectedRows, visibleObservationIds],
-  );
+  const selectedObservationIds = useMemo(() => {
+    const rowIds = new Set(observations.rows?.map((o) => o.id));
+    return Object.keys(selectedRows).filter((id) => rowIds.has(id));
+  }, [observations.rows, selectedRows]);
 
   const selectedObservationIdSet = useMemo(
     () => new Set(selectedObservationIds),
@@ -1350,6 +1394,16 @@ export default function ObservationsEventsTable({
         })),
     [rows, selectedObservationIdSet],
   );
+
+  const exampleObservation = useMemo(() => {
+    const firstId = selectedObservationIds[0];
+    const firstObs = observations.rows?.find((o) => o.id === firstId);
+    return {
+      id: firstObs?.id ?? "",
+      traceId: firstObs?.traceId ?? "",
+      startTime: firstObs?.startTime ?? undefined,
+    };
+  }, [selectedObservationIds, observations.rows]);
 
   return (
     <DataTableControlsProvider>
@@ -1434,6 +1488,9 @@ export default function ObservationsEventsTable({
                   onCustomAction={(actionType) => {
                     if (actionType === ActionId.ObservationBatchEvaluation) {
                       setShowRunEvaluationDialog(true);
+                    }
+                    if (actionType === ActionId.ObservationAddToDataset) {
+                      setShowAddToDatasetDialog(true);
                     }
                   }}
                 />
@@ -1562,10 +1619,7 @@ export default function ObservationsEventsTable({
       {showRunEvaluationDialog && (
         <RunEvaluationDialog
           projectId={projectId}
-          selectedObservationIds={(() => {
-            const rowIds = new Set(observations.rows?.map((o) => o.id));
-            return Object.keys(selectedRows).filter((id) => rowIds.has(id));
-          })()}
+          selectedObservationIds={selectedObservationIds}
           query={{
             filter: filterState,
             orderBy: orderByState,
@@ -1579,6 +1633,28 @@ export default function ObservationsEventsTable({
             setSelectedRows({});
             setSelectAll(false);
           }}
+          exampleObservation={exampleObservation}
+        />
+      )}
+
+      {showAddToDatasetDialog && (
+        <AddObservationsToDatasetDialog
+          projectId={projectId}
+          selectedObservationIds={selectedObservationIds}
+          query={{
+            filter: filterState,
+            orderBy: orderByState,
+            searchQuery: searchQuery ?? undefined,
+            searchType,
+          }}
+          selectAll={selectAll}
+          totalCount={totalCount ?? 0}
+          onClose={() => {
+            setShowAddToDatasetDialog(false);
+            setSelectedRows({});
+            setSelectAll(false);
+          }}
+          exampleObservation={exampleObservation}
         />
       )}
     </DataTableControlsProvider>

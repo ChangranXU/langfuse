@@ -24,6 +24,7 @@ import {
   getAgentGraphDataFromEventsTable,
   getObservationsForTraceFromEventsTable,
   MAX_OBSERVATIONS_PER_TRACE,
+  applyCommentFilters,
 } from "@langfuse/shared/src/server";
 
 import {
@@ -75,6 +76,17 @@ export const eventsRouter = createTRPCRouter({
   all: protectedProjectProcedure
     .input(GetAllEventsInput)
     .query(async ({ input, ctx }) => {
+      const { filterState, hasNoMatches } = await applyCommentFilters({
+        filterState: input.filter ?? [],
+        prisma: ctx.prisma,
+        projectId: ctx.session.projectId,
+        objectType: "OBSERVATION",
+      });
+
+      if (hasNoMatches) {
+        return { observations: [] };
+      }
+
       return instrumentAsync(
         {
           name: "get-event-list-trpc",
@@ -104,6 +116,17 @@ export const eventsRouter = createTRPCRouter({
   countAll: protectedProjectProcedure
     .input(GetAllEventsInput)
     .query(async ({ input, ctx }) => {
+      const { filterState, hasNoMatches } = await applyCommentFilters({
+        filterState: input.filter ?? [],
+        prisma: ctx.prisma,
+        projectId: ctx.session.projectId,
+        objectType: "OBSERVATION",
+      });
+
+      if (hasNoMatches) {
+        return { totalCount: 0 };
+      }
+
       return instrumentAsync(
         {
           name: "get-event-count-trpc",
