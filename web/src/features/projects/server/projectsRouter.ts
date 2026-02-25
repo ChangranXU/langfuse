@@ -11,14 +11,25 @@ import { auditLog } from "@/src/features/audit-logs/auditLog";
 import { throwIfNoOrganizationAccess } from "@/src/features/rbac/utils/checkOrganizationAccess";
 import { ApiAuthService } from "@/src/features/public-api/server/apiAuth";
 import {
+  ExperienceSummaryJsonSchema,
+  ExperienceSummaryMarkdownOutputModeSchema,
+} from "@/src/features/experience-summary/types";
+import { mkdir, readFile, writeFile } from "fs/promises";
+import {
   QueueJobs,
   redis,
   ProjectDeleteQueue,
   getEnvironmentsForProject,
+  logger,
 } from "@langfuse/shared/src/server";
+import { LLMAdapter, StringNoHTMLNonEmpty } from "@langfuse/shared";
+import {
+  buildExperienceSummaryHintSectionContent,
+  removeProjectHintSectionFromMarkdown,
+  upsertProjectHintSectionInMarkdown,
+} from "@langfuse/shared/src/utils/experienceSummaryHintMarkdown";
 import { randomUUID } from "crypto";
-import { StringNoHTMLNonEmpty } from "@langfuse/shared";
-import { isAbsolute } from "path";
+import { dirname, isAbsolute } from "path";
 
 const AutoErrorAnalysisModelSchema = z.enum(["gpt-5.2", "gpt-4.1"]);
 const ProjectAutoErrorAnalysisSettingsSchema = z.object({
@@ -31,6 +42,14 @@ const ProjectAutoErrorAnalysisSettingsSchema = z.object({
     .min(1)
     .nullable()
     .default(null),
+  summaryRetrievalEmbeddingLlmApiKeyId: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .default(null),
+  summaryMarkdownOutputMode:
+    ExperienceSummaryMarkdownOutputModeSchema.default("prompt_pack_only"),
 });
 type ProjectAutoErrorAnalysisSettings = z.infer<
   typeof ProjectAutoErrorAnalysisSettingsSchema
@@ -41,6 +60,8 @@ const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: ProjectAutoErrorAnalysisSettings = {
   model: "gpt-5.2",
   minNewErrorNodesForSummary: null,
   summaryAppendMarkdownAbsolutePath: null,
+  summaryRetrievalEmbeddingLlmApiKeyId: null,
+  summaryMarkdownOutputMode: "prompt_pack_only",
 };
 
 function parseAutoErrorAnalysisSettings(
@@ -264,6 +285,17 @@ export const projectsRouter = createTRPCRouter({
           .nullable()
           .optional()
           .default(null),
+        summaryRetrievalEmbeddingLlmApiKeyId: z
+          .string()
+          .trim()
+          .min(1)
+          .nullable()
+          .optional()
+          .default(null),
+        summaryMarkdownOutputMode:
+          ExperienceSummaryMarkdownOutputModeSchema.optional().default(
+            "prompt_pack_only",
+          ),
       }),
     )
     .output(ProjectAutoErrorAnalysisSettingsSchema)
@@ -311,12 +343,45 @@ export const projectsRouter = createTRPCRouter({
         });
       }
 
+      if (input.summaryRetrievalEmbeddingLlmApiKeyId) {
+        const retrievalLlmConnection = await ctx.prisma.llmApiKeys.findUnique({
+          where: {
+            id: input.summaryRetrievalEmbeddingLlmApiKeyId,
+            projectId: input.projectId,
+          },
+          select: {
+            id: true,
+            adapter: true,
+          },
+        });
+        if (!retrievalLlmConnection) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Summary retrieval embedding connection does not exist.",
+          });
+        }
+        if (retrievalLlmConnection.adapter !== LLMAdapter.OpenAI) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Summary retrieval embedding connection must use OpenAI adapter.",
+          });
+        }
+      }
+
+      const previousSettings = parseAutoErrorAnalysisSettings(
+        existingProject.metadata,
+      );
+
       const settings: ProjectAutoErrorAnalysisSettings = {
         enabled: input.enabled,
         model: input.model,
         minNewErrorNodesForSummary: input.minNewErrorNodesForSummary ?? null,
         summaryAppendMarkdownAbsolutePath:
           input.summaryAppendMarkdownAbsolutePath ?? null,
+        summaryRetrievalEmbeddingLlmApiKeyId:
+          input.summaryRetrievalEmbeddingLlmApiKeyId ?? null,
+        summaryMarkdownOutputMode: input.summaryMarkdownOutputMode,
       };
 
       const mergedMetadata = mergeAutoErrorAnalysisSettingsIntoMetadata({
@@ -343,6 +408,120 @@ export const projectsRouter = createTRPCRouter({
           autoErrorAnalysis: settings,
         },
       });
+
+      // Best-effort: keep the configured markdown hint section in sync with the
+      // project's tracing/auto-analysis toggle.
+      const maybePreviousPath =
+        previousSettings.summaryAppendMarkdownAbsolutePath;
+      const maybeNextPath = settings.summaryAppendMarkdownAbsolutePath;
+      const nextEnabled = settings.enabled === true;
+      const pathChanged = maybePreviousPath !== maybeNextPath;
+
+      const removeHintSectionInFile = async (absolutePath: string) => {
+        let existingContent = "";
+        try {
+          existingContent = await readFile(absolutePath, "utf8");
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === "ENOENT") return;
+          throw error;
+        }
+
+        const removed = removeProjectHintSectionFromMarkdown({
+          markdown: existingContent,
+          projectId: input.projectId,
+        });
+        if (!removed.removed) return;
+
+        await mkdir(dirname(absolutePath), { recursive: true });
+        await writeFile(
+          absolutePath,
+          `${removed.markdown.replace(/\s*$/, "")}\n`,
+          "utf8",
+        );
+      };
+
+      const upsertHintSectionInFile = async (params: {
+        absolutePath: string;
+        summary: z.infer<typeof ExperienceSummaryJsonSchema>;
+      }) => {
+        await mkdir(dirname(params.absolutePath), { recursive: true });
+
+        let existingContent = "";
+        try {
+          existingContent = await readFile(params.absolutePath, "utf8");
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== "ENOENT") throw error;
+        }
+
+        const replacementContent = buildExperienceSummaryHintSectionContent({
+          summary: params.summary,
+          outputMode: settings.summaryMarkdownOutputMode,
+          sectionHeadingHashCount: 4,
+        });
+        const updatedMarkdown = upsertProjectHintSectionInMarkdown({
+          markdown: existingContent,
+          projectId: input.projectId,
+          replacementContent,
+          defaultHeadingHashCount: 2,
+        });
+        await writeFile(
+          params.absolutePath,
+          `${updatedMarkdown.replace(/\s*$/, "")}\n`,
+          "utf8",
+        );
+      };
+
+      try {
+        // If disabled, ensure no hint/summary is left behind in the configured markdown file(s).
+        if (!nextEnabled) {
+          for (const p of [maybePreviousPath, maybeNextPath]) {
+            if (p) await removeHintSectionInFile(p);
+          }
+        } else {
+          // If the target file changed, remove the old hint section to avoid stale content.
+          if (pathChanged && maybePreviousPath) {
+            await removeHintSectionInFile(maybePreviousPath);
+          }
+
+          if (maybeNextPath) {
+            const row = await ctx.prisma.experienceSummary.findUnique({
+              where: { projectId: input.projectId },
+              select: { summary: true },
+            });
+            const parsed = ExperienceSummaryJsonSchema.safeParse(
+              row?.summary ?? null,
+            );
+            if (parsed.success) {
+              await upsertHintSectionInFile({
+                absolutePath: maybeNextPath,
+                summary: parsed.data,
+              });
+            } else {
+              // No valid summary yet: clear existing hint section if present (keeps markdown clean).
+              await removeHintSectionInFile(maybeNextPath);
+              if (row?.summary != null) {
+                logger.warn(
+                  "Project experience summary failed schema validation; skipping markdown insert",
+                  {
+                    projectId: input.projectId,
+                    path: maybeNextPath,
+                    error: parsed.error.message,
+                  },
+                );
+              }
+            }
+          }
+        }
+      } catch (error) {
+        logger.warn("Failed to sync hint section in markdown file", {
+          projectId: input.projectId,
+          previousPath: maybePreviousPath,
+          nextPath: maybeNextPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
 
       return parseAutoErrorAnalysisSettings(project.metadata);
     }),

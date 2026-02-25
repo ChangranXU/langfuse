@@ -8,6 +8,13 @@ export type ExperienceSummaryModel = z.infer<
 
 export const ExperienceSummaryModeSchema = z.enum(["full", "incremental"]);
 export type ExperienceSummaryMode = z.infer<typeof ExperienceSummaryModeSchema>;
+export const ExperienceSummaryMarkdownOutputModeSchema = z.enum([
+  "prompt_pack_only",
+  "full",
+]);
+export type ExperienceSummaryMarkdownOutputMode = z.infer<
+  typeof ExperienceSummaryMarkdownOutputModeSchema
+>;
 
 const ExperienceItemKeySchema = z
   .string()
@@ -19,6 +26,7 @@ export const ExperienceItemSchema = z
   .object({
     key: ExperienceItemKeySchema,
     when: z.string().min(1).max(800),
+    keywords: z.array(z.string().min(1).max(64)).max(20).nullish(),
     possibleProblems: z.array(z.string().min(1).max(400)).max(30),
     avoidanceAndNotes: z.array(z.string().min(1).max(500)).max(40),
     promptAdditions: z.array(z.string().min(1).max(300)).max(40),
@@ -71,6 +79,12 @@ export const ExperienceSummaryStructuredOutputSchema = zodV3
             when: zodV3
               .string()
               .describe("When this issue happens (or similar situations)."),
+            keywords: zodV3
+              .array(zodV3.string())
+              .nullable()
+              .describe(
+                "Optional concise keywords for retrieval/ranking when selecting targeted experiences.",
+              ),
             possibleProblems: zodV3
               .array(zodV3.string())
               .describe("Possible problems you may encounter."),

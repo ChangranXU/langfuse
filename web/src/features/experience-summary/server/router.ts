@@ -16,10 +16,17 @@ import {
 } from "@langfuse/shared";
 import { fetchLLMCompletion, logger } from "@langfuse/shared/src/server";
 import {
+  buildExperienceSummaryHintSectionContent,
+  type ExperienceSummaryMarkdownOutputMode,
+  upsertProjectHintSectionInMarkdown,
+} from "@langfuse/shared/src/utils/experienceSummaryHintMarkdown";
+import {
   ExperienceSummaryJsonSchema,
+  ExperienceSummaryMarkdownOutputModeSchema,
   ExperienceSummaryModeSchema,
   ExperienceSummaryModelSchema,
   ExperienceSummaryStructuredOutputSchema,
+  type ExperienceSummaryJson,
 } from "../types";
 
 function safeStringify(value: unknown): string {
@@ -35,23 +42,108 @@ function truncateString(value: string, maxChars: number): string {
   return value.slice(0, Math.max(0, maxChars - 30)) + "\n...[truncated]";
 }
 
+function uniqueStableLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const normalized = line.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function parseExperienceSummary(
+  summary: unknown | null,
+): ExperienceSummaryJson | null {
+  if (!summary) return null;
+  const parsed = ExperienceSummaryJsonSchema.safeParse(summary);
+  return parsed.success ? parsed.data : null;
+}
+
+function buildExistingSummaryInfo(previous: ExperienceSummaryJson): {
+  existingSummaryKeys: string[];
+  existingPromptPack: { title: string; lines: string[] };
+} {
+  return {
+    existingSummaryKeys: previous.experiences.map((e) => e.key),
+    existingPromptPack: {
+      title: previous.promptPack.title,
+      // Limit what we send to the model; we merge deterministically server-side.
+      lines: previous.promptPack.lines.slice(0, 50),
+    },
+  };
+}
+
+function mergeExperienceSummaries(params: {
+  previous: ExperienceSummaryJson;
+  delta: ExperienceSummaryJson;
+}): ExperienceSummaryJson {
+  const deltaByKey = new Map(params.delta.experiences.map((e) => [e.key, e]));
+  const previousOnly = params.previous.experiences.filter(
+    (e) => !deltaByKey.has(e.key),
+  );
+
+  const mergedExperiences = [
+    ...params.delta.experiences,
+    ...previousOnly,
+  ].slice(0, 100);
+
+  const mergedPromptPackLines = uniqueStableLines([
+    ...params.previous.promptPack.lines,
+    ...params.delta.promptPack.lines,
+    ...mergedExperiences.flatMap(
+      (experience) => experience.promptAdditions ?? [],
+    ),
+  ]).slice(0, 200);
+
+  return {
+    schemaVersion: 1,
+    experiences: mergedExperiences,
+    promptPack: {
+      title: params.previous.promptPack.title || params.delta.promptPack.title,
+      lines: mergedPromptPackLines,
+    },
+  };
+}
+
+function ensurePromptPackCoverage(
+  summary: ExperienceSummaryJson,
+): ExperienceSummaryJson {
+  return {
+    ...summary,
+    promptPack: {
+      title: summary.promptPack.title,
+      lines: uniqueStableLines([
+        ...summary.promptPack.lines,
+        ...summary.experiences.flatMap(
+          (experience) => experience.promptAdditions ?? [],
+        ),
+      ]).slice(0, 200),
+    },
+  };
+}
+
 function resolveDemoOpenAIModel(
   model: z.infer<typeof ExperienceSummaryModelSchema>,
 ) {
   return model === "gpt-5.2" ? "gpt-5.2-2025-12-11" : "gpt-4.1";
 }
 
-const AutoErrorAnalysisSummarySettingsSchema = z.object({
-  summaryAppendMarkdownAbsolutePath: z
-    .string()
-    .trim()
-    .min(1)
-    .nullable()
-    .default(null),
-});
-
-const HINT_SECTION_HEADING = "# HINT";
-const NEXT_TOP_LEVEL_HEADING_REGEX = /^#(?!#)\s*.+$/m;
+const AutoErrorAnalysisSummarySettingsSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    summaryAppendMarkdownAbsolutePath: z
+      .string()
+      .trim()
+      .min(1)
+      .nullable()
+      .default(null),
+    summaryMarkdownOutputMode:
+      ExperienceSummaryMarkdownOutputModeSchema.default("prompt_pack_only"),
+  })
+  .passthrough();
 
 const ExperienceSummaryGetInputSchema = z.object({
   projectId: z.string(),
@@ -97,15 +189,53 @@ type ErrorAnalysisCompact = {
   confidence: number;
 };
 
-function resolveSummaryMarkdownPath(metadata: unknown): string | null {
+const MAX_ANALYSIS_PAYLOAD_CHARS = 28_000;
+
+function compactAnalysisPayloadRows(
+  rows: ErrorAnalysisCompact[],
+): ErrorAnalysisCompact[] {
+  let totalChars = 0;
+  const out: ErrorAnalysisCompact[] = [];
+  for (const row of rows) {
+    const rowChars = JSON.stringify(row).length;
+    if (out.length > 0 && totalChars + rowChars > MAX_ANALYSIS_PAYLOAD_CHARS) {
+      break;
+    }
+    out.push(row);
+    totalChars += rowChars;
+  }
+  return out;
+}
+
+function resolveSummaryMarkdownConfig(metadata: unknown): {
+  absolutePath: string | null;
+  outputMode: ExperienceSummaryMarkdownOutputMode;
+} {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return null;
+    return {
+      absolutePath: null,
+      outputMode: "prompt_pack_only",
+    };
   }
 
   const parsed = AutoErrorAnalysisSummarySettingsSchema.safeParse(
     (metadata as Record<string, unknown>).autoErrorAnalysis,
   );
-  if (!parsed.success) return null;
+  if (!parsed.success) {
+    return {
+      absolutePath: null,
+      outputMode: "prompt_pack_only",
+    };
+  }
+
+  const outputMode = parsed.data.summaryMarkdownOutputMode;
+
+  if (parsed.data.enabled !== true) {
+    return {
+      absolutePath: null,
+      outputMode,
+    };
+  }
 
   const pathFromSettings = parsed.data.summaryAppendMarkdownAbsolutePath;
   if (
@@ -113,121 +243,23 @@ function resolveSummaryMarkdownPath(metadata: unknown): string | null {
     !isAbsolute(pathFromSettings) ||
     !pathFromSettings.toLowerCase().endsWith(".md")
   ) {
-    return null;
+    return {
+      absolutePath: null,
+      outputMode,
+    };
   }
 
-  return pathFromSettings;
-}
-
-function normalizeMarkdownLine(value: string): string {
-  return value.trim().replace(/\s+/g, " ");
-}
-
-function buildCompleteHintSectionContent(params: {
-  summary: z.infer<typeof ExperienceSummaryJsonSchema>;
-}) {
-  const lines: string[] = [];
-  lines.push(`_Last updated: ${new Date().toISOString()}_`);
-  lines.push("");
-  lines.push("## Prompt pack");
-  lines.push(
-    `- title: ${normalizeMarkdownLine(params.summary.promptPack.title)}`,
-  );
-  if (params.summary.promptPack.lines.length === 0) {
-    lines.push("- lines:");
-    lines.push("  - (none)");
-  } else {
-    lines.push("- lines:");
-    for (const line of params.summary.promptPack.lines) {
-      lines.push(`  - ${normalizeMarkdownLine(line)}`);
-    }
-  }
-  lines.push("");
-  lines.push("## Experiences");
-  if (params.summary.experiences.length === 0) {
-    lines.push("- (none)");
-  } else {
-    for (const experience of params.summary.experiences) {
-      lines.push(`### ${experience.key}`);
-      lines.push(`- when: ${normalizeMarkdownLine(experience.when)}`);
-      lines.push(
-        `- relatedErrorTypes: ${
-          experience.relatedErrorTypes?.length
-            ? experience.relatedErrorTypes.join(", ")
-            : "n/a"
-        }`,
-      );
-      lines.push("- possibleProblems:");
-      if (experience.possibleProblems.length === 0) {
-        lines.push("  - (none)");
-      } else {
-        for (const problem of experience.possibleProblems) {
-          lines.push(`  - ${normalizeMarkdownLine(problem)}`);
-        }
-      }
-      lines.push("- avoidanceAndNotes:");
-      if (experience.avoidanceAndNotes.length === 0) {
-        lines.push("  - (none)");
-      } else {
-        for (const note of experience.avoidanceAndNotes) {
-          lines.push(`  - ${normalizeMarkdownLine(note)}`);
-        }
-      }
-      lines.push("- promptAdditions:");
-      if (experience.promptAdditions.length === 0) {
-        lines.push("  - (none)");
-      } else {
-        for (const addition of experience.promptAdditions) {
-          lines.push(`  - ${normalizeMarkdownLine(addition)}`);
-        }
-      }
-      lines.push("");
-    }
-  }
-
-  return lines.join("\n").trimEnd();
-}
-
-function replaceHintSection(params: {
-  markdown: string;
-  replacementContent: string;
-}) {
-  const replacementSection = `${HINT_SECTION_HEADING}\n\n${params.replacementContent}\n`;
-  const match = /^\s*#\s*hint\s*$/im.exec(params.markdown);
-  if (!match || match.index == null) {
-    if (params.markdown.trim().length === 0) return replacementSection;
-    return `${params.markdown.replace(/\s*$/, "")}\n\n${replacementSection}`;
-  }
-
-  const afterHeadingIndex = params.markdown.indexOf("\n", match.index);
-  const sectionContentStart =
-    afterHeadingIndex === -1 ? params.markdown.length : afterHeadingIndex + 1;
-  const restAfterHeading = params.markdown.slice(sectionContentStart);
-  const nextTopHeadingRegex = new RegExp(
-    NEXT_TOP_LEVEL_HEADING_REGEX.source,
-    "gm",
-  );
-  let sectionEnd = sectionContentStart + restAfterHeading.length;
-  let nextTopHeading: RegExpExecArray | null;
-  while (
-    (nextTopHeading = nextTopHeadingRegex.exec(restAfterHeading)) != null
-  ) {
-    const headingLine = nextTopHeading[0] ?? "";
-    if (/^\s*#\s*hint\s*$/i.test(headingLine)) continue;
-    sectionEnd = sectionContentStart + nextTopHeading.index;
-    break;
-  }
-
-  const before = params.markdown.slice(0, match.index).replace(/\s*$/, "");
-  const after = params.markdown.slice(sectionEnd).replace(/^\s*/, "");
-  return [before, replacementSection.trimEnd(), after]
-    .filter((part) => part.length > 0)
-    .join("\n\n");
+  return {
+    absolutePath: pathFromSettings,
+    outputMode,
+  };
 }
 
 async function replaceSummaryHintSectionInMarkdown(params: {
+  projectId: string;
   absolutePath: string;
   summary: z.infer<typeof ExperienceSummaryJsonSchema>;
+  outputMode: ExperienceSummaryMarkdownOutputMode;
 }) {
   await mkdir(dirname(params.absolutePath), { recursive: true });
 
@@ -239,12 +271,16 @@ async function replaceSummaryHintSectionInMarkdown(params: {
     if (code !== "ENOENT") throw error;
   }
 
-  const replacementContent = buildCompleteHintSectionContent({
+  const replacementContent = buildExperienceSummaryHintSectionContent({
     summary: params.summary,
+    outputMode: params.outputMode,
+    sectionHeadingHashCount: 4,
   });
-  const updatedMarkdown = replaceHintSection({
+  const updatedMarkdown = upsertProjectHintSectionInMarkdown({
     markdown: existingContent,
+    projectId: params.projectId,
     replacementContent,
+    defaultHeadingHashCount: 2,
   });
   await writeFile(
     params.absolutePath,
@@ -260,17 +296,21 @@ function compactErrorAnalysisRow(row: any): ErrorAnalysisCompact {
     updatedAt: row.updatedAt as Date,
     errorType: (row.errorType ?? null) as string | null,
     errorTypeWhy: (row.errorTypeWhy ?? null) as string | null,
-    rootCause: truncateString(String(row.rootCause ?? ""), 2_000),
+    rootCause: truncateString(String(row.rootCause ?? ""), 1_200),
     resolveNow: Array.isArray(row.resolveNow)
-      ? (row.resolveNow as string[]).map((s) => truncateString(String(s), 400))
+      ? (row.resolveNow as string[])
+          .slice(0, 8)
+          .map((s) => truncateString(String(s), 260))
       : [],
     preventionNextCall: Array.isArray(row.preventionNextCall)
-      ? (row.preventionNextCall as string[]).map((s) =>
-          truncateString(String(s), 500),
-        )
+      ? (row.preventionNextCall as string[])
+          .slice(0, 8)
+          .map((s) => truncateString(String(s), 320))
       : [],
     relevantObservations: Array.isArray(row.relevantObservations)
-      ? (row.relevantObservations as string[]).map((s) => String(s))
+      ? (row.relevantObservations as string[])
+          .slice(0, 12)
+          .map((s) => String(s))
       : [],
     contextSufficient: Boolean(row.contextSufficient ?? true),
     confidence: Number(row.confidence ?? 0.5),
@@ -280,17 +320,35 @@ function compactErrorAnalysisRow(row: any): ErrorAnalysisCompact {
 function buildUserPayload(params: {
   previousSummary: unknown | null;
   newAnalyses: ErrorAnalysisCompact[];
+  mode: z.infer<typeof ExperienceSummaryModeSchema>;
 }) {
+  const previousParsed = parseExperienceSummary(params.previousSummary);
+  const isIncremental = params.mode === "incremental" && previousParsed;
+
   return {
-    previousSummary: params.previousSummary,
+    ...(isIncremental
+      ? buildExistingSummaryInfo(previousParsed)
+      : { previousSummary: params.previousSummary }),
     newAnalyses: params.newAnalyses,
     instruction: [
       "You are creating an 'experience summary' to reduce recurrence of LLM pipeline errors/warnings.",
       "You MUST output ONLY the JSON object that matches the provided schema.",
-      "Merge with previousSummary when present. Keep keys stable and snake_case; dedupe by key.",
+      ...(isIncremental
+        ? [
+            "You are NOT given the full previous summary; only existingSummaryKeys and existingPromptPack are provided.",
+            "Return a DELTA summary: include only new or updated experience items inferred from newAnalyses, and any new promptPack lines.",
+            "It is OK to omit unchanged existing experiences; the server will merge your output with the stored summary.",
+            "Keep keys stable and snake_case; dedupe by key.",
+            "Use existingPromptPack.title as the promptPack.title.",
+          ]
+        : [
+            "Merge with previousSummary when present. Keep keys stable and snake_case; dedupe by key.",
+          ]),
       "Each experience item should be written as: when -> possibleProblems -> avoidanceAndNotes -> promptAdditions.",
+      "When possible, add concise `keywords` (2-8 tokens) for each experience item to help retrieval/ranking.",
       "Keep entries concise and directly useful for preventing recurrence.",
       "promptAdditions should be directly pasteable lines for a user's prompt (guardrails/checklist), and should be generic/reusable.",
+      "Ensure promptPack.lines reflects the highest-signal reusable guardrails implied by the included experiences, deduplicated and ordered by priority.",
       "Prefer actionable, specific, and generalizable advice over vague statements.",
       "Exclude non-prompt or implementation-heavy suggestions: code/config/system changes, retries/backoff/circuit breakers, scheduler or long-running behavior changes, model/provider/account changes.",
       "Avoid hardcoded operational playbooks unless explicitly required by repeated evidence in newAnalyses.",
@@ -455,7 +513,9 @@ export const experienceSummaryRouter = createTRPCRouter({
       }
 
       const previousSummary = existing?.summary ?? null;
-      const newAnalyses = newRows.map(compactErrorAnalysisRow);
+      const newAnalyses = compactAnalysisPayloadRows(
+        newRows.map(compactErrorAnalysisRow),
+      );
 
       const messages: ChatMessage[] = [
         {
@@ -471,6 +531,7 @@ export const experienceSummaryRouter = createTRPCRouter({
             buildUserPayload({
               previousSummary,
               newAnalyses,
+              mode: input.mode,
             }),
           ),
         },
@@ -493,7 +554,7 @@ export const experienceSummaryRouter = createTRPCRouter({
             adapter: LLMAdapter.OpenAI,
             model: modelName,
             temperature: 0.2,
-            max_tokens: 8192,
+            max_tokens: 3000,
           },
           streaming: false,
           structuredOutputSchema: ExperienceSummaryStructuredOutputSchema,
@@ -527,6 +588,19 @@ export const experienceSummaryRouter = createTRPCRouter({
         });
       }
 
+      const previousParsed =
+        input.mode === "incremental"
+          ? parseExperienceSummary(existing?.summary ?? null)
+          : null;
+      const merged =
+        input.mode === "incremental" && previousParsed
+          ? mergeExperienceSummaries({
+              previous: previousParsed,
+              delta: validated.data,
+            })
+          : validated.data;
+      const normalizedMerged = ensurePromptPackCoverage(merged);
+
       const maxUpdatedAt =
         newRows.length > 0
           ? newRows.reduce<Date>((acc, r) => {
@@ -540,14 +614,14 @@ export const experienceSummaryRouter = createTRPCRouter({
         create: {
           projectId: input.projectId,
           model: modelName,
-          schemaVersion: validated.data.schemaVersion,
-          summary: validated.data as any,
+          schemaVersion: normalizedMerged.schemaVersion,
+          summary: normalizedMerged as any,
           cursorUpdatedAt: maxUpdatedAt,
         },
         update: {
           model: modelName,
-          schemaVersion: validated.data.schemaVersion,
-          summary: validated.data as any,
+          schemaVersion: normalizedMerged.schemaVersion,
+          summary: normalizedMerged as any,
           cursorUpdatedAt: maxUpdatedAt,
         },
       });
@@ -556,21 +630,23 @@ export const experienceSummaryRouter = createTRPCRouter({
         where: { id: input.projectId },
         select: { metadata: true },
       });
-      const summaryMarkdownPath = resolveSummaryMarkdownPath(
+      const summaryMarkdownConfig = resolveSummaryMarkdownConfig(
         projectForSettings?.metadata,
       );
-      if (summaryMarkdownPath) {
+      if (summaryMarkdownConfig.absolutePath) {
         try {
           await replaceSummaryHintSectionInMarkdown({
-            absolutePath: summaryMarkdownPath,
-            summary: validated.data,
+            projectId: input.projectId,
+            absolutePath: summaryMarkdownConfig.absolutePath,
+            summary: normalizedMerged,
+            outputMode: summaryMarkdownConfig.outputMode,
           });
         } catch (error) {
           logger.warn(
             "Failed to replace summary hint section in markdown file",
             {
               projectId: input.projectId,
-              path: summaryMarkdownPath,
+              path: summaryMarkdownConfig.absolutePath,
               error: error instanceof Error ? error.message : String(error),
             },
           );
@@ -583,7 +659,7 @@ export const experienceSummaryRouter = createTRPCRouter({
           projectId: saved.projectId,
           model: saved.model,
           schemaVersion: saved.schemaVersion,
-          summary: validated.data,
+          summary: normalizedMerged,
           cursorUpdatedAt: saved.cursorUpdatedAt,
           updatedAt: saved.updatedAt,
         },

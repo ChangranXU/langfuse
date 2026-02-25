@@ -8,6 +8,7 @@ import {
   ChatMessageType,
   LLMAdapter,
   LLMApiKeySchema,
+  decrypt,
   type ChatMessage,
 } from "@langfuse/shared";
 import { prisma } from "@langfuse/shared/src/db";
@@ -17,21 +18,42 @@ import {
   QueueName,
   type TQueueJobTypes,
 } from "@langfuse/shared/src/server";
+import {
+  buildExperienceSummaryHintSectionContent,
+  upsertProjectHintSectionInMarkdown,
+} from "@langfuse/shared/src/utils/experienceSummaryHintMarkdown";
 
 const ExperienceSummarySchemaVersion = 1 as const;
 const AutoSummaryModelSchema = z.enum(["gpt-5.2", "gpt-4.1"]);
 type AutoSummaryModel = z.infer<typeof AutoSummaryModelSchema>;
 
-const DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES = 5;
-const AutoErrorAnalysisSummarySettingsSchema = z.object({
-  minNewErrorNodesForSummary: z.number().int().min(1).nullable().default(null),
-  summaryAppendMarkdownAbsolutePath: z
-    .string()
-    .trim()
-    .min(1)
-    .nullable()
-    .default(null),
-});
+const DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES = 1;
+const AutoErrorAnalysisSummarySettingsSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    minNewErrorNodesForSummary: z
+      .number()
+      .int()
+      .min(1)
+      .nullable()
+      .default(null),
+    summaryAppendMarkdownAbsolutePath: z
+      .string()
+      .trim()
+      .min(1)
+      .nullable()
+      .default(null),
+    summaryRetrievalEmbeddingLlmApiKeyId: z
+      .string()
+      .trim()
+      .min(1)
+      .nullable()
+      .default(null),
+    summaryMarkdownOutputMode: z
+      .enum(["prompt_pack_only", "full"])
+      .default("prompt_pack_only"),
+  })
+  .passthrough();
 
 const ExperienceSummaryJsonSchema = z
   .object({
@@ -42,6 +64,7 @@ const ExperienceSummaryJsonSchema = z
           .object({
             key: z.string().min(1).max(64),
             when: z.string().min(1).max(800),
+            keywords: z.array(z.string().min(1).max(64)).max(20).nullish(),
             possibleProblems: z.array(z.string().min(1).max(400)).max(30),
             avoidanceAndNotes: z.array(z.string().min(1).max(500)).max(40),
             promptAdditions: z.array(z.string().min(1).max(300)).max(40),
@@ -70,6 +93,7 @@ const ExperienceSummaryStructuredOutputSchema = zodV3
         .object({
           key: zodV3.string(),
           when: zodV3.string(),
+          keywords: zodV3.array(zodV3.string()).nullable(),
           possibleProblems: zodV3.array(zodV3.string()),
           avoidanceAndNotes: zodV3.array(zodV3.string()),
           promptAdditions: zodV3.array(zodV3.string()),
@@ -85,9 +109,6 @@ const ExperienceSummaryStructuredOutputSchema = zodV3
       .strict(),
   })
   .strict();
-
-const HINT_SECTION_HEADING = "# HINT";
-const NEXT_TOP_LEVEL_HEADING_REGEX = /^#(?!#)\s*.+$/m;
 
 function resolveModel(model: AutoSummaryModel): string {
   return model === "gpt-5.2" ? "gpt-5.2-2025-12-11" : "gpt-4.1";
@@ -106,6 +127,153 @@ function truncateString(value: string, maxChars: number): string {
   return value.slice(0, Math.max(0, maxChars - 30)) + "\n...[truncated]";
 }
 
+function normalizeVector(input: number[]): number[] {
+  const norm = Math.sqrt(input.reduce((sum, value) => sum + value * value, 0));
+  if (!Number.isFinite(norm) || norm <= 0) return input;
+  return input.map((value) => value / norm);
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) dot += a[i]! * b[i]!;
+  return Number.isFinite(dot) ? dot : 0;
+}
+
+function tokenizeForNgram(value: string): Set<string> {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9_\s-]/g, " ");
+  const words = normalized
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length > 1);
+  const tokens = new Set<string>();
+  for (const word of words) tokens.add(word);
+  for (let i = 0; i < words.length - 1; i++) {
+    tokens.add(`${words[i]}_${words[i + 1]}`);
+  }
+  return tokens;
+}
+
+function safeDecryptAndParseExtraHeaders(
+  extraHeaders: string | null | undefined,
+): Record<string, string> {
+  if (!extraHeaders) return {};
+  try {
+    const raw = JSON.parse(decrypt(extraHeaders)) as unknown;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof key === "string" && typeof value === "string") {
+        out[key] = value;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function lexicalSimilarity(params: {
+  queryTokens: Set<string>;
+  documentTokens: Set<string>;
+}) {
+  if (params.queryTokens.size === 0 || params.documentTokens.size === 0)
+    return 0;
+  let overlap = 0;
+  for (const token of params.queryTokens) {
+    if (params.documentTokens.has(token)) overlap++;
+  }
+  if (overlap === 0) return 0;
+  return (
+    overlap / Math.sqrt(params.queryTokens.size * params.documentTokens.size)
+  );
+}
+
+function uniqueStableLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const normalized = line.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+type ExperienceSummaryJson = z.infer<typeof ExperienceSummaryJsonSchema>;
+
+function parseExperienceSummary(
+  summary: unknown | null,
+): ExperienceSummaryJson | null {
+  if (!summary) return null;
+  const parsed = ExperienceSummaryJsonSchema.safeParse(summary);
+  return parsed.success ? parsed.data : null;
+}
+
+function buildExistingSummaryInfo(previous: ExperienceSummaryJson): {
+  existingSummaryKeys: string[];
+  existingPromptPack: { title: string; lines: string[] };
+} {
+  return {
+    existingSummaryKeys: previous.experiences.map((e) => e.key),
+    existingPromptPack: {
+      title: previous.promptPack.title,
+      // Keep the prompt small; we merge deterministically server-side.
+      lines: previous.promptPack.lines.slice(0, 50),
+    },
+  };
+}
+
+function mergeExperienceSummaries(params: {
+  previous: ExperienceSummaryJson;
+  delta: ExperienceSummaryJson;
+}): ExperienceSummaryJson {
+  const deltaByKey = new Map(params.delta.experiences.map((e) => [e.key, e]));
+  const previousOnly = params.previous.experiences.filter(
+    (e) => !deltaByKey.has(e.key),
+  );
+
+  const mergedExperiences = [
+    ...params.delta.experiences,
+    ...previousOnly,
+  ].slice(0, 100);
+
+  const mergedPromptPackLines = uniqueStableLines([
+    ...params.previous.promptPack.lines,
+    ...params.delta.promptPack.lines,
+    ...mergedExperiences.flatMap(
+      (experience) => experience.promptAdditions ?? [],
+    ),
+  ]).slice(0, 200);
+
+  return {
+    schemaVersion: ExperienceSummarySchemaVersion,
+    experiences: mergedExperiences,
+    promptPack: {
+      title: params.previous.promptPack.title || params.delta.promptPack.title,
+      lines: mergedPromptPackLines,
+    },
+  };
+}
+
+function ensurePromptPackCoverage(
+  summary: ExperienceSummaryJson,
+): ExperienceSummaryJson {
+  return {
+    ...summary,
+    promptPack: {
+      title: summary.promptPack.title,
+      lines: uniqueStableLines([
+        ...summary.promptPack.lines,
+        ...summary.experiences.flatMap(
+          (experience) => experience.promptAdditions ?? [],
+        ),
+      ]).slice(0, 200),
+    },
+  };
+}
+
 type ErrorAnalysisCompact = {
   observationId: string;
   traceId: string;
@@ -120,15 +288,25 @@ type ErrorAnalysisCompact = {
   confidence: number;
 };
 
-function resolveSummarySettings(metadata: unknown): {
+const MAX_ANALYSIS_PAYLOAD_CHARS = 28_000;
+const MAX_MARKDOWN_EXPERIENCES = 12;
+const MAX_MARKDOWN_PROMPT_LINES = 80;
+
+type SummarySettings = {
   minNewErrorNodesForSummary: number;
   summaryAppendMarkdownAbsolutePath: string | null;
-} {
+  summaryRetrievalEmbeddingLlmApiKeyId: string | null;
+  summaryMarkdownOutputMode: "prompt_pack_only" | "full";
+};
+
+function resolveSummarySettings(metadata: unknown): SummarySettings {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return {
       minNewErrorNodesForSummary:
         DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
       summaryAppendMarkdownAbsolutePath: null,
+      summaryRetrievalEmbeddingLlmApiKeyId: null,
+      summaryMarkdownOutputMode: "prompt_pack_only",
     };
   }
 
@@ -140,13 +318,18 @@ function resolveSummarySettings(metadata: unknown): {
       minNewErrorNodesForSummary:
         DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
       summaryAppendMarkdownAbsolutePath: null,
+      summaryRetrievalEmbeddingLlmApiKeyId: null,
+      summaryMarkdownOutputMode: "prompt_pack_only",
     };
   }
 
   const minNewErrorNodesForSummary =
     parsed.data.minNewErrorNodesForSummary ??
     DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES;
-  const pathFromSettings = parsed.data.summaryAppendMarkdownAbsolutePath;
+  const enabled = parsed.data.enabled === true;
+  const pathFromSettings = enabled
+    ? parsed.data.summaryAppendMarkdownAbsolutePath
+    : null;
   const validPath =
     pathFromSettings &&
     isAbsolute(pathFromSettings) &&
@@ -157,120 +340,17 @@ function resolveSummarySettings(metadata: unknown): {
   return {
     minNewErrorNodesForSummary,
     summaryAppendMarkdownAbsolutePath: validPath,
+    summaryRetrievalEmbeddingLlmApiKeyId:
+      parsed.data.summaryRetrievalEmbeddingLlmApiKeyId ?? null,
+    summaryMarkdownOutputMode: parsed.data.summaryMarkdownOutputMode,
   };
 }
 
-function normalizeMarkdownLine(value: string): string {
-  return value.trim().replace(/\s+/g, " ");
-}
-
-function buildCompleteHintSectionContent(params: {
-  summary: z.infer<typeof ExperienceSummaryJsonSchema>;
-}) {
-  const lines: string[] = [];
-  lines.push(`_Last updated: ${new Date().toISOString()}_`);
-  lines.push("");
-  lines.push("## Prompt pack");
-  lines.push(
-    `- title: ${normalizeMarkdownLine(params.summary.promptPack.title)}`,
-  );
-  if (params.summary.promptPack.lines.length === 0) {
-    lines.push("- lines:");
-    lines.push("  - (none)");
-  } else {
-    lines.push("- lines:");
-    for (const line of params.summary.promptPack.lines) {
-      lines.push(`  - ${normalizeMarkdownLine(line)}`);
-    }
-  }
-  lines.push("");
-  lines.push("## Experiences");
-  if (params.summary.experiences.length === 0) {
-    lines.push("- (none)");
-  } else {
-    for (const experience of params.summary.experiences) {
-      lines.push(`### ${experience.key}`);
-      lines.push(`- when: ${normalizeMarkdownLine(experience.when)}`);
-      lines.push(
-        `- relatedErrorTypes: ${
-          experience.relatedErrorTypes?.length
-            ? experience.relatedErrorTypes.join(", ")
-            : "n/a"
-        }`,
-      );
-      lines.push("- possibleProblems:");
-      if (experience.possibleProblems.length === 0) {
-        lines.push("  - (none)");
-      } else {
-        for (const problem of experience.possibleProblems) {
-          lines.push(`  - ${normalizeMarkdownLine(problem)}`);
-        }
-      }
-      lines.push("- avoidanceAndNotes:");
-      if (experience.avoidanceAndNotes.length === 0) {
-        lines.push("  - (none)");
-      } else {
-        for (const note of experience.avoidanceAndNotes) {
-          lines.push(`  - ${normalizeMarkdownLine(note)}`);
-        }
-      }
-      lines.push("- promptAdditions:");
-      if (experience.promptAdditions.length === 0) {
-        lines.push("  - (none)");
-      } else {
-        for (const addition of experience.promptAdditions) {
-          lines.push(`  - ${normalizeMarkdownLine(addition)}`);
-        }
-      }
-      lines.push("");
-    }
-  }
-
-  return lines.join("\n").trimEnd();
-}
-
-function replaceHintSection(params: {
-  markdown: string;
-  replacementContent: string;
-}) {
-  const replacementSection = `${HINT_SECTION_HEADING}\n\n${params.replacementContent}\n`;
-  const match = /^\s*#\s*hint\s*$/im.exec(params.markdown);
-  if (!match || match.index == null) {
-    if (params.markdown.trim().length === 0) return replacementSection;
-    return `${params.markdown.replace(/\s*$/, "")}\n\n${replacementSection}`;
-  }
-
-  const afterHeadingIndex = params.markdown.indexOf("\n", match.index);
-  const sectionContentStart =
-    afterHeadingIndex === -1 ? params.markdown.length : afterHeadingIndex + 1;
-  const restAfterHeading = params.markdown.slice(sectionContentStart);
-  const nextTopHeadingRegex = new RegExp(
-    NEXT_TOP_LEVEL_HEADING_REGEX.source,
-    "gm",
-  );
-  let sectionEnd = sectionContentStart + restAfterHeading.length;
-  let nextTopHeading: RegExpExecArray | null;
-  while (
-    (nextTopHeading = nextTopHeadingRegex.exec(restAfterHeading)) != null
-  ) {
-    const headingLine = nextTopHeading[0] ?? "";
-    // If multiple "# HINT" blocks were appended over time, collapse them all
-    // into a single replacement section by skipping subsequent "# HINT" headings.
-    if (/^\s*#\s*hint\s*$/i.test(headingLine)) continue;
-    sectionEnd = sectionContentStart + nextTopHeading.index;
-    break;
-  }
-
-  const before = params.markdown.slice(0, match.index).replace(/\s*$/, "");
-  const after = params.markdown.slice(sectionEnd).replace(/^\s*/, "");
-  return [before, replacementSection.trimEnd(), after]
-    .filter((part) => part.length > 0)
-    .join("\n\n");
-}
-
 async function replaceSummaryHintSectionInMarkdown(params: {
+  projectId: string;
   absolutePath: string;
   summary: z.infer<typeof ExperienceSummaryJsonSchema>;
+  outputMode: "prompt_pack_only" | "full";
 }) {
   await mkdir(dirname(params.absolutePath), { recursive: true });
 
@@ -282,18 +362,232 @@ async function replaceSummaryHintSectionInMarkdown(params: {
     if (code !== "ENOENT") throw error;
   }
 
-  const replacementContent = buildCompleteHintSectionContent({
+  const replacementContent = buildExperienceSummaryHintSectionContent({
     summary: params.summary,
+    outputMode: params.outputMode,
+    sectionHeadingHashCount: 4,
   });
-  const updatedMarkdown = replaceHintSection({
+  const updatedMarkdown = upsertProjectHintSectionInMarkdown({
     markdown: existingContent,
+    projectId: params.projectId,
     replacementContent,
+    defaultHeadingHashCount: 2,
   });
   await writeFile(
     params.absolutePath,
     `${updatedMarkdown.replace(/\s*$/, "")}\n`,
     "utf8",
   );
+}
+
+function compactAnalysisPayloadRows(
+  rows: ErrorAnalysisCompact[],
+): ErrorAnalysisCompact[] {
+  let totalChars = 0;
+  const out: ErrorAnalysisCompact[] = [];
+  for (const row of rows) {
+    const rowChars = JSON.stringify(row).length;
+    if (out.length > 0 && totalChars + rowChars > MAX_ANALYSIS_PAYLOAD_CHARS) {
+      break;
+    }
+    out.push(row);
+    totalChars += rowChars;
+  }
+  return out;
+}
+
+function buildExperienceSearchText(
+  experience: ExperienceSummaryJson["experiences"][number],
+) {
+  return [
+    experience.key,
+    experience.when,
+    (experience.keywords ?? []).join(" "),
+    (experience.relatedErrorTypes ?? []).join(" "),
+    ...(experience.possibleProblems ?? []),
+    ...(experience.avoidanceAndNotes ?? []),
+    ...(experience.promptAdditions ?? []),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildFallbackHintFromAnalyses(rows: ErrorAnalysisCompact[]): string {
+  const latest = rows[rows.length - 1];
+  if (!latest) return "";
+  return [
+    latest.errorType ?? "",
+    latest.errorTypeWhy ?? "",
+    latest.rootCause ?? "",
+    ...(latest.preventionNextCall ?? []),
+  ]
+    .filter((value) => value && value.trim().length > 0)
+    .join("\n");
+}
+
+async function fetchOpenAIEmbeddings(params: {
+  llmConnection: z.infer<typeof LLMApiKeySchema>;
+  texts: string[];
+  timeoutMs?: number;
+}): Promise<number[][]> {
+  const secretKey = decrypt(params.llmConnection.secretKey);
+  const baseUrl = (
+    params.llmConnection.baseURL?.trim() || "https://api.openai.com/v1"
+  ).replace(/\/+$/, "");
+  const endpoint = `${baseUrl}/embeddings`;
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    params.timeoutMs ?? 10_000,
+  );
+  try {
+    const extraHeaders = safeDecryptAndParseExtraHeaders(
+      params.llmConnection.extraHeaders,
+    );
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        "Content-Type": "application/json",
+        ...extraHeaders,
+      },
+      body: JSON.stringify({
+        model: "text-embedding-3-small",
+        input: params.texts,
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Embedding request failed (${response.status}): ${await response.text()}`,
+      );
+    }
+    const payload = (await response.json()) as {
+      data?: Array<{ embedding?: number[] }>;
+    };
+    const vectors = (payload.data ?? [])
+      .map((entry) => (Array.isArray(entry.embedding) ? entry.embedding : []))
+      .map((embedding) => embedding.map((value) => Number(value)));
+    if (vectors.length !== params.texts.length) {
+      throw new Error("Embedding response size mismatch");
+    }
+    return vectors;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function selectSummaryForMarkdown(params: {
+  projectId: string;
+  summary: ExperienceSummaryJson;
+  outputMode: "prompt_pack_only" | "full";
+  nextNodeInputHint: string | null;
+  retrievalEmbeddingConnection: z.infer<typeof LLMApiKeySchema> | null;
+  analysesForFallback: ErrorAnalysisCompact[];
+}): Promise<ExperienceSummaryJson> {
+  const experiences = params.summary.experiences ?? [];
+  if (experiences.length === 0) {
+    return {
+      ...params.summary,
+      experiences: [],
+      promptPack: {
+        title: params.summary.promptPack.title,
+        lines: uniqueStableLines(params.summary.promptPack.lines).slice(
+          0,
+          MAX_MARKDOWN_PROMPT_LINES,
+        ),
+      },
+    };
+  }
+
+  const queryText = (
+    params.nextNodeInputHint?.trim() ||
+    buildFallbackHintFromAnalyses(params.analysesForFallback)
+  ).trim();
+  if (!queryText) {
+    return {
+      ...params.summary,
+      experiences:
+        params.outputMode === "full"
+          ? experiences.slice(0, MAX_MARKDOWN_EXPERIENCES)
+          : [],
+      promptPack: {
+        title: params.summary.promptPack.title,
+        lines: uniqueStableLines(params.summary.promptPack.lines).slice(
+          0,
+          MAX_MARKDOWN_PROMPT_LINES,
+        ),
+      },
+    };
+  }
+
+  const queryTokens = tokenizeForNgram(queryText);
+  const rows = experiences.map((experience) => {
+    const text = buildExperienceSearchText(experience);
+    const lexicalScore = lexicalSimilarity({
+      queryTokens,
+      documentTokens: tokenizeForNgram(text),
+    });
+    return { experience, text, lexicalScore, embeddingScore: 0 };
+  });
+
+  if (params.retrievalEmbeddingConnection) {
+    try {
+      const topForEmbedding = [...rows]
+        .sort((a, b) => b.lexicalScore - a.lexicalScore)
+        .slice(0, 40);
+      const embeddings = await fetchOpenAIEmbeddings({
+        llmConnection: params.retrievalEmbeddingConnection,
+        texts: [queryText, ...topForEmbedding.map((row) => row.text)],
+      });
+      const queryVec = normalizeVector(embeddings[0] ?? []);
+      for (let i = 0; i < topForEmbedding.length; i++) {
+        const row = topForEmbedding[i]!;
+        const docVec = normalizeVector(embeddings[i + 1] ?? []);
+        row.embeddingScore = cosineSimilarity(queryVec, docVec);
+      }
+    } catch (error) {
+      logger.warn(
+        "Summary markdown embedding ranking failed; using lexical fallback",
+        {
+          projectId: params.projectId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
+  const ranked = [...rows]
+    .map((row) => ({
+      ...row,
+      score:
+        row.embeddingScore > 0
+          ? 0.65 * row.embeddingScore + 0.35 * row.lexicalScore
+          : row.lexicalScore,
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const selectedExperiences = ranked
+    .slice(0, MAX_MARKDOWN_EXPERIENCES)
+    .map((row) => row.experience);
+
+  const selectedPromptAdditions = ranked
+    .slice(0, MAX_MARKDOWN_EXPERIENCES)
+    .flatMap((row) => row.experience.promptAdditions ?? []);
+
+  const selectedPromptPackLines = uniqueStableLines([
+    ...(params.summary.promptPack.lines ?? []),
+    ...selectedPromptAdditions,
+  ]).slice(0, MAX_MARKDOWN_PROMPT_LINES);
+
+  return {
+    ...params.summary,
+    experiences: params.outputMode === "full" ? selectedExperiences : [],
+    promptPack: {
+      title: params.summary.promptPack.title,
+      lines: selectedPromptPackLines,
+    },
+  };
 }
 
 function compactErrorAnalysisRow(row: any): ErrorAnalysisCompact {
@@ -303,17 +597,21 @@ function compactErrorAnalysisRow(row: any): ErrorAnalysisCompact {
     updatedAt: row.updatedAt as Date,
     errorType: (row.errorType ?? null) as string | null,
     errorTypeWhy: (row.errorTypeWhy ?? null) as string | null,
-    rootCause: truncateString(String(row.rootCause ?? ""), 2000),
+    rootCause: truncateString(String(row.rootCause ?? ""), 1200),
     resolveNow: Array.isArray(row.resolveNow)
-      ? (row.resolveNow as string[]).map((s) => truncateString(String(s), 400))
+      ? (row.resolveNow as string[])
+          .slice(0, 8)
+          .map((s) => truncateString(String(s), 260))
       : [],
     preventionNextCall: Array.isArray(row.preventionNextCall)
-      ? (row.preventionNextCall as string[]).map((s) =>
-          truncateString(String(s), 500),
-        )
+      ? (row.preventionNextCall as string[])
+          .slice(0, 8)
+          .map((s) => truncateString(String(s), 320))
       : [],
     relevantObservations: Array.isArray(row.relevantObservations)
-      ? (row.relevantObservations as string[]).map((s) => String(s))
+      ? (row.relevantObservations as string[])
+          .slice(0, 12)
+          .map((s) => String(s))
       : [],
     contextSufficient: Boolean(row.contextSufficient ?? true),
     confidence: Number(row.confidence ?? 0.5),
@@ -323,7 +621,7 @@ function compactErrorAnalysisRow(row: any): ErrorAnalysisCompact {
 export const autoExperienceSummaryQueueProcessor: Processor = async (
   job: Job<TQueueJobTypes[QueueName.AutoExperienceSummaryQueue]>,
 ) => {
-  const { projectId } = job.data.payload;
+  const { projectId, nextNodeInputHint } = job.data.payload;
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: { metadata: true },
@@ -380,7 +678,10 @@ export const autoExperienceSummaryQueueProcessor: Processor = async (
   }
 
   const previousSummary = existing?.summary ?? null;
-  const newAnalyses = newRows.map(compactErrorAnalysisRow);
+  const newAnalyses = compactAnalysisPayloadRows(
+    newRows.map(compactErrorAnalysisRow),
+  );
+  const previousParsed = parseExperienceSummary(previousSummary);
 
   const messages: ChatMessage[] = [
     {
@@ -393,14 +694,25 @@ export const autoExperienceSummaryQueueProcessor: Processor = async (
       type: ChatMessageType.User,
       role: ChatMessageRole.User,
       content: safeStringify({
-        previousSummary,
+        ...(previousParsed
+          ? buildExistingSummaryInfo(previousParsed)
+          : { previousSummary }),
         newAnalyses,
         instruction: [
-          "Merge with previousSummary when present.",
+          ...(previousParsed
+            ? [
+                "You are NOT given the full previous summary; only existingSummaryKeys and existingPromptPack are provided.",
+                "Return a DELTA summary: include only new or updated experience items inferred from newAnalyses, and any new promptPack lines.",
+                "It is OK to omit unchanged existing experiences; the server will merge your output with the stored summary.",
+                "Use existingPromptPack.title as the promptPack.title.",
+              ]
+            : ["Merge with previousSummary when present."]),
           "Keep keys stable and snake_case; dedupe by key.",
           "Each experience item should be written as when -> possibleProblems -> avoidanceAndNotes -> promptAdditions.",
+          "When possible, add concise `keywords` (2-8 tokens) for each experience item to help retrieval/ranking.",
           "Make entries concise and directly useful for preventing recurrence.",
           "promptAdditions must be copy-pasteable prompt lines for the next LLM call and must be generic/reusable.",
+          "Ensure promptPack.lines reflects the highest-signal reusable guardrails implied by the included experiences, deduplicated and ordered by priority.",
           "Do not include hardcoded operational playbooks (e.g., fixed retry/backoff sequences, source-specific runbooks) unless the same concrete requirement is explicitly present in the analyzed failures.",
           "Do not propose actions that require code changes, infrastructure changes, or long-running behavior controls.",
           "Avoid generic blocked/forbidden advice when newAnalyses contains identifiable targets; include the domain/URL/host and tool/provider/adapter from newAnalyses when present, otherwise say unknown.",
@@ -424,7 +736,7 @@ export const autoExperienceSummaryQueueProcessor: Processor = async (
       adapter: LLMAdapter.OpenAI,
       model: modelName,
       temperature: 0.2,
-      max_tokens: 8192,
+      max_tokens: 3000,
     },
     streaming: false,
     structuredOutputSchema: ExperienceSummaryStructuredOutputSchema,
@@ -439,6 +751,59 @@ export const autoExperienceSummaryQueueProcessor: Processor = async (
     return;
   }
 
+  const merged =
+    previousParsed != null
+      ? mergeExperienceSummaries({
+          previous: previousParsed,
+          delta: validated.data,
+        })
+      : validated.data;
+  const normalizedMerged = ensurePromptPackCoverage(merged);
+
+  let retrievalEmbeddingConnection: z.infer<typeof LLMApiKeySchema> | null =
+    null;
+  if (summarySettings.summaryRetrievalEmbeddingLlmApiKeyId) {
+    const retrievalConnectionRow = await prisma.llmApiKeys.findUnique({
+      where: {
+        id: summarySettings.summaryRetrievalEmbeddingLlmApiKeyId,
+        projectId,
+      },
+    });
+    if (retrievalConnectionRow) {
+      const parsedRetrieval = LLMApiKeySchema.safeParse(retrievalConnectionRow);
+      if (parsedRetrieval.success) {
+        if (parsedRetrieval.data.adapter === LLMAdapter.OpenAI) {
+          retrievalEmbeddingConnection = parsedRetrieval.data;
+        } else {
+          logger.warn(
+            "Skipping summary retrieval embedding: unsupported adapter",
+            {
+              projectId,
+              adapter: parsedRetrieval.data.adapter,
+            },
+          );
+        }
+      } else {
+        logger.warn(
+          "Skipping summary retrieval embedding: invalid connection",
+          {
+            projectId,
+            error: parsedRetrieval.error.message,
+          },
+        );
+      }
+    }
+  }
+
+  const markdownSummary = await selectSummaryForMarkdown({
+    projectId,
+    summary: normalizedMerged,
+    outputMode: summarySettings.summaryMarkdownOutputMode,
+    nextNodeInputHint: nextNodeInputHint ?? null,
+    retrievalEmbeddingConnection,
+    analysesForFallback: newAnalyses,
+  });
+
   const maxUpdatedAt = newRows.reduce<Date>((acc, r) => {
     return r.updatedAt > acc ? r.updatedAt : acc;
   }, newRows[0]!.updatedAt);
@@ -448,14 +813,14 @@ export const autoExperienceSummaryQueueProcessor: Processor = async (
     create: {
       projectId,
       model: modelName,
-      schemaVersion: validated.data.schemaVersion,
-      summary: validated.data as any,
+      schemaVersion: normalizedMerged.schemaVersion,
+      summary: normalizedMerged as any,
       cursorUpdatedAt: maxUpdatedAt,
     },
     update: {
       model: modelName,
-      schemaVersion: validated.data.schemaVersion,
-      summary: validated.data as any,
+      schemaVersion: normalizedMerged.schemaVersion,
+      summary: normalizedMerged as any,
       cursorUpdatedAt: maxUpdatedAt,
     },
   });
@@ -463,8 +828,10 @@ export const autoExperienceSummaryQueueProcessor: Processor = async (
   if (summarySettings.summaryAppendMarkdownAbsolutePath) {
     try {
       await replaceSummaryHintSectionInMarkdown({
+        projectId,
         absolutePath: summarySettings.summaryAppendMarkdownAbsolutePath,
-        summary: validated.data,
+        summary: markdownSummary,
+        outputMode: summarySettings.summaryMarkdownOutputMode,
       });
     } catch (error) {
       logger.warn("Failed to replace summary hint section in markdown file", {

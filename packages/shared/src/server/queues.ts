@@ -476,6 +476,7 @@ export type TQueueJobTypes = {
       mode?: "incremental";
       model?: "gpt-5.2" | "gpt-4.1";
       maxItems?: number;
+      nextNodeInputHint?: string | null;
     };
     name: QueueJobs.AutoExperienceSummaryJob;
   };

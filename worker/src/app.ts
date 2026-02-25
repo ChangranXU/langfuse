@@ -328,7 +328,9 @@ if (env.QUEUE_CONSUMER_AUTO_ERROR_ANALYSIS_QUEUE_IS_ENABLED === "true") {
     QueueName.AutoErrorAnalysisQueue,
     autoErrorAnalysisQueueProcessor,
     {
-      concurrency: 2,
+      // Keep this queue sequential so summary/markdown sync can finish
+      // before the next auto-analysis node starts.
+      concurrency: 1,
       limiter: {
         max: 10,
         duration: 60_000,

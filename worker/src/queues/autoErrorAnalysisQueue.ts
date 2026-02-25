@@ -42,7 +42,18 @@ const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS = {
   summaryAppendMarkdownAbsolutePath: null as string | null,
 };
 
-const DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES = 5;
+const DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES = 1;
+const SUMMARY_JOB_ACTIVE_STATES = new Set([
+  "waiting",
+  "active",
+  "delayed",
+  "prioritized",
+  "waiting-children",
+  "paused",
+]);
+const SUMMARY_JOB_SETTLE_TIMEOUT_MS = 90_000;
+const SUMMARY_JOB_SETTLE_POLL_MS = 250;
+const SUMMARY_SYNC_MAX_ATTEMPTS = 3;
 
 const AutoErrorAnalysisResultSchema = z.object({
   rootCause: z.string(),
@@ -373,6 +384,30 @@ function buildIssueLabel(params: {
   return parts.join(" | ");
 }
 
+function buildNextNodeInputHint(params: {
+  ordered: Awaited<ReturnType<typeof getObservationsForTrace>>;
+  focusIndex: number;
+}): string | null {
+  const nextNodes = params.ordered.slice(
+    params.focusIndex + 1,
+    params.focusIndex + 4,
+  );
+  if (nextNodes.length === 0) return null;
+  const snippets = nextNodes
+    .map((node) => {
+      const name = node.name ?? node.id;
+      const level = node.level ?? "UNKNOWN";
+      const status = node.statusMessage ?? "";
+      const input = node.input
+        ? truncateString(safeStringify(node.input), 1_500)
+        : "";
+      return [name, level, status, input].filter(Boolean).join("\n");
+    })
+    .filter((value) => value.trim().length > 0);
+  if (snippets.length === 0) return null;
+  return truncateString(snippets.join("\n\n"), 2_500);
+}
+
 function parseAutoErrorAnalysisSettings(metadata: unknown): {
   enabled: boolean;
   model: AutoErrorAnalysisModel;
@@ -387,6 +422,50 @@ function parseAutoErrorAnalysisSettings(metadata: unknown): {
   const parsed = AutoErrorAnalysisSettingsSchema.safeParse(maybeSettings);
   if (!parsed.success) return DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS;
   return parsed.data;
+}
+
+function isSummaryJobInFlight(state: string): boolean {
+  return SUMMARY_JOB_ACTIVE_STATES.has(state);
+}
+
+async function countPendingSummaryAnalyses(projectId: string): Promise<number> {
+  const existingSummary = await prisma.experienceSummary.findUnique({
+    where: { projectId },
+    select: { cursorUpdatedAt: true },
+  });
+  const cursor = existingSummary?.cursorUpdatedAt ?? null;
+
+  return prisma.errorAnalysis.count({
+    where: {
+      projectId,
+      ...(cursor ? { updatedAt: { gt: cursor } } : {}),
+    },
+  });
+}
+
+async function waitForSummaryJobToSettle(params: {
+  summaryQueue: {
+    getJob: (jobId: string) => Promise<Job | undefined>;
+  };
+  summaryJobId: string;
+  timeoutMs?: number;
+}) {
+  const timeoutMs = params.timeoutMs ?? SUMMARY_JOB_SETTLE_TIMEOUT_MS;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const activeJob = await params.summaryQueue.getJob(params.summaryJobId);
+    if (!activeJob) {
+      return;
+    }
+    const state = await activeJob.getState();
+    if (!isSummaryJobInFlight(state)) {
+      return;
+    }
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, SUMMARY_JOB_SETTLE_POLL_MS),
+    );
+  }
 }
 
 export const autoErrorAnalysisQueueProcessor: Processor = async (
@@ -784,23 +863,11 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
 
   const summaryJobId = `auto-summary:${projectId}`;
   try {
-    const existingSummary = await prisma.experienceSummary.findUnique({
-      where: { projectId },
-      select: { cursorUpdatedAt: true },
-    });
-    const cursor = existingSummary?.cursorUpdatedAt ?? null;
-
-    const pendingCount = await prisma.errorAnalysis.count({
-      where: {
-        projectId,
-        ...(cursor ? { updatedAt: { gt: cursor } } : {}),
-      },
-    });
-
     const minNewAnalysesForSummary =
       settings.minNewErrorNodesForSummary ??
       DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES;
 
+    let pendingCount = await countPendingSummaryAnalyses(projectId);
     if (pendingCount < minNewAnalysesForSummary) {
       logger.debug(
         "Skipping auto experience summary enqueue: insufficient new analyses",
@@ -813,53 +880,73 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       return;
     }
 
-    const existingJob = await summaryQueue.getJob(summaryJobId);
-    if (existingJob) {
-      const state = await existingJob.getState();
-      if (
-        [
-          "waiting",
-          "active",
-          "delayed",
-          "prioritized",
-          "waiting-children",
-          "paused",
-        ].includes(state)
-      ) {
-        // A job is already queued or running; it will pick up all new analyses since cursor.
-        return;
+    for (let attempt = 0; attempt < SUMMARY_SYNC_MAX_ATTEMPTS; attempt++) {
+      const existingJob = await summaryQueue.getJob(summaryJobId);
+      if (existingJob) {
+        const state = await existingJob.getState();
+        if (isSummaryJobInFlight(state)) {
+          // If another summary run is in flight, wait for it and re-check pending analyses.
+          await waitForSummaryJobToSettle({ summaryQueue, summaryJobId });
+          pendingCount = await countPendingSummaryAnalyses(projectId);
+          if (pendingCount < minNewAnalysesForSummary) {
+            return;
+          }
+          continue;
+        }
+
+        // Completed/failed jobs keep their jobId in Redis; remove so we can re-add with same ID.
+        try {
+          await existingJob.remove();
+        } catch (e) {
+          logger.warn("Failed to remove existing auto experience summary job", {
+            projectId,
+            summaryJobId,
+            state,
+            error: e instanceof Error ? e.message : String(e),
+          });
+          await waitForSummaryJobToSettle({ summaryQueue, summaryJobId });
+          pendingCount = await countPendingSummaryAnalyses(projectId);
+          if (pendingCount < minNewAnalysesForSummary) {
+            return;
+          }
+          continue;
+        }
       }
 
-      // Completed/failed jobs keep their jobId in Redis; remove so we can re-add with same ID.
-      try {
-        await existingJob.remove();
-      } catch (e) {
-        logger.warn("Failed to remove existing auto experience summary job", {
-          projectId,
-          summaryJobId,
-          state,
-          error: e instanceof Error ? e.message : String(e),
-        });
+      await summaryQueue.add(
+        QueueJobs.AutoExperienceSummaryJob,
+        {
+          id: randomUUID(),
+          timestamp: new Date(),
+          name: QueueJobs.AutoExperienceSummaryJob,
+          payload: {
+            projectId,
+            mode: "incremental",
+            model,
+            maxItems: env.LANGFUSE_AUTO_ANALYSIS_MAX_ITEMS_PER_SUMMARY,
+            nextNodeInputHint: buildNextNodeInputHint({
+              ordered,
+              focusIndex,
+            }),
+          },
+        },
+        {
+          jobId: summaryJobId,
+        },
+      );
+      await waitForSummaryJobToSettle({ summaryQueue, summaryJobId });
+      pendingCount = await countPendingSummaryAnalyses(projectId);
+      if (pendingCount < minNewAnalysesForSummary) {
+        return;
       }
     }
 
-    await summaryQueue.add(
-      QueueJobs.AutoExperienceSummaryJob,
-      {
-        id: randomUUID(),
-        timestamp: new Date(),
-        name: QueueJobs.AutoExperienceSummaryJob,
-        payload: {
-          projectId,
-          mode: "incremental",
-          model,
-          maxItems: env.LANGFUSE_AUTO_ANALYSIS_MAX_ITEMS_PER_SUMMARY,
-        },
-      },
-      {
-        jobId: summaryJobId,
-      },
-    );
+    logger.warn("Auto experience summary remains behind after sync attempts", {
+      projectId,
+      summaryJobId,
+      pendingCount,
+      minNewAnalyses: minNewAnalysesForSummary,
+    });
   } catch (e) {
     logger.warn("Failed to enqueue auto experience summary job", {
       projectId,
