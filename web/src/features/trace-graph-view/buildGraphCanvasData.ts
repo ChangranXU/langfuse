@@ -18,6 +18,13 @@ export interface GraphParseResult {
   nodeToObservationsMap: Record<string, string[]>;
 }
 
+type ObservationMetadataById = Record<
+  string,
+  Record<string, unknown> | null | undefined
+>;
+
+const SESSION_TURN_HIERARCHY_NODE_RE = /^session\.turn\.(?<turn>\d+)$/;
+
 export function transformLanggraphToGeneralized(
   data: AgentGraphDataResponse[],
 ): AgentGraphDataResponse[] {
@@ -656,6 +663,389 @@ export function buildGraphFromStepData(
   };
 }
 
+export function buildHierarchyGraphFromStepData(params: {
+  data: AgentGraphDataResponse[];
+  observationMetadataById?: ObservationMetadataById;
+}): GraphParseResult {
+  const { data, observationMetadataById = {} } = params;
+  if (data.length === 0) {
+    return {
+      graph: { nodes: [], edges: [] },
+      nodeToObservationsMap: {},
+    };
+  }
+
+  const fallbackGraph = buildGraphFromStepData(data);
+  const observationsById = new Map(data.map((obs) => [obs.id, obs]));
+
+  const chronologicalObservations = [...data]
+    .map((obs) => ({
+      ...obs,
+      startMs: new Date(obs.startTime).getTime(),
+    }))
+    .sort((a, b) => {
+      if (a.startMs !== b.startMs) return a.startMs - b.startMs;
+      return a.id.localeCompare(b.id);
+    });
+
+  const sessionTurns = chronologicalObservations
+    .map((obs) => {
+      const nodeName = obs.node ?? obs.name;
+      const match = SESSION_TURN_HIERARCHY_NODE_RE.exec(nodeName);
+      if (!match?.groups?.turn) return null;
+      return {
+        nodeName,
+        turnNumber: Number.parseInt(match.groups.turn, 10),
+        startMs: obs.startMs,
+      };
+    })
+    .filter((turn): turn is NonNullable<typeof turn> => turn !== null);
+
+  if (sessionTurns.length === 0) {
+    return fallbackGraph;
+  }
+
+  const turnWindows = sessionTurns.map((turn, index) => ({
+    ...turn,
+    endMs: sessionTurns[index + 1]?.startMs ?? Number.POSITIVE_INFINITY,
+  }));
+
+  const nodeToObservationsMap = new Map<string, string[]>();
+  turnWindows.forEach((turn) => nodeToObservationsMap.set(turn.nodeName, []));
+
+  let currentTurnIndex = 0;
+  for (const observation of chronologicalObservations) {
+    const observationNodeName = observation.node ?? observation.name;
+    if (isSystemNodeName(observationNodeName)) continue;
+
+    while (
+      currentTurnIndex < turnWindows.length - 1 &&
+      observation.startMs >= turnWindows[currentTurnIndex]!.endMs
+    ) {
+      currentTurnIndex++;
+    }
+
+    const activeTurn = turnWindows[currentTurnIndex];
+    if (!activeTurn) continue;
+
+    if (observation.startMs < activeTurn.startMs) {
+      continue;
+    }
+
+    nodeToObservationsMap.get(activeTurn.nodeName)?.push(observation.id);
+  }
+
+  const nodes: GraphNodeData[] = [
+    {
+      id: LANGFUSE_START_NODE_NAME,
+      label: LANGFUSE_START_NODE_NAME,
+      type: "LANGGRAPH_SYSTEM",
+      level: null,
+    },
+  ];
+  const edges: Array<{ from: string; to: string }> = [];
+
+  const getMetadata = (observationId: string) =>
+    observationMetadataById[observationId] ?? null;
+
+  const getMetadataString = (params: {
+    metadata: Record<string, unknown> | null;
+    candidateKeys: string[][];
+  }) =>
+    getFirstStringValue({
+      metadata: params.metadata,
+      candidateKeys: params.candidateKeys,
+    });
+
+  const getMetadataBoolean = (params: {
+    metadata: Record<string, unknown> | null;
+    candidateKeys: string[][];
+  }) =>
+    getFirstBooleanValue({
+      metadata: params.metadata,
+      candidateKeys: params.candidateKeys,
+    });
+
+  const getMetadataToolName = (metadata: Record<string, unknown> | null) =>
+    getMetadataString({
+      metadata,
+      candidateKeys: [["tool_name"], ["toolName"]],
+    });
+
+  const getMetadataNodeType = (metadata: Record<string, unknown> | null) =>
+    getMetadataString({
+      metadata,
+      candidateKeys: [["node_type"], ["nodeType"]],
+    });
+
+  for (const turnWindow of turnWindows) {
+    const observationIds = nodeToObservationsMap.get(turnWindow.nodeName) ?? [];
+    const turnMetadataSummary = buildTurnMetadataSummary({
+      observationIds,
+      observationsById,
+      observationMetadataById,
+    });
+
+    const observationCount =
+      turnMetadataSummary.observationCount ?? observationIds.length;
+    const toolCount = turnMetadataSummary.toolCount ?? 0;
+    const errorCount = turnMetadataSummary.errorCount ?? 0;
+    const warningCount = turnMetadataSummary.warningCount ?? 0;
+    const parserInconsistencyCount =
+      turnMetadataSummary.parserInconsistencyCount ?? 0;
+    const hasPolicyBlock = turnMetadataSummary.policy?.hasBlock ?? false;
+
+    const level =
+      errorCount > 0 || hasPolicyBlock
+        ? "ERROR"
+        : warningCount > 0 || parserInconsistencyCount > 0
+          ? "WARNING"
+          : null;
+
+    const title = [
+      `Turn ${turnWindow.turnNumber}`,
+      turnMetadataSummary.topic ? `Topic: ${turnMetadataSummary.topic}` : null,
+      turnMetadataSummary.category
+        ? `Category: ${turnMetadataSummary.category}`
+        : null,
+      turnMetadataSummary.instructionType
+        ? `Instruction Type: ${turnMetadataSummary.instructionType}`
+        : null,
+      turnMetadataSummary.policy?.authorityLabel
+        ? `Authority: ${turnMetadataSummary.policy.authorityLabel}`
+        : null,
+      hasPolicyBlock ? "Policy: BLOCK" : null,
+      turnMetadataSummary.durationMs != null
+        ? `Duration: ${formatDurationMs(turnMetadataSummary.durationMs)}`
+        : null,
+      `Observations: ${observationCount}`,
+      `Tool nodes: ${toolCount}`,
+      errorCount > 0 ? `Errors: ${errorCount}` : null,
+      warningCount > 0 ? `Warnings: ${warningCount}` : null,
+      parserInconsistencyCount > 0
+        ? `Parser consistency issues: ${parserInconsistencyCount}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    nodes.push({
+      id: turnWindow.nodeName,
+      label: turnMetadataSummary.topic
+        ? `Turn ${turnWindow.turnNumber}\n${truncateLabel(turnMetadataSummary.topic, 40)}`
+        : `Turn ${turnWindow.turnNumber}`,
+      type: "AGENT",
+      title,
+      metadataSummary: turnMetadataSummary,
+      level,
+    });
+
+    // Intent node (instruction/category abstraction)
+    const intentLabelParts: string[] = [];
+    if (turnMetadataSummary.instructionType) {
+      intentLabelParts.push(turnMetadataSummary.instructionType);
+    } else if (turnMetadataSummary.category) {
+      intentLabelParts.push(turnMetadataSummary.category);
+    }
+    if (intentLabelParts.length > 0) {
+      const intentNodeId = `${turnWindow.nodeName}::intent`;
+      const corePrefix = turnMetadataSummary.core
+        ? `${turnMetadataSummary.core} / `
+        : "";
+      nodes.push({
+        id: intentNodeId,
+        label: `Intent\n${truncateLabel(`${corePrefix}${intentLabelParts.join(" / ")}`, 36)}`,
+        type: "INTENT",
+        level: null,
+        title: [
+          "High-level intent derived from ArbiterOS metadata.",
+          turnMetadataSummary.core ? `Core: ${turnMetadataSummary.core}` : null,
+          turnMetadataSummary.instructionType
+            ? `Instruction Type: ${turnMetadataSummary.instructionType}`
+            : null,
+          turnMetadataSummary.category
+            ? `Category: ${turnMetadataSummary.category}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        metadataSummary: {
+          core: turnMetadataSummary.core ?? null,
+          instructionType: turnMetadataSummary.instructionType ?? null,
+          category: turnMetadataSummary.category ?? null,
+        },
+      });
+      edges.push({ from: turnWindow.nodeName, to: intentNodeId });
+      nodeToObservationsMap.set(intentNodeId, observationIds);
+    }
+
+    // Policy node (security/rules abstraction), if present
+    if (turnMetadataSummary.policy) {
+      const policyNodeId = `${turnWindow.nodeName}::policy`;
+      const policy = turnMetadataSummary.policy;
+      nodes.push({
+        id: policyNodeId,
+        label: `Policy\n${truncateLabel(
+          policy.authorityLabel ?? "unknown",
+          28,
+        )}`,
+        type: "POLICY",
+        level: policy.hasBlock ? "ERROR" : null,
+        title: [
+          "Policy/security summary derived from instruction metadata.",
+          policy.authorityLabel ? `Authority: ${policy.authorityLabel}` : null,
+          policy.confidentiality
+            ? `Confidentiality: ${policy.confidentiality}`
+            : null,
+          policy.integrity ? `Integrity: ${policy.integrity}` : null,
+          policy.trustworthiness
+            ? `Trustworthiness: ${policy.trustworthiness}`
+            : null,
+          policy.hasBlock ? "Rule: BLOCK present" : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        metadataSummary: { policy },
+      });
+      edges.push({ from: turnWindow.nodeName, to: policyNodeId });
+      nodeToObservationsMap.set(policyNodeId, observationIds);
+    }
+
+    // Tools summary + per-tool nodes
+    const toolObservationIds = observationIds.filter((id) => {
+      const obs = observationsById.get(id);
+      const metadata = getMetadata(id);
+      const toolName = obs?.toolName ?? getMetadataToolName(metadata);
+      return Boolean(
+        (obs?.observationType === "TOOL" && toolName) ||
+          (toolName && getMetadataNodeType(metadata) === "tool_result"),
+      );
+    });
+
+    if (toolCount > 0) {
+      const toolsNodeId = `${turnWindow.nodeName}::tools`;
+      nodes.push({
+        id: toolsNodeId,
+        label: `Tools\n${toolCount}`,
+        type: "TOOLS",
+        level: null,
+        title: [
+          `Tool nodes: ${toolCount}`,
+          turnMetadataSummary.toolBreakdown?.length
+            ? `Unique tools: ${turnMetadataSummary.toolBreakdown.length}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        metadataSummary: {
+          toolCount,
+          toolBreakdown: turnMetadataSummary.toolBreakdown ?? [],
+        },
+      });
+      edges.push({ from: turnWindow.nodeName, to: toolsNodeId });
+      nodeToObservationsMap.set(toolsNodeId, toolObservationIds);
+
+      const breakdown = [...(turnMetadataSummary.toolBreakdown ?? [])].sort(
+        (a, b) => b.count - a.count || a.toolName.localeCompare(b.toolName),
+      );
+      const MAX_TOOLS = 10;
+      const shown = breakdown.slice(0, MAX_TOOLS);
+      const hidden = breakdown.slice(MAX_TOOLS);
+
+      for (const tool of shown) {
+        const toolNodeId = `${turnWindow.nodeName}::tool::${tool.toolName}`;
+        nodes.push({
+          id: toolNodeId,
+          label: `${truncateLabel(tool.toolName, 26)}\n×${tool.count}`,
+          type: "TOOL",
+          level: tool.hasBlock ? "ERROR" : null,
+          title: [
+            `Tool: ${tool.toolName}`,
+            `Count: ${tool.count}`,
+            tool.instructionTypes?.length
+              ? `Instruction Types: ${tool.instructionTypes.join(", ")}`
+              : null,
+            tool.hasBlock ? "Policy: BLOCK present" : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        });
+        edges.push({ from: toolsNodeId, to: toolNodeId });
+
+        const obsIdsForTool = toolObservationIds.filter((id) => {
+          const obs = observationsById.get(id);
+          const metadata = getMetadata(id);
+          const toolName = obs?.toolName ?? getMetadataToolName(metadata);
+          return toolName === tool.toolName;
+        });
+        nodeToObservationsMap.set(toolNodeId, obsIdsForTool);
+      }
+
+      if (hidden.length > 0) {
+        const otherNodeId = `${turnWindow.nodeName}::tool::(other)`;
+        const otherCount = hidden.reduce((sum, t) => sum + t.count, 0);
+        nodes.push({
+          id: otherNodeId,
+          label: `Other tools\n×${otherCount}`,
+          type: "TOOL",
+          level: null,
+          title: `Other tools (hidden): ${hidden
+            .map((t) => `${t.toolName}×${t.count}`)
+            .join(", ")}`,
+        });
+        edges.push({ from: toolsNodeId, to: otherNodeId });
+        nodeToObservationsMap.set(otherNodeId, toolObservationIds);
+      }
+    }
+
+    // Output node (turn result summary)
+    const outputObservationIds = observationIds.filter((id) => {
+      const metadata = getMetadata(id);
+      return getMetadataNodeType(metadata) === "output";
+    });
+    if (outputObservationIds.length > 0) {
+      const outputNodeId = `${turnWindow.nodeName}::output`;
+      nodes.push({
+        id: outputNodeId,
+        label: "Output",
+        type: "OUTPUT",
+        level: null,
+        title: `Outputs: ${outputObservationIds.length}`,
+      });
+      edges.push({ from: turnWindow.nodeName, to: outputNodeId });
+      nodeToObservationsMap.set(outputNodeId, outputObservationIds);
+    }
+  }
+
+  // Connect start/end + turn chain
+  const firstTurn = turnWindows[0];
+  if (firstTurn) {
+    edges.unshift({ from: LANGFUSE_START_NODE_NAME, to: firstTurn.nodeName });
+  }
+  for (let i = 0; i < turnWindows.length - 1; i++) {
+    edges.push({
+      from: turnWindows[i]!.nodeName,
+      to: turnWindows[i + 1]!.nodeName,
+    });
+  }
+  const lastTurn = turnWindows[turnWindows.length - 1];
+  if (lastTurn) {
+    edges.push({ from: lastTurn.nodeName, to: LANGFUSE_END_NODE_NAME });
+  }
+
+  nodes.push({
+    id: LANGFUSE_END_NODE_NAME,
+    label: LANGFUSE_END_NODE_NAME,
+    type: "LANGGRAPH_SYSTEM",
+    level: null,
+  });
+
+  return {
+    graph: { nodes, edges },
+    nodeToObservationsMap: Object.fromEntries(nodeToObservationsMap.entries()),
+  };
+}
+
 function getRedundantParserNodes(stepToNodesMap: Map<number, Set<string>>) {
   const parserNodesByTurn = new Map<
     number,
@@ -736,4 +1126,476 @@ function generateEdgesWithParallelBranches(
   });
 
   return edges;
+}
+
+function isSystemNodeName(nodeName: string | null | undefined): boolean {
+  if (!nodeName) return false;
+  return (
+    nodeName === LANGFUSE_START_NODE_NAME ||
+    nodeName === LANGFUSE_END_NODE_NAME ||
+    nodeName === LANGGRAPH_START_NODE_NAME ||
+    nodeName === LANGGRAPH_END_NODE_NAME
+  );
+}
+
+function buildTurnMetadataSummary(params: {
+  observationIds: string[];
+  observationsById: Map<string, AgentGraphDataResponse>;
+  observationMetadataById: ObservationMetadataById;
+}) {
+  const { observationIds, observationsById, observationMetadataById } = params;
+
+  let topic: string | null = null;
+  let core: string | null = null;
+  let category: string | null = null;
+  let instructionType: string | null = null;
+  let instructionCategory: string | null = null;
+  let toolCount = 0;
+  const toolMetaByName = new Map<
+    string,
+    { count: number; instructionTypes: Set<string>; hasBlock: boolean }
+  >();
+  let errorCount = 0;
+  let warningCount = 0;
+  let parserInconsistencyCount = 0;
+  let minStartMs = Number.POSITIVE_INFINITY;
+  let maxEndMs = Number.NEGATIVE_INFINITY;
+
+  const instructionTypeCounts = new Map<string, number>();
+  const policyRuleEffectCounts: Record<string, number> = {};
+  let policyHasBlock = false;
+  let policyAuthorityLabel: string | null = null;
+  let policyConfidentiality: string | null = null;
+  let policyIntegrity: string | null = null;
+  let policyTrustworthiness: string | null = null;
+  let policyConfidence: number | null = null;
+  let policyReversible: boolean | null = null;
+  let policyConfidentialityLabel: boolean | null = null;
+
+  for (const observationId of observationIds) {
+    const observation = observationsById.get(observationId);
+    if (!observation) continue;
+
+    const metadata = observationMetadataById[observationId];
+    const startMs = new Date(observation.startTime).getTime();
+    const endMs = observation.endTime
+      ? new Date(observation.endTime).getTime()
+      : startMs;
+    minStartMs = Math.min(minStartMs, startMs);
+    maxEndMs = Math.max(maxEndMs, endMs);
+
+    if (
+      observation.observationType === "TOOL" ||
+      observation.toolName ||
+      getFirstStringValue({
+        metadata,
+        candidateKeys: [["tool_name"], ["toolName"]],
+      })
+    ) {
+      toolCount++;
+      const toolName =
+        observation.toolName ??
+        getFirstStringValue({
+          metadata,
+          candidateKeys: [["tool_name"], ["toolName"]],
+        }) ??
+        null;
+      if (toolName) {
+        const existing = toolMetaByName.get(toolName) ?? {
+          count: 0,
+          instructionTypes: new Set<string>(),
+          hasBlock: false,
+        };
+        existing.count += 1;
+        const toolIType =
+          getFirstStringValue({
+            metadata,
+            candidateKeys: [
+              ["instruction_type"],
+              ["instructionType"],
+              ["instruction", "type"],
+            ],
+          }) ?? null;
+        if (toolIType) {
+          existing.instructionTypes.add(toolIType);
+        }
+        const hasBlock =
+          getFirstBooleanValue({
+            metadata,
+            candidateKeys: [["policy_has_block"], ["policyHasBlock"]],
+          }) ?? false;
+        if (hasBlock) {
+          existing.hasBlock = true;
+        }
+        toolMetaByName.set(toolName, existing);
+      }
+    }
+
+    if (observation.level === "ERROR") {
+      errorCount++;
+    } else if (observation.level === "WARNING") {
+      warningCount++;
+    }
+
+    const traceIdConsistent =
+      observation.traceIdConsistent ??
+      getFirstBooleanValue({
+        metadata,
+        candidateKeys: [["trace_id_consistent"], ["traceIdConsistent"]],
+      });
+    if (traceIdConsistent === false) {
+      parserInconsistencyCount++;
+    }
+
+    if (!topic) {
+      const metadataTopic = getFirstStringValue({
+        metadata,
+        candidateKeys: [
+          ["topic"],
+          ["turnTopic"],
+          ["turn_topic"],
+          ["session", "topic"],
+        ],
+      });
+
+      topic =
+        metadataTopic ??
+        extractTopicFromObservationName(observation.name) ??
+        null;
+    }
+
+    if (!category) {
+      category =
+        observation.category ??
+        getFirstStringValue({
+          metadata,
+          candidateKeys: [
+            ["category"],
+            ["instructionCategory"],
+            ["instruction_category"],
+            ["session", "category"],
+          ],
+        }) ??
+        extractCategoryFromObservationName(observation.name);
+    }
+
+    if (!instructionType) {
+      instructionType =
+        getFirstStringValue({
+          metadata,
+          candidateKeys: [
+            ["instructionType"],
+            ["instruction_type"],
+            ["instruction", "type"],
+            ["session", "instructionType"],
+          ],
+        }) ?? deriveInstructionTypeFromCategory(category);
+    }
+
+    // Instruction & policy metadata emitted by ArbiterOS callback (preferred)
+    const itypeFromPolicy =
+      getFirstStringValue({
+        metadata,
+        candidateKeys: [
+          ["instruction_type"],
+          ["instructionType"],
+          ["instruction", "type"],
+        ],
+      }) ?? null;
+    if (itypeFromPolicy) {
+      instructionTypeCounts.set(
+        itypeFromPolicy,
+        (instructionTypeCounts.get(itypeFromPolicy) ?? 0) + 1,
+      );
+    }
+    if (!instructionCategory) {
+      instructionCategory =
+        getFirstStringValue({
+          metadata,
+          candidateKeys: [
+            ["instruction_category"],
+            ["instructionCategory"],
+            ["instruction", "category"],
+          ],
+        }) ?? null;
+    }
+
+    if (!core) {
+      core = deriveCoreFromCategory(instructionCategory ?? category);
+    }
+
+    const hasBlock =
+      getFirstBooleanValue({
+        metadata,
+        candidateKeys: [["policy_has_block"], ["policyHasBlock"]],
+      }) ?? null;
+    if (hasBlock === true) {
+      policyHasBlock = true;
+    }
+    if (!policyAuthorityLabel) {
+      policyAuthorityLabel =
+        getFirstStringValue({
+          metadata,
+          candidateKeys: [
+            ["policy_authority_label"],
+            ["policy", "authority_label"],
+            ["policy", "authorityLabel"],
+          ],
+        }) ?? null;
+    }
+    if (!policyConfidentiality) {
+      policyConfidentiality =
+        getFirstStringValue({
+          metadata,
+          candidateKeys: [
+            ["policy_confidentiality"],
+            ["policy", "confidentiality"],
+          ],
+        }) ?? null;
+    }
+    if (!policyIntegrity) {
+      policyIntegrity =
+        getFirstStringValue({
+          metadata,
+          candidateKeys: [["policy_integrity"], ["policy", "integrity"]],
+        }) ?? null;
+    }
+    if (!policyTrustworthiness) {
+      policyTrustworthiness =
+        getFirstStringValue({
+          metadata,
+          candidateKeys: [
+            ["policy_trustworthiness"],
+            ["policy", "trustworthiness"],
+          ],
+        }) ?? null;
+    }
+    if (policyConfidence == null) {
+      const v = getNestedValue((metadata ?? {}) as Record<string, unknown>, [
+        "policy_confidence",
+      ]) as unknown;
+      if (typeof v === "number") policyConfidence = v;
+    }
+    if (policyReversible == null) {
+      policyReversible =
+        getFirstBooleanValue({
+          metadata,
+          candidateKeys: [["policy_reversible"], ["policy", "reversible"]],
+        }) ?? null;
+    }
+    if (policyConfidentialityLabel == null) {
+      policyConfidentialityLabel =
+        getFirstBooleanValue({
+          metadata,
+          candidateKeys: [
+            ["policy_confidentiality_label"],
+            ["policy", "confidentiality_label"],
+          ],
+        }) ?? null;
+    }
+
+    const ruleEffectCountsRaw = getNestedValue(
+      (metadata ?? {}) as Record<string, unknown>,
+      ["policy_rule_effect_counts"],
+    );
+    if (ruleEffectCountsRaw && typeof ruleEffectCountsRaw === "object") {
+      for (const [k, v] of Object.entries(
+        ruleEffectCountsRaw as Record<string, unknown>,
+      )) {
+        if (typeof v !== "number") continue;
+        policyRuleEffectCounts[k] = (policyRuleEffectCounts[k] ?? 0) + v;
+      }
+    }
+  }
+
+  if (!instructionType) {
+    instructionType = deriveInstructionTypeFromCategory(category);
+  }
+  if (instructionTypeCounts.size > 0) {
+    const best = [...instructionTypeCounts.entries()].sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    )[0]?.[0];
+    if (best) {
+      instructionType = best;
+    }
+  }
+
+  const durationMs =
+    Number.isFinite(minStartMs) && Number.isFinite(maxEndMs)
+      ? Math.max(0, maxEndMs - minStartMs)
+      : null;
+
+  const toolBreakdown = [...toolMetaByName.entries()]
+    .map(([toolName, meta]) => ({
+      toolName,
+      count: meta.count,
+      instructionTypes: meta.instructionTypes.size
+        ? [...meta.instructionTypes].sort()
+        : null,
+      hasBlock: meta.hasBlock ? true : null,
+    }))
+    .sort((a, b) => b.count - a.count || a.toolName.localeCompare(b.toolName));
+
+  const policy =
+    policyAuthorityLabel ||
+    policyConfidentiality ||
+    policyIntegrity ||
+    policyTrustworthiness ||
+    policyHasBlock ||
+    Object.keys(policyRuleEffectCounts).length > 0
+      ? {
+          authorityLabel: policyAuthorityLabel,
+          confidentiality: policyConfidentiality,
+          integrity: policyIntegrity,
+          trustworthiness: policyTrustworthiness,
+          confidence: policyConfidence,
+          reversible: policyReversible,
+          confidentialityLabel: policyConfidentialityLabel,
+          hasBlock: policyHasBlock ? true : null,
+          ruleEffectCounts:
+            Object.keys(policyRuleEffectCounts).length > 0
+              ? policyRuleEffectCounts
+              : null,
+        }
+      : null;
+
+  return {
+    topic,
+    core,
+    category,
+    instructionType,
+    instructionCategory,
+    observationCount: observationIds.length,
+    toolCount,
+    toolBreakdown,
+    errorCount,
+    warningCount,
+    parserInconsistencyCount,
+    durationMs,
+    policy,
+  };
+}
+
+function deriveCoreFromCategory(
+  category: string | null | undefined,
+): string | null {
+  if (!category) return null;
+  const normalized = category.trim();
+  if (!normalized) return null;
+
+  // ArbiterOS kernel categories often look like: COGNITIVE_CORE__RESPOND
+  if (normalized.includes("__")) {
+    const core = normalized.split("__")[0]?.trim();
+    return core || null;
+  }
+
+  // InstructionBuilder categories look like: EXECUTION.Env / MEMORY.Management / COGNITIVE.Reasoning
+  if (normalized.includes(".")) {
+    const core = normalized.split(".")[0]?.trim();
+    return core || null;
+  }
+
+  return null;
+}
+function extractTopicFromObservationName(
+  observationName: string,
+): string | null {
+  if (!observationName.includes(" - kernel.")) return null;
+  const [topic] = observationName.split(" - kernel.");
+  if (!topic?.trim()) return null;
+  return topic.trim();
+}
+
+function extractCategoryFromObservationName(
+  observationName: string,
+): string | null {
+  if (!observationName.includes(" - kernel.")) return null;
+  const [, rawCategory] = observationName.split(" - kernel.");
+  if (!rawCategory?.trim()) return null;
+  return rawCategory.trim().toUpperCase();
+}
+
+function deriveInstructionTypeFromCategory(
+  category: string | null | undefined,
+): string | null {
+  if (!category) return null;
+  const normalized = category.trim();
+  if (!normalized) return null;
+  if (normalized.includes("__")) {
+    const instructionType = normalized.split("__").at(-1);
+    return instructionType?.trim() || null;
+  }
+  return null;
+}
+
+function getFirstStringValue(params: {
+  metadata: Record<string, unknown> | null | undefined;
+  candidateKeys: string[][];
+}): string | null {
+  const { metadata, candidateKeys } = params;
+  if (!metadata) return null;
+
+  for (const keyPath of candidateKeys) {
+    const value = getNestedValue(metadata, keyPath);
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function getFirstBooleanValue(params: {
+  metadata: Record<string, unknown> | null | undefined;
+  candidateKeys: string[][];
+}): boolean | null {
+  const { metadata, candidateKeys } = params;
+  if (!metadata) return null;
+
+  for (const keyPath of candidateKeys) {
+    const value = getNestedValue(metadata, keyPath);
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true" || normalized === "1") return true;
+      if (normalized === "false" || normalized === "0") return false;
+    }
+    if (typeof value === "number") {
+      if (value === 1) return true;
+      if (value === 0) return false;
+    }
+  }
+
+  return null;
+}
+
+function getNestedValue(
+  obj: Record<string, unknown>,
+  keyPath: string[],
+): unknown {
+  let current: unknown = obj;
+  for (const key of keyPath) {
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+function truncateLabel(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1)}...`;
+}
+
+function formatDurationMs(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+  if (durationMs < 60_000) {
+    return `${(durationMs / 1000).toFixed(1)}s`;
+  }
+  const minutes = Math.floor(durationMs / 60_000);
+  const seconds = Math.round((durationMs % 60_000) / 1000);
+  return `${minutes}m ${seconds}s`;
 }

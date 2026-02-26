@@ -1,4 +1,7 @@
-import { buildGraphFromStepData } from "@/src/features/trace-graph-view/buildGraphCanvasData";
+import {
+  buildGraphFromStepData,
+  buildHierarchyGraphFromStepData,
+} from "@/src/features/trace-graph-view/buildGraphCanvasData";
 import {
   formatParserNodeName,
   normalizeParserNodeNameForGraph,
@@ -519,5 +522,153 @@ describe("buildGraphFromStepData parser pruning", () => {
     const nodeIds = graph.nodes.map((n) => n.id);
     expect(nodeIds).toContain("session.failure.1");
     expect(nodeIds).toContain("session.failure.2");
+  });
+});
+
+describe("buildHierarchyGraphFromStepData summaries", () => {
+  it("aggregates turn activity and risk metrics from graph payload and metadata", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "turn-1",
+        name: "session.turn.001",
+        node: "session.turn.001",
+        step: 1,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:10.000Z",
+        observationType: "CHAIN",
+      }),
+      createObservation({
+        id: "kernel-1",
+        name: "Trip planning - kernel.cognitive_core__respond",
+        node: "Trip planning - kernel.cognitive_core__respond",
+        step: 2,
+        startTime: "2026-01-01T00:00:01.000Z",
+        endTime: "2026-01-01T00:00:03.000Z",
+        observationType: "AGENT",
+        category: "COGNITIVE_CORE__RESPOND",
+      }),
+      createObservation({
+        id: "tool-1",
+        name: "web_search.1",
+        node: "web_search.1",
+        step: 3,
+        startTime: "2026-01-01T00:00:04.000Z",
+        endTime: "2026-01-01T00:00:05.000Z",
+        observationType: "TOOL",
+        level: "ERROR",
+        toolName: "web_search",
+        traceIdConsistent: false,
+      }),
+      createObservation({
+        id: "turn-2",
+        name: "session.turn.002",
+        node: "session.turn.002",
+        step: 4,
+        startTime: "2026-01-01T00:00:20.000Z",
+        endTime: "2026-01-01T00:00:30.000Z",
+        observationType: "CHAIN",
+      }),
+    ];
+
+    const { graph } = buildHierarchyGraphFromStepData({
+      data,
+      observationMetadataById: {
+        "kernel-1": { topic: "Trip planning" },
+      },
+    });
+
+    const turnNode = graph.nodes.find((n) => n.id === "session.turn.001");
+    expect(turnNode).toBeDefined();
+    expect(turnNode?.metadataSummary?.topic).toBe("Trip planning");
+    expect(turnNode?.metadataSummary?.instructionType).toBe("RESPOND");
+    expect(turnNode?.metadataSummary?.observationCount).toBe(3);
+    expect(turnNode?.metadataSummary?.toolCount).toBe(1);
+    expect(turnNode?.metadataSummary?.errorCount).toBe(1);
+    expect(turnNode?.metadataSummary?.parserInconsistencyCount).toBe(1);
+    expect(turnNode?.level).toBe("ERROR");
+    expect(turnNode?.title).toContain("Tool nodes: 1");
+    expect(turnNode?.title).toContain("Errors: 1");
+    expect(turnNode?.title).toContain("Parser consistency issues: 1");
+  });
+
+  it("falls back to observation name/topic extraction and category-derived instruction type", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "turn-1",
+        name: "session.turn.001",
+        node: "session.turn.001",
+        step: 1,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:10.000Z",
+        observationType: "CHAIN",
+      }),
+      createObservation({
+        id: "kernel-1",
+        name: "Portfolio review - kernel.cognitive_core__plan",
+        node: "Portfolio review - kernel.cognitive_core__plan",
+        step: 2,
+        startTime: "2026-01-01T00:00:01.000Z",
+        endTime: "2026-01-01T00:00:03.000Z",
+        observationType: "AGENT",
+      }),
+    ];
+
+    const { graph } = buildHierarchyGraphFromStepData({ data });
+    const turnNode = graph.nodes.find((n) => n.id === "session.turn.001");
+
+    expect(turnNode?.metadataSummary?.topic).toBe("Portfolio review");
+    expect(turnNode?.metadataSummary?.category).toBe("COGNITIVE_CORE__PLAN");
+    expect(turnNode?.metadataSummary?.instructionType).toBe("PLAN");
+  });
+
+  it("marks warning-level turn risk for warnings and parser consistency mismatches", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "turn-1",
+        name: "session.turn.001",
+        node: "session.turn.001",
+        step: 1,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:10.000Z",
+        observationType: "CHAIN",
+      }),
+      createObservation({
+        id: "tool-1",
+        name: "web_fetch.1",
+        node: "web_fetch.1",
+        step: 2,
+        startTime: "2026-01-01T00:00:02.000Z",
+        endTime: "2026-01-01T00:00:03.000Z",
+        observationType: "TOOL",
+        level: "WARNING",
+      }),
+      createObservation({
+        id: "parser-1",
+        name: "session.parser.turn_001.tool_result.web_fetch.1",
+        node: "session.parser.turn_001.tool_result.web_fetch.1",
+        step: 3,
+        startTime: "2026-01-01T00:00:03.500Z",
+        endTime: "2026-01-01T00:00:03.700Z",
+        observationType: "SPAN",
+      }),
+    ];
+
+    const { graph } = buildHierarchyGraphFromStepData({
+      data,
+      observationMetadataById: {
+        "parser-1": {
+          trace_id_consistent: "false",
+        },
+      },
+    });
+
+    const turnNode = graph.nodes.find((n) => n.id === "session.turn.001");
+    expect(turnNode).toBeDefined();
+    expect(turnNode?.metadataSummary?.warningCount).toBe(1);
+    expect(turnNode?.metadataSummary?.errorCount).toBe(0);
+    expect(turnNode?.metadataSummary?.parserInconsistencyCount).toBe(1);
+    expect(turnNode?.level).toBe("WARNING");
+    expect(turnNode?.title).toContain("Warnings: 1");
+    expect(turnNode?.title).toContain("Parser consistency issues: 1");
   });
 });

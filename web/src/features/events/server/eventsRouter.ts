@@ -326,6 +326,12 @@ export const eventsRouter = createTRPCRouter({
                     observationType: data.type,
                     level: data.level,
                     statusMessage: data.status_message,
+                    category: data.category,
+                    parserStage: data.parser_stage,
+                    turnIndex: data.turn_index,
+                    toolName: data.tool_name,
+                    instructionCount: data.instruction_count,
+                    traceIdConsistent: data.trace_id_consistent,
                   };
                 } else if (hasAgentData) {
                   return {
@@ -339,6 +345,12 @@ export const eventsRouter = createTRPCRouter({
                     observationType: data.type,
                     level: data.level,
                     statusMessage: data.status_message,
+                    category: data.category,
+                    parserStage: data.parser_stage,
+                    turnIndex: data.turn_index,
+                    toolName: data.tool_name,
+                    instructionCount: data.instruction_count,
+                    traceIdConsistent: data.trace_id_consistent,
                   };
                 }
 

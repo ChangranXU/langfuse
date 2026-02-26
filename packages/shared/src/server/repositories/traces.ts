@@ -1539,7 +1539,13 @@ export async function getAgentGraphData(params: {
               notEmpty(metadata['agent_graph_step']),
               metadata['agent_graph_step'],
               metadata['langgraph_step']
-            ) AS step
+            ) AS step,
+            nullIf(metadata['category'], '') AS category,
+            nullIf(metadata['parser_stage'], '') AS parser_stage,
+            nullIf(metadata['turn_index'], '') AS turn_index,
+            nullIf(metadata['tool_name'], '') AS tool_name,
+            nullIf(metadata['instruction_count'], '') AS instruction_count,
+            nullIf(metadata['trace_id_consistent'], '') AS trace_id_consistent
           FROM
             observations
           WHERE

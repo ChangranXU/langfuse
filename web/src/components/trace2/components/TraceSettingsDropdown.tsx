@@ -45,6 +45,8 @@ export function TraceSettingsDropdown({
   const {
     showGraph,
     setShowGraph,
+    graphViewMode,
+    setGraphViewMode,
     showComments,
     setShowComments,
     showScores,
@@ -61,6 +63,7 @@ export function TraceSettingsDropdown({
 
   // Color coding is only available when duration or cost metrics are shown
   const isColorCodeEnabled = showDuration || showCostTokens;
+  const isHierarchyGraphMode = graphViewMode === "hierarchy";
 
   return (
     <DropdownMenu>
@@ -95,6 +98,24 @@ export function TraceSettingsDropdown({
                   size="sm"
                   checked={showGraph}
                   onCheckedChange={setShowGraph}
+                />
+              </div>
+            </DropdownMenuItem>
+          )}
+          {isGraphViewAvailable && (
+            <DropdownMenuItem
+              asChild
+              onSelect={(e) => e.preventDefault()}
+              className="space-y-0 px-2 py-1"
+            >
+              <div className="flex w-full items-center justify-between">
+                <span className="mr-2">Hierarchy Graph</span>
+                <Switch
+                  size="sm"
+                  checked={isHierarchyGraphMode}
+                  onCheckedChange={(checked) =>
+                    setGraphViewMode(checked ? "hierarchy" : "execution")
+                  }
                 />
               </div>
             </DropdownMenuItem>

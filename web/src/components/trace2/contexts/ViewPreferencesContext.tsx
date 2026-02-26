@@ -21,6 +21,9 @@ export type LogViewMode = "chronological" | "tree-order";
 /** Log view tree visualization style (only applies in tree-order mode) */
 export type LogViewTreeStyle = "flat" | "indented";
 
+/** Graph view mode */
+export type GraphViewMode = "execution" | "hierarchy";
+
 /** JSON view preference (formatted/pretty vs raw JSON vs advanced JSON beta) */
 export type JsonViewPreference = "pretty" | "json" | "json-beta";
 
@@ -47,6 +50,9 @@ interface ViewPreferencesContextValue {
   /** Log view tree style (flat or indented, only applies in tree-order mode) */
   logViewTreeStyle: LogViewTreeStyle;
   setLogViewTreeStyle: (value: LogViewTreeStyle) => void;
+  /** Graph mode (current execution flow vs condensed hierarchy) */
+  graphViewMode: GraphViewMode;
+  setGraphViewMode: (value: GraphViewMode) => void;
   /** JSON view preference (pretty/formatted or raw JSON) */
   jsonViewPreference: JsonViewPreference;
   setJsonViewPreference: (value: JsonViewPreference) => void;
@@ -108,6 +114,10 @@ export function ViewPreferencesProvider({
   );
   const [logViewTreeStyle, setLogViewTreeStyle] =
     useLocalStorage<LogViewTreeStyle>("logViewTreeStyle", "flat");
+  const [graphViewMode, setGraphViewMode] = useLocalStorage<GraphViewMode>(
+    "graphViewMode",
+    "execution",
+  );
   const [jsonViewPreference, setJsonViewPreference] =
     useLocalStorage<JsonViewPreference>("jsonViewPreference", "pretty");
   // Migration: default to true if user had json-beta selected previously
@@ -139,6 +149,8 @@ export function ViewPreferencesProvider({
       setLogViewMode,
       logViewTreeStyle,
       setLogViewTreeStyle,
+      graphViewMode,
+      setGraphViewMode,
       jsonViewPreference,
       setJsonViewPreference,
       jsonBetaEnabled,
@@ -164,6 +176,8 @@ export function ViewPreferencesProvider({
       setLogViewMode,
       logViewTreeStyle,
       setLogViewTreeStyle,
+      graphViewMode,
+      setGraphViewMode,
       jsonViewPreference,
       setJsonViewPreference,
       jsonBetaEnabled,

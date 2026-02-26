@@ -2452,6 +2452,8 @@ export async function getAgentGraphDataFromEventsTable(params: {
       e.name as name,
       e.start_time as start_time,
       e.end_time as end_time,
+      e.level as level,
+      e.status_message as status_message,
       if(
         notEmpty(mapFromArrays(e.metadata_names, e.metadata_values)['agent_graph_node']),
         mapFromArrays(e.metadata_names, e.metadata_values)['agent_graph_node'],
@@ -2461,7 +2463,13 @@ export async function getAgentGraphDataFromEventsTable(params: {
         notEmpty(mapFromArrays(e.metadata_names, e.metadata_values)['agent_graph_step']),
         mapFromArrays(e.metadata_names, e.metadata_values)['agent_graph_step'],
         mapFromArrays(e.metadata_names, e.metadata_values)['langgraph_step']
-      ) AS step
+      ) AS step,
+      nullIf(mapFromArrays(e.metadata_names, e.metadata_values)['category'], '') AS category,
+      nullIf(mapFromArrays(e.metadata_names, e.metadata_values)['parser_stage'], '') AS parser_stage,
+      nullIf(mapFromArrays(e.metadata_names, e.metadata_values)['turn_index'], '') AS turn_index,
+      nullIf(mapFromArrays(e.metadata_names, e.metadata_values)['tool_name'], '') AS tool_name,
+      nullIf(mapFromArrays(e.metadata_names, e.metadata_values)['instruction_count'], '') AS instruction_count,
+      nullIf(mapFromArrays(e.metadata_names, e.metadata_values)['trace_id_consistent'], '') AS trace_id_consistent
     FROM events_core e
     WHERE
       e.project_id = {projectId: String}

@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useMemo, useState } from "react";
 import { Network, DataSet } from "vis-network/standalone";
-import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Maximize2, GitBranch } from "lucide-react";
 
-import type { GraphCanvasData } from "../types";
+import type { GraphCanvasData, TraceGraphMode } from "../types";
 import {
   LANGFUSE_START_NODE_NAME,
   LANGFUSE_END_NODE_NAME,
@@ -10,26 +10,37 @@ import {
   LANGGRAPH_END_NODE_NAME,
 } from "../types";
 import { Button } from "@/src/components/ui/button";
+import { Dialog, DialogContent } from "@/src/components/ui/dialog";
+import { cn } from "@/src/utils/tailwind";
 
 type TraceGraphCanvasProps = {
   graph: GraphCanvasData;
+  graphMode: TraceGraphMode;
   selectedNodeName: string | null;
   onCanvasNodeNameChange: (nodeName: string | null) => void;
   disablePhysics?: boolean;
   nodeToObservationsMap?: Record<string, string[]>;
   currentObservationIndices?: Record<string, number>;
+  onGraphModeToggle?: () => void;
+  allowFullscreen?: boolean;
+  whiteBackground?: boolean;
 };
 
 export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   const {
     graph: graphData,
+    graphMode,
     selectedNodeName,
     onCanvasNodeNameChange,
     disablePhysics = false,
     nodeToObservationsMap = {},
     currentObservationIndices = {},
+    onGraphModeToggle,
+    allowFullscreen = true,
+    whiteBackground = false,
   } = props;
   const [isHovering, setIsHovering] = useState(false);
+  const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
@@ -66,6 +77,30 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
           border: "#c4b5fd", // purple-300 (former background)
           background: "#f3f4f6", // gray-100
           highlight: { border: "#a78bfa", background: "#e5e7eb" }, // gray-200
+        };
+      case "INTENT":
+        return {
+          border: "#99f6e4", // teal-200
+          background: "#f3f4f6", // gray-100
+          highlight: { border: "#2dd4bf", background: "#e5e7eb" }, // teal-400
+        };
+      case "POLICY":
+        return {
+          border: "#fca5a5", // red-300-ish
+          background: "#f3f4f6", // gray-100
+          highlight: { border: "#f87171", background: "#e5e7eb" }, // red-400-ish
+        };
+      case "TOOLS":
+        return {
+          border: "#fdba74", // orange-300
+          background: "#f3f4f6", // gray-100
+          highlight: { border: "#fb923c", background: "#e5e7eb" }, // orange-400
+        };
+      case "OUTPUT":
+        return {
+          border: "#a7f3d0", // emerald-200
+          background: "#f3f4f6", // gray-100
+          highlight: { border: "#34d399", background: "#e5e7eb" }, // emerald-400
         };
       case "TOOL":
         return {
@@ -139,10 +174,46 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   const nodes = useMemo(
     () =>
       graphData.nodes.map((node) => {
+        const metadataLines =
+          graphMode === "hierarchy" && node.metadataSummary
+            ? [
+                node.metadataSummary.core
+                  ? `Core: ${truncateText(node.metadataSummary.core, 24)}`
+                  : null,
+                node.metadataSummary.category
+                  ? `Category: ${truncateText(node.metadataSummary.category, 24)}`
+                  : null,
+                node.metadataSummary.instructionType
+                  ? `Type: ${truncateText(node.metadataSummary.instructionType, 24)}`
+                  : null,
+                node.metadataSummary.policy?.authorityLabel
+                  ? `Policy: ${truncateText(
+                      `${node.metadataSummary.policy.authorityLabel}${node.metadataSummary.policy.hasBlock ? " (BLOCK)" : ""}`,
+                      32,
+                    )}`
+                  : node.metadataSummary.policy?.hasBlock
+                    ? "Policy: BLOCK"
+                    : null,
+                node.metadataSummary.observationCount != null
+                  ? `Obs: ${node.metadataSummary.observationCount} | Tools: ${node.metadataSummary.toolCount ?? 0}`
+                  : null,
+                (node.metadataSummary.errorCount ?? 0) > 0 ||
+                (node.metadataSummary.warningCount ?? 0) > 0 ||
+                (node.metadataSummary.parserInconsistencyCount ?? 0) > 0
+                  ? `Risk: E${node.metadataSummary.errorCount ?? 0} W${node.metadataSummary.warningCount ?? 0} P${node.metadataSummary.parserInconsistencyCount ?? 0}`
+                  : null,
+              ].filter((line): line is string => Boolean(line))
+            : [];
+
+        const label =
+          metadataLines.length > 0
+            ? `${node.label}\n${metadataLines.join("\n")}`
+            : node.label;
+
         const hasShortLabel = node.label !== node.id;
         const nodeData = {
           id: node.id,
-          label: node.label,
+          label,
           color: getNodeStyle({ nodeType: node.type, level: node.level }),
           title: node.title ?? (hasShortLabel ? node.id : undefined),
         };
@@ -186,7 +257,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
         }
         return nodeData;
       }),
-    [graphData.nodes],
+    [graphData.nodes, graphMode],
   );
 
   const options = useMemo(
@@ -215,14 +286,14 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
       nodes: {
         shape: "box",
         margin: {
-          top: 10,
-          right: 10,
-          bottom: 10,
-          left: 10,
+          top: graphMode === "hierarchy" ? 8 : 10,
+          right: graphMode === "hierarchy" ? 8 : 10,
+          bottom: graphMode === "hierarchy" ? 8 : 10,
+          left: graphMode === "hierarchy" ? 8 : 10,
         },
         borderWidth: 2,
         font: {
-          size: 14,
+          size: graphMode === "hierarchy" ? 13 : 14,
           color: "#000000",
         },
         shadow: {
@@ -252,7 +323,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
         chosen: false,
       },
     }),
-    [disablePhysics],
+    [disablePhysics, graphMode],
   );
 
   const handleZoomIn = () => {
@@ -299,6 +370,9 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
       options,
     );
     networkRef.current = network;
+    network.fit({
+      animation: false,
+    });
 
     // Use click event instead of selectNode/deselectNode to handle cycling properly
     network.on("click", (params) => {
@@ -469,43 +543,99 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   }
 
   return (
-    <div
-      className="relative h-full min-h-[50dvh] w-full pb-2"
-      onMouseEnter={() => setIsHovering(true)}
-      onMouseLeave={() => setIsHovering(false)}
-    >
-      {isHovering && (
-        <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
-          <Button
-            onClick={handleZoomIn}
-            variant="ghost"
-            size="icon"
-            className="p-1.5 shadow-md dark:shadow-border"
-            title="Zoom in"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </Button>
-          <Button
-            onClick={handleZoomOut}
-            variant="ghost"
-            size="icon"
-            className="p-1.5 shadow-md dark:shadow-border"
-            title="Zoom out"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <Button
-            onClick={handleReset}
-            variant="ghost"
-            size="icon"
-            className="p-1.5 shadow-md dark:shadow-border"
-            title="Reset view"
-          >
-            <RotateCcw className="h-4 w-4" />
-          </Button>
-        </div>
+    <>
+      <div
+        className={cn(
+          "relative h-full min-h-[50dvh] w-full pb-2",
+          whiteBackground && "bg-white",
+        )}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
+      >
+        {isHovering && (
+          <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
+            <Button
+              onClick={handleZoomIn}
+              variant="ghost"
+              size="icon"
+              className="p-1.5 shadow-md dark:shadow-border"
+              title="Zoom in"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={handleZoomOut}
+              variant="ghost"
+              size="icon"
+              className="p-1.5 shadow-md dark:shadow-border"
+              title="Zoom out"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={handleReset}
+              variant="ghost"
+              size="icon"
+              className="p-1.5 shadow-md dark:shadow-border"
+              title="Reset view"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+            {allowFullscreen && (
+              <Button
+                onClick={() => setIsFullscreenOpen(true)}
+                variant="ghost"
+                size="icon"
+                className="p-1.5 shadow-md dark:shadow-border"
+                title="Open fullscreen graph"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            )}
+            {onGraphModeToggle && (
+              <Button
+                onClick={onGraphModeToggle}
+                variant="ghost"
+                size="icon"
+                className="p-1.5 shadow-md dark:shadow-border"
+                title={
+                  graphMode === "hierarchy"
+                    ? "Switch to execution flow graph"
+                    : "Switch to hierarchy graph"
+                }
+              >
+                <GitBranch className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        )}
+        <div ref={containerRef} className="h-full w-full" />
+      </div>
+      {allowFullscreen && (
+        <Dialog open={isFullscreenOpen} onOpenChange={setIsFullscreenOpen}>
+          <DialogContent size="xxl" className="overflow-hidden bg-white p-0">
+            <div className="h-full w-full bg-white p-3">
+              <TraceGraphCanvas
+                graph={graphData}
+                graphMode={graphMode}
+                selectedNodeName={selectedNodeName}
+                onCanvasNodeNameChange={onCanvasNodeNameChange}
+                disablePhysics={disablePhysics}
+                nodeToObservationsMap={nodeToObservationsMap}
+                currentObservationIndices={currentObservationIndices}
+                onGraphModeToggle={onGraphModeToggle}
+                allowFullscreen={false}
+                whiteBackground={true}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
-      <div ref={containerRef} className="h-full w-full" />
-    </div>
+    </>
   );
 };
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1)}...`;
+}

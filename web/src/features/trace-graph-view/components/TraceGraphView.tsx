@@ -8,10 +8,11 @@ import React, {
 import { StringParam, useQueryParam } from "use-query-params";
 
 import { TraceGraphCanvas } from "./TraceGraphCanvas";
-import { type AgentGraphDataResponse } from "../types";
+import { type AgentGraphDataResponse, type TraceGraphMode } from "../types";
 import { buildStepData } from "../buildStepData";
 import {
   buildGraphFromStepData,
+  buildHierarchyGraphFromStepData,
   transformLanggraphToGeneralized,
 } from "../buildGraphCanvasData";
 import {
@@ -25,10 +26,16 @@ const MAX_NODE_NUMBER_FOR_PHYSICS = 500;
 
 type TraceGraphViewProps = {
   agentGraphData: AgentGraphDataResponse[];
+  graphMode: TraceGraphMode;
+  onGraphModeChange?: (mode: TraceGraphMode) => void;
+  observationMetadataById?: Record<string, Record<string, unknown> | null>;
 };
 
 export const TraceGraphView: React.FC<TraceGraphViewProps> = ({
   agentGraphData,
+  graphMode,
+  onGraphModeChange,
+  observationMetadataById = {},
 }) => {
   const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
   const [currentObservationId, setCurrentObservationId] = useQueryParam(
@@ -64,8 +71,14 @@ export const TraceGraphView: React.FC<TraceGraphViewProps> = ({
   }, [agentGraphData]);
 
   const { graph, nodeToObservationsMap } = useMemo(() => {
+    if (graphMode === "hierarchy") {
+      return buildHierarchyGraphFromStepData({
+        data: normalizedData,
+        observationMetadataById,
+      });
+    }
     return buildGraphFromStepData(normalizedData);
-  }, [normalizedData]);
+  }, [graphMode, normalizedData, observationMetadataById]);
 
   const shouldDisablePhysics =
     agentGraphData.length >= MAX_NODE_NUMBER_FOR_PHYSICS;
@@ -73,7 +86,7 @@ export const TraceGraphView: React.FC<TraceGraphViewProps> = ({
   // Reset indices when graph data changes (new trace loaded)
   useEffect(() => {
     setCurrentObservationIndices({});
-  }, [normalizedData]);
+  }, [normalizedData, graphMode]);
 
   useEffect(() => {
     // if this observation ID change came from a click -> skip
@@ -179,8 +192,14 @@ export const TraceGraphView: React.FC<TraceGraphViewProps> = ({
     <div className="grid h-full w-full gap-4">
       <TraceGraphCanvas
         graph={graph}
+        graphMode={graphMode}
         selectedNodeName={selectedNodeName}
         onCanvasNodeNameChange={onCanvasNodeNameChange}
+        onGraphModeToggle={() =>
+          onGraphModeChange?.(
+            graphMode === "hierarchy" ? "execution" : "hierarchy",
+          )
+        }
         disablePhysics={shouldDisablePhysics}
         nodeToObservationsMap={nodeToObservationsMap}
         currentObservationIndices={currentObservationIndices}

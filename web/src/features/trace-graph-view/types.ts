@@ -1,11 +1,45 @@
 import { z } from "zod/v4";
 
+export type TraceGraphMode = "execution" | "hierarchy";
+
+export type GraphNodeMetadataSummary = {
+  topic?: string | null;
+  core?: string | null;
+  category?: string | null;
+  instructionType?: string | null;
+  instructionCategory?: string | null;
+  observationCount?: number;
+  toolCount?: number;
+  toolBreakdown?: Array<{
+    toolName: string;
+    count: number;
+    instructionTypes?: string[] | null;
+    hasBlock?: boolean | null;
+  }>;
+  errorCount?: number;
+  warningCount?: number;
+  parserInconsistencyCount?: number;
+  durationMs?: number | null;
+  policy?: {
+    authorityLabel?: string | null;
+    confidentiality?: string | null;
+    integrity?: string | null;
+    trustworthiness?: string | null;
+    confidence?: number | null;
+    reversible?: boolean | null;
+    confidentialityLabel?: boolean | null;
+    hasBlock?: boolean | null;
+    ruleEffectCounts?: Record<string, number> | null;
+  } | null;
+};
+
 export type GraphNodeData = {
   id: string;
   label: string;
   type: string;
   title?: string;
   level?: string | null;
+  metadataSummary?: GraphNodeMetadataSummary;
 };
 
 export type GraphCanvasData = {
@@ -25,6 +59,19 @@ export const LanggraphMetadataSchema = z.object({
   [LANGGRAPH_STEP_TAG]: z.number(),
 });
 
+const NullableBooleanFromMixedSchema = z
+  .union([z.boolean(), z.string(), z.number()])
+  .nullish()
+  .transform((value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") return true;
+    if (normalized === "false" || normalized === "0") return false;
+    return null;
+  });
+
 export const AgentGraphDataSchema = z.object({
   id: z.string(),
   parent_observation_id: z.string().nullish(),
@@ -36,6 +83,12 @@ export const AgentGraphDataSchema = z.object({
   status_message: z.string().nullish(),
   node: z.string().nullish(),
   step: z.coerce.number().nullish(),
+  category: z.string().nullish(),
+  parser_stage: z.string().nullish(),
+  turn_index: z.coerce.number().nullish(),
+  tool_name: z.string().nullish(),
+  instruction_count: z.coerce.number().nullish(),
+  trace_id_consistent: NullableBooleanFromMixedSchema,
 });
 
 export type AgentGraphDataResponse = {
@@ -49,4 +102,10 @@ export type AgentGraphDataResponse = {
   observationType: string;
   level?: string | null;
   statusMessage?: string | null;
+  category?: string | null;
+  parserStage?: string | null;
+  turnIndex?: number | null;
+  toolName?: string | null;
+  instructionCount?: number | null;
+  traceIdConsistent?: boolean | null;
 };
