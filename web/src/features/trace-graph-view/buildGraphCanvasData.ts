@@ -761,6 +761,7 @@ export function buildHierarchyGraphFromStepData(params: {
     },
   ];
   const edges: Array<{ from: string; to: string }> = [];
+  const resultNodeIdByTurnNodeName = new Map<string, string>();
 
   const getMetadata = (observationId: string) =>
     observationMetadataById[observationId] ?? null;
@@ -856,45 +857,6 @@ export function buildHierarchyGraphFromStepData(params: {
       metadataSummary: turnMetadataSummary,
       level,
     });
-
-    // Intent node (instruction/category abstraction)
-    const intentLabelParts: string[] = [];
-    if (turnMetadataSummary.instructionType) {
-      intentLabelParts.push(turnMetadataSummary.instructionType);
-    } else if (turnMetadataSummary.category) {
-      intentLabelParts.push(turnMetadataSummary.category);
-    }
-    if (intentLabelParts.length > 0) {
-      const intentNodeId = `${turnWindow.nodeName}::intent`;
-      const corePrefix = turnMetadataSummary.core
-        ? `${turnMetadataSummary.core} / `
-        : "";
-      nodes.push({
-        id: intentNodeId,
-        label: `Intent\n${truncateLabel(`${corePrefix}${intentLabelParts.join(" / ")}`, 36)}`,
-        type: "INTENT",
-        level: null,
-        title: [
-          "High-level intent derived from ArbiterOS metadata.",
-          turnMetadataSummary.core ? `Core: ${turnMetadataSummary.core}` : null,
-          turnMetadataSummary.instructionType
-            ? `Instruction Type: ${turnMetadataSummary.instructionType}`
-            : null,
-          turnMetadataSummary.category
-            ? `Category: ${turnMetadataSummary.category}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        metadataSummary: {
-          core: turnMetadataSummary.core ?? null,
-          instructionType: turnMetadataSummary.instructionType ?? null,
-          category: turnMetadataSummary.category ?? null,
-        },
-      });
-      edges.push({ from: turnWindow.nodeName, to: intentNodeId });
-      nodeToObservationsMap.set(intentNodeId, observationIds);
-    }
 
     // Policy node (security/rules abstraction), if present
     if (turnMetadataSummary.policy) {
@@ -1015,22 +977,29 @@ export function buildHierarchyGraphFromStepData(params: {
       }
     }
 
-    // Output node (turn result summary)
-    const outputObservationIds = observationIds.filter((id) => {
-      const metadata = getMetadata(id);
-      return getMetadataNodeType(metadata) === "output";
+    // Result node: only bind to "topic - kernel.xxx" observation for concise UX.
+    const kernelObservationIds = observationIds.filter((id) => {
+      const observation = observationsById.get(id);
+      return Boolean(
+        observation?.name &&
+          typeof observation.name === "string" &&
+          observation.name.includes(" - kernel."),
+      );
     });
-    if (outputObservationIds.length > 0) {
-      const outputNodeId = `${turnWindow.nodeName}::output`;
+    const resultObservationId =
+      kernelObservationIds[kernelObservationIds.length - 1];
+    if (resultObservationId) {
+      const resultNodeId = `${turnWindow.nodeName}::result`;
       nodes.push({
-        id: outputNodeId,
-        label: "Output",
+        id: resultNodeId,
+        label: `Result @ turn${turnWindow.turnNumber}`,
         type: "OUTPUT",
         level: null,
-        title: `Outputs: ${outputObservationIds.length}`,
+        title: "Result",
       });
-      edges.push({ from: turnWindow.nodeName, to: outputNodeId });
-      nodeToObservationsMap.set(outputNodeId, outputObservationIds);
+      edges.push({ from: turnWindow.nodeName, to: resultNodeId });
+      nodeToObservationsMap.set(resultNodeId, [resultObservationId]);
+      resultNodeIdByTurnNodeName.set(turnWindow.nodeName, resultNodeId);
     }
   }
 
@@ -1040,14 +1009,24 @@ export function buildHierarchyGraphFromStepData(params: {
     edges.unshift({ from: LANGFUSE_START_NODE_NAME, to: firstTurn.nodeName });
   }
   for (let i = 0; i < turnWindows.length - 1; i++) {
+    const currentTurnNodeName = turnWindows[i]!.nodeName;
+    const nextTurnNodeName = turnWindows[i + 1]!.nodeName;
+    const chainSourceNodeName =
+      resultNodeIdByTurnNodeName.get(currentTurnNodeName) ??
+      currentTurnNodeName;
     edges.push({
-      from: turnWindows[i]!.nodeName,
-      to: turnWindows[i + 1]!.nodeName,
+      from: chainSourceNodeName,
+      to: nextTurnNodeName,
     });
   }
   const lastTurn = turnWindows[turnWindows.length - 1];
   if (lastTurn) {
-    edges.push({ from: lastTurn.nodeName, to: LANGFUSE_END_NODE_NAME });
+    const lastChainSourceNodeName =
+      resultNodeIdByTurnNodeName.get(lastTurn.nodeName) ?? lastTurn.nodeName;
+    edges.push({
+      from: lastChainSourceNodeName,
+      to: LANGFUSE_END_NODE_NAME,
+    });
   }
 
   nodes.push({

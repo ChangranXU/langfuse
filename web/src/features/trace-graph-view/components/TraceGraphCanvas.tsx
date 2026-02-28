@@ -388,14 +388,17 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   };
 
   const searchResultNodeIds = useMemo(() => {
-    if (!searchQuery.trim()) {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    if (!normalizedQuery) {
       return [];
     }
 
     return Array.from(
       new Set(
         graphData.nodes
-          .filter((node) => doesNodeMatchSearchQuery(node, searchQuery))
+          .filter((node) =>
+            buildSearchableNodeText(node).includes(normalizedQuery),
+          )
           .map((node) => node.id),
       ),
     );
@@ -839,90 +842,7 @@ function truncateText(value: string, maxLength: number): string {
 }
 
 function buildSearchableNodeText(node: GraphNodeData): string {
-  const metadataText = node.metadataSummary
-    ? JSON.stringify(node.metadataSummary)
-    : "";
-  return [
-    node.id,
-    node.label,
-    node.type,
-    node.title ?? "",
-    node.level ?? "",
-    metadataText,
-  ]
+  return [node.id, node.label, node.type, node.title ?? "", node.level ?? ""]
     .join(" ")
     .toLowerCase();
-}
-
-function doesNodeMatchSearchQuery(
-  node: GraphNodeData,
-  rawQuery: string,
-): boolean {
-  const queryTokens = rawQuery
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (queryTokens.length === 0) {
-    return false;
-  }
-
-  const searchableText = buildSearchableNodeText(node);
-  const normalizedText = normalizeForFuzzySearch(searchableText);
-  const compactText = normalizedText.replace(/\s+/g, "");
-  const numberSegments = normalizedText.match(/\d+/g) ?? [];
-  const normalizedNumbers = new Set(
-    numberSegments
-      .map((segment) => Number.parseInt(segment, 10))
-      .filter((value) => Number.isFinite(value)),
-  );
-
-  return queryTokens.every((queryToken) => {
-    const normalizedToken = normalizeForFuzzySearch(queryToken);
-    if (!normalizedToken) return true;
-
-    // Numeric token matching is normalization-aware:
-    // "6" can match "006", "0006", etc.
-    if (/^\d+$/.test(normalizedToken)) {
-      const normalizedQueryNumber = Number.parseInt(normalizedToken, 10);
-      return normalizedNumbers.has(normalizedQueryNumber);
-    }
-
-    if (normalizedText.includes(normalizedToken)) {
-      return true;
-    }
-
-    const compactToken = normalizedToken.replace(/\s+/g, "");
-    if (!compactToken) return true;
-    if (compactText.includes(compactToken)) {
-      return true;
-    }
-
-    // Fuzzy subsequence fallback helps partial Chinese phrase matching,
-    // e.g. "宝安交通" against "宝安机场交通情况".
-    return compactToken.length >= 2
-      ? isSubsequenceMatch(compactText, compactToken)
-      : false;
-  });
-}
-
-function normalizeForFuzzySearch(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[_./-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isSubsequenceMatch(target: string, query: string): boolean {
-  let queryIndex = 0;
-  for (let targetIndex = 0; targetIndex < target.length; targetIndex++) {
-    if (target[targetIndex] === query[queryIndex]) {
-      queryIndex++;
-      if (queryIndex === query.length) {
-        return true;
-      }
-    }
-  }
-  return queryIndex === query.length;
 }
