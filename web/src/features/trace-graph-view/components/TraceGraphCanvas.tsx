@@ -1,8 +1,24 @@
-import React, { useEffect, useRef, useMemo, useState } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useMemo,
+  useState,
+  useCallback,
+} from "react";
 import { Network, DataSet } from "vis-network/standalone";
-import { ZoomIn, ZoomOut, RotateCcw, Maximize2, GitBranch } from "lucide-react";
+import {
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Maximize2,
+  GitBranch,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  X,
+} from "lucide-react";
 
-import type { GraphCanvasData, TraceGraphMode } from "../types";
+import type { GraphCanvasData, GraphNodeData, TraceGraphMode } from "../types";
 import {
   LANGFUSE_START_NODE_NAME,
   LANGFUSE_END_NODE_NAME,
@@ -11,13 +27,17 @@ import {
 } from "../types";
 import { Button } from "@/src/components/ui/button";
 import { Dialog, DialogContent } from "@/src/components/ui/dialog";
+import { Input } from "@/src/components/ui/input";
 import { cn } from "@/src/utils/tailwind";
 
 type TraceGraphCanvasProps = {
   graph: GraphCanvasData;
   graphMode: TraceGraphMode;
   selectedNodeName: string | null;
-  onCanvasNodeNameChange: (nodeName: string | null) => void;
+  onCanvasNodeNameChange: (
+    nodeName: string | null,
+    options?: { shouldCycleObservation?: boolean },
+  ) => void;
   disablePhysics?: boolean;
   nodeToObservationsMap?: Record<string, string[]>;
   currentObservationIndices?: Record<string, number>;
@@ -41,10 +61,14 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   } = props;
   const [isHovering, setIsHovering] = useState(false);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
   const nodesDataSetRef = useRef<DataSet<any> | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const onCanvasNodeNameChangeRef = useRef(onCanvasNodeNameChange);
 
   // Keep ref up to date without triggering Network recreation
@@ -286,7 +310,10 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
         },
       },
       interaction: {
-        zoomView: false,
+        // Enable mouse wheel and touchpad pinch zoom on graph canvas.
+        zoomView: true,
+        // Enable dragging on empty canvas to pan whole graph.
+        dragView: true,
       },
       nodes: {
         shape: "box",
@@ -360,6 +387,107 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
     }
   };
 
+  const searchResultNodeIds = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(
+        graphData.nodes
+          .filter((node) => doesNodeMatchSearchQuery(node, searchQuery))
+          .map((node) => node.id),
+      ),
+    );
+  }, [graphData.nodes, searchQuery]);
+
+  const focusNode = useCallback((nodeId: string) => {
+    const network = networkRef.current;
+    if (!network) return;
+    try {
+      network.focus(nodeId, {
+        scale: Math.max(network.getScale(), 0.9),
+        animation: {
+          duration: 250,
+          easingFunction: "easeInOutQuad",
+        },
+      });
+    } catch (error) {
+      console.error("Error focusing node:", nodeId, error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const frameId = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isSearchOpen]);
+
+  useEffect(() => {
+    setActiveSearchResultIndex(0);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (searchResultNodeIds.length === 0) return;
+    if (activeSearchResultIndex <= searchResultNodeIds.length - 1) return;
+    setActiveSearchResultIndex(searchResultNodeIds.length - 1);
+  }, [searchResultNodeIds.length, activeSearchResultIndex]);
+
+  useEffect(() => {
+    const normalizedQuery = searchQuery.trim();
+    if (!normalizedQuery || searchResultNodeIds.length === 0) {
+      return;
+    }
+
+    const resultIndex = Math.min(
+      activeSearchResultIndex,
+      searchResultNodeIds.length - 1,
+    );
+    const matchedNodeId = searchResultNodeIds[resultIndex];
+    if (!matchedNodeId) {
+      return;
+    }
+
+    if (selectedNodeName !== matchedNodeId) {
+      onCanvasNodeNameChangeRef.current(matchedNodeId, {
+        shouldCycleObservation: false,
+      });
+    }
+    focusNode(matchedNodeId);
+  }, [
+    activeSearchResultIndex,
+    focusNode,
+    searchQuery,
+    searchResultNodeIds,
+    selectedNodeName,
+  ]);
+
+  const moveSearchSelection = useCallback(
+    (direction: 1 | -1) => {
+      if (searchResultNodeIds.length === 0) return;
+      setActiveSearchResultIndex((currentIndex) => {
+        const nextIndex =
+          (currentIndex + direction + searchResultNodeIds.length) %
+          searchResultNodeIds.length;
+        return nextIndex;
+      });
+    },
+    [searchResultNodeIds.length],
+  );
+
+  const toggleSearch = useCallback(() => {
+    setIsSearchOpen((previous) => {
+      const next = !previous;
+      if (!next) {
+        setSearchQuery("");
+        setActiveSearchResultIndex(0);
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (!containerRef.current) {
       return;
@@ -383,7 +511,9 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
     network.on("click", (params) => {
       if (params.nodes.length > 0) {
         // Node was clicked
-        onCanvasNodeNameChangeRef.current(params.nodes[0]);
+        onCanvasNodeNameChangeRef.current(params.nodes[0], {
+          shouldCycleObservation: true,
+        });
       } else {
         // Empty area was clicked
         onCanvasNodeNameChangeRef.current(null);
@@ -557,61 +687,124 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
       >
-        {isHovering && (
-          <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
-            <Button
-              onClick={handleZoomIn}
-              variant="ghost"
-              size="icon"
-              className="p-1.5 shadow-md dark:shadow-border"
-              title="Zoom in"
-            >
-              <ZoomIn className="h-4 w-4" />
-            </Button>
-            <Button
-              onClick={handleZoomOut}
-              variant="ghost"
-              size="icon"
-              className="p-1.5 shadow-md dark:shadow-border"
-              title="Zoom out"
-            >
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-            <Button
-              onClick={handleReset}
-              variant="ghost"
-              size="icon"
-              className="p-1.5 shadow-md dark:shadow-border"
-              title="Reset view"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-            {allowFullscreen && (
+        {(isHovering || isSearchOpen) && (
+          <div className="absolute right-2 top-2 z-10 flex items-start gap-2">
+            {isSearchOpen && (
+              <div className="flex min-w-64 items-center gap-1 rounded-md border bg-background/95 p-1 shadow-md dark:shadow-border">
+                <Input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    moveSearchSelection(event.shiftKey ? -1 : 1);
+                  }}
+                  placeholder="Search node, type, metadata..."
+                  className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0"
+                />
+                <span className="min-w-12 text-center text-xs text-muted-foreground">
+                  {searchQuery.trim().length === 0
+                    ? "Search"
+                    : searchResultNodeIds.length === 0
+                      ? "No match"
+                      : `${activeSearchResultIndex + 1}/${searchResultNodeIds.length}`}
+                </span>
+                <Button
+                  onClick={() => moveSearchSelection(-1)}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 p-1"
+                  title="Previous match"
+                  disabled={searchResultNodeIds.length < 2}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  onClick={() => moveSearchSelection(1)}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 p-1"
+                  title="Next match"
+                  disabled={searchResultNodeIds.length < 2}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  onClick={toggleSearch}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 p-1"
+                  title="Close search"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+            <div className="flex flex-col gap-1">
               <Button
-                onClick={() => setIsFullscreenOpen(true)}
+                onClick={toggleSearch}
                 variant="ghost"
                 size="icon"
                 className="p-1.5 shadow-md dark:shadow-border"
-                title="Open fullscreen graph"
+                title="Search nodes"
               >
-                <Maximize2 className="h-4 w-4" />
+                <Search className="h-4 w-4" />
               </Button>
-            )}
-            {onGraphModeToggle && (
               <Button
-                onClick={onGraphModeToggle}
+                onClick={handleZoomIn}
                 variant="ghost"
                 size="icon"
                 className="p-1.5 shadow-md dark:shadow-border"
-                title={
-                  graphMode === "hierarchy"
-                    ? "Switch to execution flow graph"
-                    : "Switch to hierarchy graph"
-                }
+                title="Zoom in"
               >
-                <GitBranch className="h-4 w-4" />
+                <ZoomIn className="h-4 w-4" />
               </Button>
-            )}
+              <Button
+                onClick={handleZoomOut}
+                variant="ghost"
+                size="icon"
+                className="p-1.5 shadow-md dark:shadow-border"
+                title="Zoom out"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={handleReset}
+                variant="ghost"
+                size="icon"
+                className="p-1.5 shadow-md dark:shadow-border"
+                title="Reset view"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+              {allowFullscreen && (
+                <Button
+                  onClick={() => setIsFullscreenOpen(true)}
+                  variant="ghost"
+                  size="icon"
+                  className="p-1.5 shadow-md dark:shadow-border"
+                  title="Open fullscreen graph"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+              )}
+              {onGraphModeToggle && (
+                <Button
+                  onClick={onGraphModeToggle}
+                  variant="ghost"
+                  size="icon"
+                  className="p-1.5 shadow-md dark:shadow-border"
+                  title={
+                    graphMode === "hierarchy"
+                      ? "Switch to execution flow graph"
+                      : "Switch to hierarchy graph"
+                  }
+                >
+                  <GitBranch className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         )}
         <div ref={containerRef} className="h-full w-full" />
@@ -643,4 +836,93 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
 function truncateText(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength - 1)}...`;
+}
+
+function buildSearchableNodeText(node: GraphNodeData): string {
+  const metadataText = node.metadataSummary
+    ? JSON.stringify(node.metadataSummary)
+    : "";
+  return [
+    node.id,
+    node.label,
+    node.type,
+    node.title ?? "",
+    node.level ?? "",
+    metadataText,
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function doesNodeMatchSearchQuery(
+  node: GraphNodeData,
+  rawQuery: string,
+): boolean {
+  const queryTokens = rawQuery
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (queryTokens.length === 0) {
+    return false;
+  }
+
+  const searchableText = buildSearchableNodeText(node);
+  const normalizedText = normalizeForFuzzySearch(searchableText);
+  const compactText = normalizedText.replace(/\s+/g, "");
+  const numberSegments = normalizedText.match(/\d+/g) ?? [];
+  const normalizedNumbers = new Set(
+    numberSegments
+      .map((segment) => Number.parseInt(segment, 10))
+      .filter((value) => Number.isFinite(value)),
+  );
+
+  return queryTokens.every((queryToken) => {
+    const normalizedToken = normalizeForFuzzySearch(queryToken);
+    if (!normalizedToken) return true;
+
+    // Numeric token matching is normalization-aware:
+    // "6" can match "006", "0006", etc.
+    if (/^\d+$/.test(normalizedToken)) {
+      const normalizedQueryNumber = Number.parseInt(normalizedToken, 10);
+      return normalizedNumbers.has(normalizedQueryNumber);
+    }
+
+    if (normalizedText.includes(normalizedToken)) {
+      return true;
+    }
+
+    const compactToken = normalizedToken.replace(/\s+/g, "");
+    if (!compactToken) return true;
+    if (compactText.includes(compactToken)) {
+      return true;
+    }
+
+    // Fuzzy subsequence fallback helps partial Chinese phrase matching,
+    // e.g. "宝安交通" against "宝安机场交通情况".
+    return compactToken.length >= 2
+      ? isSubsequenceMatch(compactText, compactToken)
+      : false;
+  });
+}
+
+function normalizeForFuzzySearch(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[_./-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSubsequenceMatch(target: string, query: string): boolean {
+  let queryIndex = 0;
+  for (let targetIndex = 0; targetIndex < target.length; targetIndex++) {
+    if (target[targetIndex] === query[queryIndex]) {
+      queryIndex++;
+      if (queryIndex === query.length) {
+        return true;
+      }
+    }
+  }
+  return queryIndex === query.length;
 }

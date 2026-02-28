@@ -134,7 +134,10 @@ export const TraceGraphView: React.FC<TraceGraphViewProps> = ({
   ]);
 
   const onCanvasNodeNameChange = useCallback(
-    (nodeName: string | null) => {
+    (
+      nodeName: string | null,
+      options?: { shouldCycleObservation?: boolean },
+    ) => {
       if (nodeName) {
         // Don't cycle through system nodes (start/end nodes)
         const isSystemNode =
@@ -155,10 +158,16 @@ export const TraceGraphView: React.FC<TraceGraphViewProps> = ({
         const observations = nodeToObservationsMap[nodeName] || [];
 
         if (observations.length > 0) {
+          const shouldCycleObservation =
+            options?.shouldCycleObservation ?? true;
           let targetIndex = 0;
 
           // If clicking the same node as before, cycle to next observation
-          if (previousSelectedNode === nodeName && observations.length > 1) {
+          if (
+            shouldCycleObservation &&
+            previousSelectedNode === nodeName &&
+            observations.length > 1
+          ) {
             const currentIndex = currentObservationIndices[nodeName] || 0;
             targetIndex = (currentIndex + 1) % observations.length;
           }
