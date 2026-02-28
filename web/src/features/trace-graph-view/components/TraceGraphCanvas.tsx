@@ -700,7 +700,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                     event.preventDefault();
                     moveSearchSelection(event.shiftKey ? -1 : 1);
                   }}
-                  placeholder="Search node, type, metadata..."
+                  placeholder="Search node..."
                   className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0"
                 />
                 <span className="min-w-12 text-center text-xs text-muted-foreground">
