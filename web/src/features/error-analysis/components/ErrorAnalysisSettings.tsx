@@ -26,8 +26,6 @@ import {
   type ExperienceSummaryMarkdownOutputMode,
 } from "@/src/features/experience-summary/types";
 
-const NO_EMBEDDING_CONNECTION = "__none__";
-
 function parseNullablePositiveInt(
   value: string,
 ): number | null | "invalid_format" | "invalid_range" {
@@ -66,10 +64,6 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
   const [model, setModel] = useState<ErrorAnalysisModel>(models[0]!);
   const [minNewErrorNodesInput, setMinNewErrorNodesInput] = useState("");
   const [summaryMarkdownPathInput, setSummaryMarkdownPathInput] = useState("");
-  const [
-    summaryRetrievalEmbeddingLlmApiKeyIdInput,
-    setSummaryRetrievalEmbeddingLlmApiKeyIdInput,
-  ] = useState(NO_EMBEDDING_CONNECTION);
   const [summaryMarkdownOutputMode, setSummaryMarkdownOutputMode] =
     useState<ExperienceSummaryMarkdownOutputMode>("prompt_pack_only");
 
@@ -80,21 +74,6 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
       refetchOnWindowFocus: false,
     },
   );
-  const llmConnectionsQuery = api.llmApiKey.all.useQuery(
-    { projectId },
-    {
-      enabled: Boolean(projectId),
-      refetchOnWindowFocus: false,
-    },
-  );
-  const embeddingConnections = useMemo(
-    () =>
-      (llmConnectionsQuery.data?.data ?? []).filter(
-        (connection) => connection.adapter === "openai",
-      ),
-    [llmConnectionsQuery.data?.data],
-  );
-
   useEffect(() => {
     if (!settingsQuery.data) return;
     setEnabled(settingsQuery.data.enabled);
@@ -106,10 +85,6 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
     );
     setSummaryMarkdownPathInput(
       settingsQuery.data.summaryAppendMarkdownAbsolutePath ?? "",
-    );
-    setSummaryRetrievalEmbeddingLlmApiKeyIdInput(
-      settingsQuery.data.summaryRetrievalEmbeddingLlmApiKeyId ??
-        NO_EMBEDDING_CONNECTION,
     );
     setSummaryMarkdownOutputMode(settingsQuery.data.summaryMarkdownOutputMode);
   }, [settingsQuery.data]);
@@ -125,9 +100,6 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
       );
       setSummaryMarkdownPathInput(
         saved.summaryAppendMarkdownAbsolutePath ?? "",
-      );
-      setSummaryRetrievalEmbeddingLlmApiKeyIdInput(
-        saved.summaryRetrievalEmbeddingLlmApiKeyId ?? NO_EMBEDDING_CONNECTION,
       );
       setSummaryMarkdownOutputMode(saved.summaryMarkdownOutputMode);
       await utils.projects.getErrorAnalysisSettings.invalidate({ projectId });
@@ -152,24 +124,11 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
     normalizedSummaryMarkdownPath &&
       !normalizedSummaryMarkdownPath.toLowerCase().endsWith(".md"),
   );
-  const normalizedSummaryRetrievalEmbeddingLlmApiKeyId =
-    summaryRetrievalEmbeddingLlmApiKeyIdInput === NO_EMBEDDING_CONNECTION
-      ? null
-      : summaryRetrievalEmbeddingLlmApiKeyIdInput;
-  const embeddingConnectionMissing = Boolean(
-    !llmConnectionsQuery.isLoading &&
-      normalizedSummaryRetrievalEmbeddingLlmApiKeyId &&
-      !embeddingConnections.some(
-        (connection) =>
-          connection.id === normalizedSummaryRetrievalEmbeddingLlmApiKeyId,
-      ),
-  );
   const hasValidationErrors =
     parsedMinNewErrorNodes === "invalid_format" ||
     parsedMinNewErrorNodes === "invalid_range" ||
     summaryPathHasInvalidAbsoluteFormat ||
-    summaryPathHasInvalidExtension ||
-    embeddingConnectionMissing;
+    summaryPathHasInvalidExtension;
   const hasInvalidMinNewErrorNodes =
     parsedMinNewErrorNodes === "invalid_format" ||
     parsedMinNewErrorNodes === "invalid_range";
@@ -187,8 +146,6 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
           settingsQuery.data.minNewErrorNodesForSummary) ||
       normalizedSummaryMarkdownPath !==
         settingsQuery.data.summaryAppendMarkdownAbsolutePath ||
-      normalizedSummaryRetrievalEmbeddingLlmApiKeyId !==
-        settingsQuery.data.summaryRetrievalEmbeddingLlmApiKeyId ||
       summaryMarkdownOutputMode !==
         settingsQuery.data.summaryMarkdownOutputMode);
 
@@ -332,49 +289,6 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="summary-embedding-connection">
-                  Summary retrieval embedding connection (optional)
-                </Label>
-                <Select
-                  value={summaryRetrievalEmbeddingLlmApiKeyIdInput}
-                  onValueChange={(value) =>
-                    setSummaryRetrievalEmbeddingLlmApiKeyIdInput(value)
-                  }
-                  disabled={
-                    !hasAccess ||
-                    saveMutation.isPending ||
-                    llmConnectionsQuery.isLoading
-                  }
-                >
-                  <SelectTrigger
-                    id="summary-embedding-connection"
-                    className="max-w-[420px]"
-                  >
-                    <SelectValue placeholder="No embedding connection" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_EMBEDDING_CONNECTION}>
-                      None (fallback to ngram matching)
-                    </SelectItem>
-                    {embeddingConnections.map((connection) => (
-                      <SelectItem key={connection.id} value={connection.id}>
-                        {`${connection.provider} · ${connection.displaySecretKey}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  When set, markdown experience selection uses embedding
-                  similarity. If empty, lexical ngram matching is used.
-                </p>
-                {embeddingConnectionMissing ? (
-                  <p className="text-xs text-destructive">
-                    Selected embedding connection is missing.
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="summary-md-path">
                   Append summary prevention note to markdown path (optional)
                 </Label>
@@ -428,12 +342,6 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
                     toast.error("Summary markdown path must end with .md.");
                     return;
                   }
-                  if (embeddingConnectionMissing) {
-                    toast.error(
-                      "Selected summary retrieval embedding connection is invalid.",
-                    );
-                    return;
-                  }
 
                   saveMutation.mutate({
                     projectId,
@@ -442,8 +350,6 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
                     minNewErrorNodesForSummary: minNewErrorNodesForSave,
                     summaryAppendMarkdownAbsolutePath:
                       normalizedSummaryMarkdownPath,
-                    summaryRetrievalEmbeddingLlmApiKeyId:
-                      normalizedSummaryRetrievalEmbeddingLlmApiKeyId,
                     summaryMarkdownOutputMode,
                   });
                 }}

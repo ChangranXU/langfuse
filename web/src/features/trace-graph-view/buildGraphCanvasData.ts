@@ -701,13 +701,30 @@ export function buildHierarchyGraphFromStepData(params: {
     })
     .filter((turn): turn is NonNullable<typeof turn> => turn !== null);
 
-  if (sessionTurns.length === 0) {
+  const uniqueTurnsByNodeName = new Map<
+    string,
+    { nodeName: string; turnNumber: number; startMs: number }
+  >();
+  for (const turn of sessionTurns) {
+    const existing = uniqueTurnsByNodeName.get(turn.nodeName);
+    if (!existing || turn.startMs < existing.startMs) {
+      uniqueTurnsByNodeName.set(turn.nodeName, turn);
+    }
+  }
+  const uniqueSessionTurns = Array.from(uniqueTurnsByNodeName.values()).sort(
+    (a, b) =>
+      a.startMs - b.startMs ||
+      a.turnNumber - b.turnNumber ||
+      a.nodeName.localeCompare(b.nodeName),
+  );
+
+  if (uniqueSessionTurns.length === 0) {
     return fallbackGraph;
   }
 
-  const turnWindows = sessionTurns.map((turn, index) => ({
+  const turnWindows = uniqueSessionTurns.map((turn, index) => ({
     ...turn,
-    endMs: sessionTurns[index + 1]?.startMs ?? Number.POSITIVE_INFINITY,
+    endMs: uniqueSessionTurns[index + 1]?.startMs ?? Number.POSITIVE_INFINITY,
   }));
 
   const nodeToObservationsMap = new Map<string, string[]>();

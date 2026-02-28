@@ -194,7 +194,6 @@ describe("experienceSummary.generate RPC", () => {
       projectId,
     });
     expect(settings.minNewErrorNodesForSummary).toBe(1);
-    expect(settings.summaryRetrievalEmbeddingLlmApiKeyId).toBeNull();
     expect(settings.summaryMarkdownOutputMode).toBe("prompt_pack_only");
   });
 

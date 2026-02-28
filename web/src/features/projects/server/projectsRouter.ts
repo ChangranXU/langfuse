@@ -22,7 +22,7 @@ import {
   getEnvironmentsForProject,
   logger,
 } from "@langfuse/shared/src/server";
-import { LLMAdapter, StringNoHTMLNonEmpty } from "@langfuse/shared";
+import { StringNoHTMLNonEmpty } from "@langfuse/shared";
 import {
   buildExperienceSummaryHintSectionContent,
   removeProjectHintSectionFromMarkdown,
@@ -42,12 +42,6 @@ const ProjectAutoErrorAnalysisSettingsSchema = z.object({
     .min(1)
     .nullable()
     .default(null),
-  summaryRetrievalEmbeddingLlmApiKeyId: z
-    .string()
-    .trim()
-    .min(1)
-    .nullable()
-    .default(null),
   summaryMarkdownOutputMode:
     ExperienceSummaryMarkdownOutputModeSchema.default("prompt_pack_only"),
 });
@@ -60,7 +54,6 @@ const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: ProjectAutoErrorAnalysisSettings = {
   model: "gpt-5.2",
   minNewErrorNodesForSummary: null,
   summaryAppendMarkdownAbsolutePath: null,
-  summaryRetrievalEmbeddingLlmApiKeyId: null,
   summaryMarkdownOutputMode: "prompt_pack_only",
 };
 
@@ -285,13 +278,6 @@ export const projectsRouter = createTRPCRouter({
           .nullable()
           .optional()
           .default(null),
-        summaryRetrievalEmbeddingLlmApiKeyId: z
-          .string()
-          .trim()
-          .min(1)
-          .nullable()
-          .optional()
-          .default(null),
         summaryMarkdownOutputMode:
           ExperienceSummaryMarkdownOutputModeSchema.optional().default(
             "prompt_pack_only",
@@ -343,32 +329,6 @@ export const projectsRouter = createTRPCRouter({
         });
       }
 
-      if (input.summaryRetrievalEmbeddingLlmApiKeyId) {
-        const retrievalLlmConnection = await ctx.prisma.llmApiKeys.findUnique({
-          where: {
-            id: input.summaryRetrievalEmbeddingLlmApiKeyId,
-            projectId: input.projectId,
-          },
-          select: {
-            id: true,
-            adapter: true,
-          },
-        });
-        if (!retrievalLlmConnection) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Summary retrieval embedding connection does not exist.",
-          });
-        }
-        if (retrievalLlmConnection.adapter !== LLMAdapter.OpenAI) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "Summary retrieval embedding connection must use OpenAI adapter.",
-          });
-        }
-      }
-
       const previousSettings = parseAutoErrorAnalysisSettings(
         existingProject.metadata,
       );
@@ -379,8 +339,6 @@ export const projectsRouter = createTRPCRouter({
         minNewErrorNodesForSummary: input.minNewErrorNodesForSummary ?? null,
         summaryAppendMarkdownAbsolutePath:
           input.summaryAppendMarkdownAbsolutePath ?? null,
-        summaryRetrievalEmbeddingLlmApiKeyId:
-          input.summaryRetrievalEmbeddingLlmApiKeyId ?? null,
         summaryMarkdownOutputMode: input.summaryMarkdownOutputMode,
       };
 

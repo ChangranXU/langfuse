@@ -79,10 +79,17 @@ export const getAllQueries = {
         limit: 1,
         offset: 0,
       };
-      const countQuery =
-        env.LANGFUSE_ENABLE_EVENTS_TABLE_OBSERVATIONS === "true"
-          ? await getObservationsCountFromEventsTable(queryOpts)
-          : await getObservationsTableCount(queryOpts);
+      const eventsEnabled =
+        env.LANGFUSE_ENABLE_EVENTS_TABLE_OBSERVATIONS === "true";
+      let countQuery = eventsEnabled
+        ? await getObservationsCountFromEventsTable(queryOpts)
+        : await getObservationsTableCount(queryOpts);
+
+      // Compatibility fallback: if events-based observations are enabled but empty,
+      // fall back to legacy observations table count.
+      if (eventsEnabled && countQuery === 0) {
+        countQuery = await getObservationsTableCount(queryOpts);
+      }
       return {
         totalCount: countQuery,
       };

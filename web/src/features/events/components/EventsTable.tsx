@@ -411,6 +411,15 @@ export default function ObservationsEventsTable({
         next = next.filter((f) => String(f.column).toLowerCase() !== "type");
       }
 
+      // Analysis (forcedLevel) should always include nested observations.
+      // Users may have an "Is Root Observation" facet persisted from other views (trace mode),
+      // which maps to `hasParentObservation=false` and would otherwise hide most errors/warnings.
+      if (forcedLevel) {
+        next = next.filter(
+          (f) => String(f.column).toLowerCase() !== "hasparentobservation",
+        );
+      }
+
       if (forcedLevel) {
         next = [
           // Stored filters may use either column id ("level") or display name ("Level").

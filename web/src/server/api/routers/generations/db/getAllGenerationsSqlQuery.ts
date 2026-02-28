@@ -29,10 +29,18 @@ export async function getAllGenerations({
     offset: input.page * input.limit,
     limit: input.limit,
   };
-  let generations =
-    env.LANGFUSE_ENABLE_EVENTS_TABLE_OBSERVATIONS === "true"
-      ? await getObservationsWithModelDataFromEventsTable(queryOpts)
-      : await getObservationsTableWithModelData(queryOpts);
+  const eventsEnabled =
+    env.LANGFUSE_ENABLE_EVENTS_TABLE_OBSERVATIONS === "true";
+  let generations = eventsEnabled
+    ? await getObservationsWithModelDataFromEventsTable(queryOpts)
+    : await getObservationsTableWithModelData(queryOpts);
+
+  // Compatibility fallback: some installations still ingest into the legacy observations table
+  // while the events-based list view is enabled. In that case, the list would be empty even
+  // though traces show observations. If events returned no rows, fall back to legacy.
+  if (eventsEnabled && generations.length === 0) {
+    generations = await getObservationsTableWithModelData(queryOpts);
+  }
 
   const scores = await getScoresForObservations({
     projectId: input.projectId,

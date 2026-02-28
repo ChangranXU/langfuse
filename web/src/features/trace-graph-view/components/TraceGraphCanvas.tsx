@@ -171,94 +171,99 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
     }
   };
 
-  const nodes = useMemo(
-    () =>
-      graphData.nodes.map((node) => {
-        const metadataLines =
-          graphMode === "hierarchy" && node.metadataSummary
-            ? [
-                node.metadataSummary.core
-                  ? `Core: ${truncateText(node.metadataSummary.core, 24)}`
-                  : null,
-                node.metadataSummary.category
-                  ? `Category: ${truncateText(node.metadataSummary.category, 24)}`
-                  : null,
-                node.metadataSummary.instructionType
-                  ? `Type: ${truncateText(node.metadataSummary.instructionType, 24)}`
-                  : null,
-                node.metadataSummary.policy?.authorityLabel
-                  ? `Policy: ${truncateText(
-                      `${node.metadataSummary.policy.authorityLabel}${node.metadataSummary.policy.hasBlock ? " (BLOCK)" : ""}`,
-                      32,
-                    )}`
-                  : node.metadataSummary.policy?.hasBlock
-                    ? "Policy: BLOCK"
-                    : null,
-                node.metadataSummary.observationCount != null
-                  ? `Obs: ${node.metadataSummary.observationCount} | Tools: ${node.metadataSummary.toolCount ?? 0}`
-                  : null,
-                (node.metadataSummary.errorCount ?? 0) > 0 ||
-                (node.metadataSummary.warningCount ?? 0) > 0 ||
-                (node.metadataSummary.parserInconsistencyCount ?? 0) > 0
-                  ? `Risk: E${node.metadataSummary.errorCount ?? 0} W${node.metadataSummary.warningCount ?? 0} P${node.metadataSummary.parserInconsistencyCount ?? 0}`
-                  : null,
-              ].filter((line): line is string => Boolean(line))
-            : [];
+  const nodes = useMemo(() => {
+    const seen = new Set<string>();
+    const uniqueNodes = graphData.nodes.filter((node) => {
+      if (seen.has(node.id)) return false;
+      seen.add(node.id);
+      return true;
+    });
 
-        const label =
-          metadataLines.length > 0
-            ? `${node.label}\n${metadataLines.join("\n")}`
-            : node.label;
+    return uniqueNodes.map((node) => {
+      const metadataLines =
+        graphMode === "hierarchy" && node.metadataSummary
+          ? [
+              node.metadataSummary.core
+                ? `Core: ${truncateText(node.metadataSummary.core, 24)}`
+                : null,
+              node.metadataSummary.category
+                ? `Category: ${truncateText(node.metadataSummary.category, 24)}`
+                : null,
+              node.metadataSummary.instructionType
+                ? `Type: ${truncateText(node.metadataSummary.instructionType, 24)}`
+                : null,
+              node.metadataSummary.policy?.authorityLabel
+                ? `Policy: ${truncateText(
+                    `${node.metadataSummary.policy.authorityLabel}${node.metadataSummary.policy.hasBlock ? " (BLOCK)" : ""}`,
+                    32,
+                  )}`
+                : node.metadataSummary.policy?.hasBlock
+                  ? "Policy: BLOCK"
+                  : null,
+              node.metadataSummary.observationCount != null
+                ? `Obs: ${node.metadataSummary.observationCount} | Tools: ${node.metadataSummary.toolCount ?? 0}`
+                : null,
+              (node.metadataSummary.errorCount ?? 0) > 0 ||
+              (node.metadataSummary.warningCount ?? 0) > 0 ||
+              (node.metadataSummary.parserInconsistencyCount ?? 0) > 0
+                ? `Risk: E${node.metadataSummary.errorCount ?? 0} W${node.metadataSummary.warningCount ?? 0} P${node.metadataSummary.parserInconsistencyCount ?? 0}`
+                : null,
+            ].filter((line): line is string => Boolean(line))
+          : [];
 
-        const hasShortLabel = node.label !== node.id;
-        const nodeData = {
-          id: node.id,
-          label,
-          color: getNodeStyle({ nodeType: node.type, level: node.level }),
-          title: node.title ?? (hasShortLabel ? node.id : undefined),
+      const label =
+        metadataLines.length > 0
+          ? `${node.label}\n${metadataLines.join("\n")}`
+          : node.label;
+
+      const hasShortLabel = node.label !== node.id;
+      const nodeData = {
+        id: node.id,
+        label,
+        color: getNodeStyle({ nodeType: node.type, level: node.level }),
+        title: node.title ?? (hasShortLabel ? node.id : undefined),
+      };
+
+      // Special positioning and colors for system nodes
+      if (
+        node.id === LANGFUSE_START_NODE_NAME ||
+        node.id === LANGGRAPH_START_NODE_NAME
+      ) {
+        return {
+          ...nodeData,
+          x: -200,
+          y: 0,
+          color: {
+            border: "#166534", // green
+            background: "#86efac",
+            highlight: {
+              border: "#15803d",
+              background: "#4ade80",
+            },
+          },
         };
-
-        // Special positioning and colors for system nodes
-        if (
-          node.id === LANGFUSE_START_NODE_NAME ||
-          node.id === LANGGRAPH_START_NODE_NAME
-        ) {
-          return {
-            ...nodeData,
-            x: -200,
-            y: 0,
-            color: {
-              border: "#166534", // green
-              background: "#86efac",
-              highlight: {
-                border: "#15803d",
-                background: "#4ade80",
-              },
+      }
+      if (
+        node.id === LANGFUSE_END_NODE_NAME ||
+        node.id === LANGGRAPH_END_NODE_NAME
+      ) {
+        return {
+          ...nodeData,
+          x: 200,
+          y: 0,
+          color: {
+            border: "#7f1d1d", // red
+            background: "#fecaca",
+            highlight: {
+              border: "#991b1b",
+              background: "#fca5a5",
             },
-          };
-        }
-        if (
-          node.id === LANGFUSE_END_NODE_NAME ||
-          node.id === LANGGRAPH_END_NODE_NAME
-        ) {
-          return {
-            ...nodeData,
-            x: 200,
-            y: 0,
-            color: {
-              border: "#7f1d1d", // red
-              background: "#fecaca",
-              highlight: {
-                border: "#991b1b",
-                background: "#fca5a5",
-              },
-            },
-          };
-        }
-        return nodeData;
-      }),
-    [graphData.nodes, graphMode],
-  );
+          },
+        };
+      }
+      return nodeData;
+    });
+  }, [graphData.nodes, graphMode]);
 
   const options = useMemo(
     () => ({

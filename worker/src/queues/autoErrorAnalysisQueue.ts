@@ -179,6 +179,144 @@ function slugifyErrorTypeKey(input: string): string {
   return safe.slice(0, 48);
 }
 
+type ErrorTypeKey = keyof typeof ERROR_TYPE_CATALOG;
+
+function inferErrorTypeKeyFromText(text: string): ErrorTypeKey {
+  const s = text.toLowerCase();
+
+  if (
+    s.includes("maximum context") ||
+    s.includes("context length") ||
+    s.includes("context_length") ||
+    s.includes("too many tokens") ||
+    s.includes("token limit") ||
+    s.includes("prompt is too long") ||
+    s.includes("request too large") ||
+    s.includes("payload too large") ||
+    s.includes("413")
+  ) {
+    return "context_length_exceeded";
+  }
+
+  if (
+    s.includes("too many requests") ||
+    s.includes("rate limit") ||
+    s.includes("ratelimit") ||
+    s.includes("throttl") ||
+    s.includes("429")
+  ) {
+    return "rate_limit";
+  }
+
+  if (
+    s.includes("unauthorized") ||
+    s.includes("forbidden") ||
+    s.includes("invalid api key") ||
+    s.includes("authentication") ||
+    s.includes("permission") ||
+    s.includes("401") ||
+    s.includes("403")
+  ) {
+    return "auth_error";
+  }
+
+  if (
+    s.includes("model not found") ||
+    s.includes("unknown model") ||
+    s.includes("does not exist") ||
+    s.includes("not found") ||
+    s.includes("404")
+  ) {
+    return "model_not_found";
+  }
+
+  if (
+    s.includes("timed out") ||
+    s.includes("timeout") ||
+    s.includes("etimedout")
+  ) {
+    return "timeout";
+  }
+
+  if (
+    s.includes("econnreset") ||
+    s.includes("enotfound") ||
+    s.includes("eai_again") ||
+    s.includes("socket hang up") ||
+    s.includes("tls") ||
+    s.includes("ssl") ||
+    s.includes("networkerror") ||
+    s.includes("fetch failed") ||
+    s.includes("connection")
+  ) {
+    return "network_error";
+  }
+
+  if (
+    s.includes("internal server error") ||
+    s.includes("bad gateway") ||
+    s.includes("service unavailable") ||
+    s.includes("gateway timeout") ||
+    s.includes("500") ||
+    s.includes("502") ||
+    s.includes("503") ||
+    s.includes("504")
+  ) {
+    return "provider_5xx";
+  }
+
+  if (
+    s.includes("unexpected token") ||
+    s.includes("json parse") ||
+    s.includes("json.parse") ||
+    s.includes("unterminated string") ||
+    s.includes("is not valid json")
+  ) {
+    return "json_parse_error";
+  }
+
+  if (
+    s.includes("schema") ||
+    s.includes("zod") ||
+    s.includes("validation") ||
+    s.includes("structured output") ||
+    s.includes("invalid schema") ||
+    s.includes("does not match the expected") ||
+    s.includes("not matching the expected schema")
+  ) {
+    return "schema_mismatch";
+  }
+
+  if (s.includes("tool") && (s.includes("argument") || s.includes("schema"))) {
+    return "tool_args_schema_error";
+  }
+
+  if (s.includes("tool") && (s.includes("failed") || s.includes("error"))) {
+    return "tool_execution_error";
+  }
+
+  return "unknown";
+}
+
+function inferErrorTypeKeyFromObservation(params: {
+  statusMessage: string | null | undefined;
+  input: unknown;
+  output: unknown;
+  metadata: unknown;
+}): ErrorTypeKey {
+  const combined = [
+    params.statusMessage ?? "",
+    safeStringify(params.input),
+    safeStringify(params.output),
+    safeStringify(params.metadata),
+  ]
+    .filter((v) => typeof v === "string" && v.trim().length > 0)
+    .join("\n");
+
+  if (!combined.trim()) return "unknown";
+  return inferErrorTypeKeyFromText(combined);
+}
+
 function extractFirstJsonObject(input: string): string | null {
   const s = input.trim();
   let start = -1;
@@ -746,19 +884,48 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       },
     ];
 
-    const rawType = await fetchLLMCompletion({
-      llmConnection: parsedKey.data,
-      messages: messagesForType,
-      modelParams: {
-        provider: parsedKey.data.provider,
-        adapter: LLMAdapter.OpenAI,
-        model: modelName,
-        temperature: 0,
-        max_tokens: 250,
-      },
-      streaming: false,
-      structuredOutputSchema: ErrorTypeStructuredOutputSchema,
-    });
+    let rawType: unknown;
+    try {
+      rawType = await fetchLLMCompletion({
+        llmConnection: parsedKey.data,
+        messages: messagesForType,
+        modelParams: {
+          provider: parsedKey.data.provider,
+          adapter: LLMAdapter.OpenAI,
+          model: modelName,
+          temperature: 0,
+          max_tokens: 250,
+        },
+        streaming: false,
+        structuredOutputSchema: ErrorTypeStructuredOutputSchema,
+      });
+    } catch (error) {
+      logger.warn(
+        "Auto error analysis type classification structured output failed, retrying plain completion",
+        {
+          projectId,
+          traceId,
+          observationId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      const fallbackCompletion = await fetchLLMCompletion({
+        llmConnection: parsedKey.data,
+        messages: messagesForType,
+        modelParams: {
+          provider: parsedKey.data.provider,
+          adapter: LLMAdapter.OpenAI,
+          model: modelName,
+          temperature: 0,
+          max_tokens: 250,
+        },
+        streaming: false,
+      });
+      rawType =
+        typeof fallbackCompletion === "string"
+          ? parseJsonObjectFromCompletion(fallbackCompletion)
+          : fallbackCompletion;
+    }
 
     const parsedType = ErrorTypeClassificationResultSchema.safeParse(rawType);
     if (parsedType.success) {
@@ -769,15 +936,24 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       if (v.selectedType === "OTHER") {
         const label = (v.otherTypeLabel ?? "").trim();
         const desc = (v.otherTypeDescription ?? "").trim();
-        if (label && desc) {
-          classificationFields = {
-            errorType: `other_${slugifyErrorTypeKey(label)}`,
-            errorTypeDescription: desc,
-            errorTypeWhy: why,
-            errorTypeConfidence: conf,
-            errorTypeFromList: false,
-          };
-        }
+        classificationFields =
+          label && desc
+            ? {
+                errorType: `other_${slugifyErrorTypeKey(label)}`,
+                errorTypeDescription: desc,
+                errorTypeWhy: why,
+                errorTypeConfidence: conf,
+                errorTypeFromList: false,
+              }
+            : {
+                // If the model chose OTHER but didn't provide the required fields,
+                // still persist a useful, filterable type.
+                errorType: "unknown",
+                errorTypeDescription: ERROR_TYPE_CATALOG.unknown.description,
+                errorTypeWhy: why,
+                errorTypeConfidence: conf,
+                errorTypeFromList: true,
+              };
       } else {
         classificationFields = {
           errorType: v.selectedType,
@@ -806,6 +982,24 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       observationId,
       error: e instanceof Error ? e.message : String(e),
     });
+  }
+
+  if (!classificationFields) {
+    const inferred = inferErrorTypeKeyFromObservation({
+      statusMessage: current.statusMessage,
+      input: current.input,
+      output: current.output,
+      metadata: current.metadata,
+    });
+    classificationFields = {
+      errorType: inferred,
+      errorTypeDescription:
+        ERROR_TYPE_CATALOG[inferred]?.description ??
+        ERROR_TYPE_CATALOG.unknown.description,
+      errorTypeWhy: null,
+      errorTypeConfidence: null,
+      errorTypeFromList: true,
+    };
   }
 
   await prisma.errorAnalysis.upsert({

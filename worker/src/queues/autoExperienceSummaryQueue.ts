@@ -8,7 +8,6 @@ import {
   ChatMessageType,
   LLMAdapter,
   LLMApiKeySchema,
-  decrypt,
   type ChatMessage,
 } from "@langfuse/shared";
 import { prisma } from "@langfuse/shared/src/db";
@@ -38,12 +37,6 @@ const AutoErrorAnalysisSummarySettingsSchema = z
       .nullable()
       .default(null),
     summaryAppendMarkdownAbsolutePath: z
-      .string()
-      .trim()
-      .min(1)
-      .nullable()
-      .default(null),
-    summaryRetrievalEmbeddingLlmApiKeyId: z
       .string()
       .trim()
       .min(1)
@@ -127,19 +120,6 @@ function truncateString(value: string, maxChars: number): string {
   return value.slice(0, Math.max(0, maxChars - 30)) + "\n...[truncated]";
 }
 
-function normalizeVector(input: number[]): number[] {
-  const norm = Math.sqrt(input.reduce((sum, value) => sum + value * value, 0));
-  if (!Number.isFinite(norm) || norm <= 0) return input;
-  return input.map((value) => value / norm);
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
-  let dot = 0;
-  for (let i = 0; i < a.length; i++) dot += a[i]! * b[i]!;
-  return Number.isFinite(dot) ? dot : 0;
-}
-
 function tokenizeForNgram(value: string): Set<string> {
   const normalized = value.toLowerCase().replace(/[^a-z0-9_\s-]/g, " ");
   const words = normalized
@@ -152,25 +132,6 @@ function tokenizeForNgram(value: string): Set<string> {
     tokens.add(`${words[i]}_${words[i + 1]}`);
   }
   return tokens;
-}
-
-function safeDecryptAndParseExtraHeaders(
-  extraHeaders: string | null | undefined,
-): Record<string, string> {
-  if (!extraHeaders) return {};
-  try {
-    const raw = JSON.parse(decrypt(extraHeaders)) as unknown;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-    const out: Record<string, string> = {};
-    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof key === "string" && typeof value === "string") {
-        out[key] = value;
-      }
-    }
-    return out;
-  } catch {
-    return {};
-  }
 }
 
 function lexicalSimilarity(params: {
@@ -295,7 +256,6 @@ const MAX_MARKDOWN_PROMPT_LINES = 80;
 type SummarySettings = {
   minNewErrorNodesForSummary: number;
   summaryAppendMarkdownAbsolutePath: string | null;
-  summaryRetrievalEmbeddingLlmApiKeyId: string | null;
   summaryMarkdownOutputMode: "prompt_pack_only" | "full";
 };
 
@@ -305,7 +265,6 @@ function resolveSummarySettings(metadata: unknown): SummarySettings {
       minNewErrorNodesForSummary:
         DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
       summaryAppendMarkdownAbsolutePath: null,
-      summaryRetrievalEmbeddingLlmApiKeyId: null,
       summaryMarkdownOutputMode: "prompt_pack_only",
     };
   }
@@ -318,7 +277,6 @@ function resolveSummarySettings(metadata: unknown): SummarySettings {
       minNewErrorNodesForSummary:
         DEFAULT_AUTO_EXPERIENCE_SUMMARY_MIN_NEW_ANALYSES,
       summaryAppendMarkdownAbsolutePath: null,
-      summaryRetrievalEmbeddingLlmApiKeyId: null,
       summaryMarkdownOutputMode: "prompt_pack_only",
     };
   }
@@ -340,8 +298,6 @@ function resolveSummarySettings(metadata: unknown): SummarySettings {
   return {
     minNewErrorNodesForSummary,
     summaryAppendMarkdownAbsolutePath: validPath,
-    summaryRetrievalEmbeddingLlmApiKeyId:
-      parsed.data.summaryRetrievalEmbeddingLlmApiKeyId ?? null,
     summaryMarkdownOutputMode: parsed.data.summaryMarkdownOutputMode,
   };
 }
@@ -425,64 +381,11 @@ function buildFallbackHintFromAnalyses(rows: ErrorAnalysisCompact[]): string {
     .join("\n");
 }
 
-async function fetchOpenAIEmbeddings(params: {
-  llmConnection: z.infer<typeof LLMApiKeySchema>;
-  texts: string[];
-  timeoutMs?: number;
-}): Promise<number[][]> {
-  const secretKey = decrypt(params.llmConnection.secretKey);
-  const baseUrl = (
-    params.llmConnection.baseURL?.trim() || "https://api.openai.com/v1"
-  ).replace(/\/+$/, "");
-  const endpoint = `${baseUrl}/embeddings`;
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    params.timeoutMs ?? 10_000,
-  );
-  try {
-    const extraHeaders = safeDecryptAndParseExtraHeaders(
-      params.llmConnection.extraHeaders,
-    );
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${secretKey}`,
-        "Content-Type": "application/json",
-        ...extraHeaders,
-      },
-      body: JSON.stringify({
-        model: "text-embedding-3-small",
-        input: params.texts,
-      }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Embedding request failed (${response.status}): ${await response.text()}`,
-      );
-    }
-    const payload = (await response.json()) as {
-      data?: Array<{ embedding?: number[] }>;
-    };
-    const vectors = (payload.data ?? [])
-      .map((entry) => (Array.isArray(entry.embedding) ? entry.embedding : []))
-      .map((embedding) => embedding.map((value) => Number(value)));
-    if (vectors.length !== params.texts.length) {
-      throw new Error("Embedding response size mismatch");
-    }
-    return vectors;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function selectSummaryForMarkdown(params: {
   projectId: string;
   summary: ExperienceSummaryJson;
   outputMode: "prompt_pack_only" | "full";
   nextNodeInputHint: string | null;
-  retrievalEmbeddingConnection: z.infer<typeof LLMApiKeySchema> | null;
   analysesForFallback: ErrorAnalysisCompact[];
 }): Promise<ExperienceSummaryJson> {
   const experiences = params.summary.experiences ?? [];
@@ -528,44 +431,10 @@ async function selectSummaryForMarkdown(params: {
       queryTokens,
       documentTokens: tokenizeForNgram(text),
     });
-    return { experience, text, lexicalScore, embeddingScore: 0 };
+    return { experience, lexicalScore };
   });
 
-  if (params.retrievalEmbeddingConnection) {
-    try {
-      const topForEmbedding = [...rows]
-        .sort((a, b) => b.lexicalScore - a.lexicalScore)
-        .slice(0, 40);
-      const embeddings = await fetchOpenAIEmbeddings({
-        llmConnection: params.retrievalEmbeddingConnection,
-        texts: [queryText, ...topForEmbedding.map((row) => row.text)],
-      });
-      const queryVec = normalizeVector(embeddings[0] ?? []);
-      for (let i = 0; i < topForEmbedding.length; i++) {
-        const row = topForEmbedding[i]!;
-        const docVec = normalizeVector(embeddings[i + 1] ?? []);
-        row.embeddingScore = cosineSimilarity(queryVec, docVec);
-      }
-    } catch (error) {
-      logger.warn(
-        "Summary markdown embedding ranking failed; using lexical fallback",
-        {
-          projectId: params.projectId,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      );
-    }
-  }
-
-  const ranked = [...rows]
-    .map((row) => ({
-      ...row,
-      score:
-        row.embeddingScore > 0
-          ? 0.65 * row.embeddingScore + 0.35 * row.lexicalScore
-          : row.lexicalScore,
-    }))
-    .sort((a, b) => b.score - a.score);
+  const ranked = [...rows].sort((a, b) => b.lexicalScore - a.lexicalScore);
 
   const selectedExperiences = ranked
     .slice(0, MAX_MARKDOWN_EXPERIENCES)
@@ -760,47 +629,11 @@ export const autoExperienceSummaryQueueProcessor: Processor = async (
       : validated.data;
   const normalizedMerged = ensurePromptPackCoverage(merged);
 
-  let retrievalEmbeddingConnection: z.infer<typeof LLMApiKeySchema> | null =
-    null;
-  if (summarySettings.summaryRetrievalEmbeddingLlmApiKeyId) {
-    const retrievalConnectionRow = await prisma.llmApiKeys.findUnique({
-      where: {
-        id: summarySettings.summaryRetrievalEmbeddingLlmApiKeyId,
-        projectId,
-      },
-    });
-    if (retrievalConnectionRow) {
-      const parsedRetrieval = LLMApiKeySchema.safeParse(retrievalConnectionRow);
-      if (parsedRetrieval.success) {
-        if (parsedRetrieval.data.adapter === LLMAdapter.OpenAI) {
-          retrievalEmbeddingConnection = parsedRetrieval.data;
-        } else {
-          logger.warn(
-            "Skipping summary retrieval embedding: unsupported adapter",
-            {
-              projectId,
-              adapter: parsedRetrieval.data.adapter,
-            },
-          );
-        }
-      } else {
-        logger.warn(
-          "Skipping summary retrieval embedding: invalid connection",
-          {
-            projectId,
-            error: parsedRetrieval.error.message,
-          },
-        );
-      }
-    }
-  }
-
   const markdownSummary = await selectSummaryForMarkdown({
     projectId,
     summary: normalizedMerged,
     outputMode: summarySettings.summaryMarkdownOutputMode,
     nextNodeInputHint: nextNodeInputHint ?? null,
-    retrievalEmbeddingConnection,
     analysesForFallback: newAnalyses,
   });
 
