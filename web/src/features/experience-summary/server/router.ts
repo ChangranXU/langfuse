@@ -175,6 +175,20 @@ const ExperienceSummaryGenerateOutputSchema = z.object({
   row: ExperienceSummaryRowSchema.nullable(),
 });
 
+const ExperienceSummaryUpdateInputSchema = z.object({
+  projectId: z.string(),
+  summary: ExperienceSummaryJsonSchema,
+});
+
+const ExperienceSummaryWriteMarkdownInputSchema = z.object({
+  projectId: z.string(),
+});
+
+const ExperienceSummaryWriteMarkdownOutputSchema = z.object({
+  written: z.boolean(),
+  path: z.string(),
+});
+
 type ErrorAnalysisCompact = {
   observationId: string;
   traceId: string;
@@ -207,10 +221,14 @@ function compactAnalysisPayloadRows(
   return out;
 }
 
-function resolveSummaryMarkdownConfig(metadata: unknown): {
+function resolveSummaryMarkdownConfig(
+  metadata: unknown,
+  options?: { requireEnabled?: boolean },
+): {
   absolutePath: string | null;
   outputMode: ExperienceSummaryMarkdownOutputMode;
 } {
+  const requireEnabled = options?.requireEnabled ?? true;
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return {
       absolutePath: null,
@@ -230,7 +248,7 @@ function resolveSummaryMarkdownConfig(metadata: unknown): {
 
   const outputMode = parsed.data.summaryMarkdownOutputMode;
 
-  if (parsed.data.enabled !== true) {
+  if (requireEnabled && parsed.data.enabled !== true) {
     return {
       absolutePath: null,
       outputMode,
@@ -663,6 +681,165 @@ export const experienceSummaryRouter = createTRPCRouter({
           cursorUpdatedAt: saved.cursorUpdatedAt,
           updatedAt: saved.updatedAt,
         },
+      };
+    }),
+
+  update: protectedProjectProcedure
+    .input(ExperienceSummaryUpdateInputSchema)
+    .output(ExperienceSummaryRowSchema)
+    .mutation(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:update",
+      });
+
+      const delegate = (ctx.prisma as any).experienceSummary as
+        | typeof ctx.prisma.experienceSummary
+        | undefined;
+      if (!delegate) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Server is missing the ExperienceSummary Prisma model. Please restart the dev server after running prisma generate/migrate.",
+        });
+      }
+
+      const existing = await ctx.prisma.experienceSummary.findUnique({
+        where: { projectId: input.projectId },
+        select: {
+          model: true,
+          cursorUpdatedAt: true,
+        },
+      });
+
+      const normalizedSummary = ensurePromptPackCoverage(input.summary);
+      const saved = await ctx.prisma.experienceSummary.upsert({
+        where: { projectId: input.projectId },
+        create: {
+          projectId: input.projectId,
+          model: existing?.model ?? "manual",
+          schemaVersion: normalizedSummary.schemaVersion,
+          summary: normalizedSummary as any,
+          cursorUpdatedAt: existing?.cursorUpdatedAt ?? null,
+        },
+        update: {
+          schemaVersion: normalizedSummary.schemaVersion,
+          summary: normalizedSummary as any,
+        },
+      });
+
+      const projectForSettings = await ctx.prisma.project.findUnique({
+        where: { id: input.projectId },
+        select: { metadata: true },
+      });
+      const summaryMarkdownConfig = resolveSummaryMarkdownConfig(
+        projectForSettings?.metadata,
+      );
+      if (summaryMarkdownConfig.absolutePath) {
+        try {
+          await replaceSummaryHintSectionInMarkdown({
+            projectId: input.projectId,
+            absolutePath: summaryMarkdownConfig.absolutePath,
+            summary: normalizedSummary,
+            outputMode: summaryMarkdownConfig.outputMode,
+          });
+        } catch (error) {
+          logger.warn(
+            "Failed to replace summary hint section in markdown file after manual summary update",
+            {
+              projectId: input.projectId,
+              path: summaryMarkdownConfig.absolutePath,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
+        }
+      }
+
+      return {
+        projectId: saved.projectId,
+        model: saved.model,
+        schemaVersion: saved.schemaVersion,
+        summary: normalizedSummary,
+        cursorUpdatedAt: saved.cursorUpdatedAt,
+        updatedAt: saved.updatedAt,
+      };
+    }),
+
+  writeMarkdown: protectedProjectProcedure
+    .input(ExperienceSummaryWriteMarkdownInputSchema)
+    .output(ExperienceSummaryWriteMarkdownOutputSchema)
+    .mutation(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:update",
+      });
+
+      const delegate = (ctx.prisma as any).experienceSummary as
+        | typeof ctx.prisma.experienceSummary
+        | undefined;
+      if (!delegate) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Server is missing the ExperienceSummary Prisma model. Please restart the dev server after running prisma generate/migrate.",
+        });
+      }
+
+      const projectForSettings = await ctx.prisma.project.findUnique({
+        where: { id: input.projectId },
+        select: { metadata: true },
+      });
+      const summaryMarkdownConfig = resolveSummaryMarkdownConfig(
+        projectForSettings?.metadata,
+        { requireEnabled: false },
+      );
+
+      if (!summaryMarkdownConfig.absolutePath) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "No markdown path configured. Set it in Settings → Error Analysis first.",
+        });
+      }
+
+      const row = await ctx.prisma.experienceSummary.findUnique({
+        where: { projectId: input.projectId },
+        select: { summary: true },
+      });
+      const parsed = ExperienceSummaryJsonSchema.safeParse(row?.summary);
+      if (!parsed.success) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "No valid experience summary found. Generate or save a summary first.",
+        });
+      }
+
+      try {
+        await replaceSummaryHintSectionInMarkdown({
+          projectId: input.projectId,
+          absolutePath: summaryMarkdownConfig.absolutePath,
+          summary: parsed.data,
+          outputMode: summaryMarkdownConfig.outputMode,
+        });
+      } catch (error) {
+        logger.warn("Failed to write summary hint section to markdown file", {
+          projectId: input.projectId,
+          path: summaryMarkdownConfig.absolutePath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            "Failed to write summary markdown. Check file permissions and path.",
+        });
+      }
+
+      return {
+        written: true,
+        path: summaryMarkdownConfig.absolutePath,
       };
     }),
 });

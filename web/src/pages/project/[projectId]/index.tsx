@@ -37,6 +37,7 @@ import {
 } from "@/src/hooks/use-environment-filter";
 import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { type ViewVersion } from "@/src/features/query";
+import { GovernanceOverviewPanel } from "@/src/features/governance-overview/components/GovernanceOverviewPanel";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -253,6 +254,15 @@ export default function Dashboard() {
         ),
       }}
     >
+      <GovernanceOverviewPanel
+        projectId={projectId}
+        globalFilterState={[...userFilterState, ...environmentFilter]}
+        fromTimestamp={fromTimestamp}
+        toTimestamp={toTimestamp}
+        agg={agg}
+        isLoading={environmentFilterOptions.isPending}
+        metricsVersion={metricsVersion}
+      />
       <div className="grid w-full grid-cols-1 gap-3 overflow-hidden lg:grid-cols-2 xl:grid-cols-6">
         <TracesBarListChart
           className="col-span-1 xl:col-span-2"
