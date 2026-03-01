@@ -79,7 +79,15 @@ export function StatusMessageBadge({
 }) {
   if (!statusMessage) return null;
 
-  return <Badge variant="tertiary">{statusMessage}</Badge>;
+  return (
+    <Badge
+      variant="tertiary"
+      className="max-w-full whitespace-normal break-all"
+      title={statusMessage}
+    >
+      {statusMessage}
+    </Badge>
+  );
 }
 
 export function ErrorTypeBadge({
@@ -98,7 +106,11 @@ export function ErrorTypeBadge({
   const title = [errorTypeDescription, errorTypeWhy].filter(Boolean).join("\n");
 
   return (
-    <Badge variant="secondary" title={title || undefined}>
+    <Badge
+      variant="secondary"
+      title={title || undefined}
+      className="max-w-full whitespace-normal break-all"
+    >
       Type: {errorType}
       {typeof errorTypeConfidence === "number"
         ? ` (${errorTypeConfidence.toFixed(2)})`

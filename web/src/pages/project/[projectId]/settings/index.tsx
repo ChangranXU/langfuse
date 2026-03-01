@@ -26,9 +26,7 @@ import { AuditLogsSettingsPage } from "@/src/ee/features/audit-log-viewer/AuditL
 import { ModelsSettings } from "@/src/features/models/components/ModelSettings";
 import ConfigureRetention from "@/src/features/projects/components/ConfigureRetention";
 import ContainerPage from "@/src/components/layouts/container-page";
-import ProtectedLabelsSettings from "@/src/features/prompts/components/ProtectedLabelsSettings";
 import { Slack } from "lucide-react";
-import { ScoreConfigSettings } from "@/src/features/score-configs/components/ScoreConfigSettings";
 import { env } from "@/src/env.mjs";
 import { NotificationSettings } from "@/src/features/notifications/components/NotificationSettings";
 import { ErrorAnalysisSettings } from "@/src/features/error-analysis/components/ErrorAnalysisSettings";
@@ -45,9 +43,6 @@ export function useProjectSettingsPages(): ProjectSettingsPage[] {
   const { project, organization } = useQueryProject();
   const showBillingSettings = useHasEntitlement("cloud-billing");
   const showRetentionSettings = useHasEntitlement("data-retention");
-  const showProtectedLabelsSettings = useHasEntitlement(
-    "prompt-protected-labels",
-  );
 
   if (!project || !organization || !router.query.projectId) {
     return [];
@@ -59,7 +54,6 @@ export function useProjectSettingsPages(): ProjectSettingsPage[] {
     showBillingSettings,
     showRetentionSettings,
     showLLMConnectionsSettings: true,
-    showProtectedLabelsSettings,
   });
 }
 
@@ -69,14 +63,12 @@ export const getProjectSettingsPages = ({
   showBillingSettings,
   showRetentionSettings,
   showLLMConnectionsSettings,
-  showProtectedLabelsSettings,
 }: {
   project: { id: string; name: string; metadata: Record<string, unknown> };
   organization: { id: string; name: string; metadata: Record<string, unknown> };
   showBillingSettings: boolean;
   showRetentionSettings: boolean;
   showLLMConnectionsSettings: boolean;
-  showProtectedLabelsSettings: boolean;
 }): ProjectSettingsPage[] => [
   {
     title: "General",
@@ -169,19 +161,6 @@ export const getProjectSettingsPages = ({
     slug: "error-analysis",
     cmdKKeywords: ["analysis", "error", "warning", "auto"],
     content: <ErrorAnalysisSettings projectId={project.id} />,
-  },
-  {
-    title: "Protected Prompt Labels",
-    slug: "protected-prompt-labels",
-    cmdKKeywords: ["prompt", "label", "protect", "lock"],
-    content: <ProtectedLabelsSettings projectId={project.id} />,
-    show: showProtectedLabelsSettings,
-  },
-  {
-    title: "Scores Configs",
-    slug: "scores",
-    cmdKKeywords: ["config"],
-    content: <ScoreConfigSettings projectId={project.id} />,
   },
   {
     title: "Members",

@@ -39,14 +39,12 @@ import { useParsedTrace } from "@/src/hooks/useParsedTrace";
 import { useTraceData } from "@/src/components/trace2/contexts/TraceDataContext";
 import { useViewPreferences } from "@/src/components/trace2/contexts/ViewPreferencesContext";
 import { useSelection } from "@/src/components/trace2/contexts/SelectionContext";
-import { useIsAuthenticatedAndProjectMember } from "@/src/features/auth/hooks";
 import { useCommentedPaths } from "@/src/features/comments/hooks/useCommentedPaths";
 
 // Extracted components
 import { TraceDetailViewHeader } from "./TraceDetailViewHeader";
 import { TraceLogView } from "../TraceLogView/TraceLogView";
 import { TRACE_VIEW_CONFIG } from "@/src/components/trace2/config/trace-view-config";
-import ScoresTable from "@/src/components/table/use-cases/scores";
 import { getMostRecentCorrection } from "@/src/features/corrections/utils/getMostRecentCorrection";
 
 export interface TraceDetailViewProps {
@@ -57,14 +55,12 @@ export interface TraceDetailViewProps {
   };
   observations: ObservationReturnTypeWithMetadata[];
   corrections: ScoreDomain[];
-  scores: WithStringifiedMetadata<ScoreDomain>[];
   projectId: string;
 }
 
 export function TraceDetailView({
   trace,
   observations,
-  scores,
   corrections,
   projectId,
 }: TraceDetailViewProps) {
@@ -158,11 +154,6 @@ export function TraceDetailView({
   const commentedPathsByField = useCommentedPaths(traceComments.data);
 
   // Derived state
-  const traceScores = useMemo(
-    () => scores.filter((s) => !s.observationId),
-    [scores],
-  );
-
   const traceCorrections = useMemo(
     () => corrections.filter((c) => !c.observationId),
     [corrections],
@@ -176,14 +167,9 @@ export function TraceDetailView({
   const isLogViewVirtualized =
     observations.length >= TRACE_VIEW_CONFIG.logView.virtualizationThreshold;
 
-  // Scores tab visibility: hide for public trace viewers and in peek mode (annotation queues)
-  const isAuthenticatedAndProjectMember =
-    useIsAuthenticatedAndProjectMember(projectId);
-  const showScoresTab = isAuthenticatedAndProjectMember;
-
   // Handle tab change
   const handleTabChange = (value: string) => {
-    setSelectedTab(value as "preview" | "log" | "scores");
+    setSelectedTab(value as "preview" | "log");
   };
 
   return (
@@ -194,7 +180,6 @@ export function TraceDetailView({
         observations={observations}
         parsedMetadata={parsedMetadata}
         projectId={projectId}
-        traceScores={traceScores}
         commentCount={comments.get(trace.id)}
         pendingSelection={pendingSelection}
         onSelectionUsed={handleSelectionUsed}
@@ -224,9 +209,6 @@ export function TraceDetailView({
                   </TooltipContent>
                 </Tooltip>
               </TabsBarTrigger>
-            )}
-            {showScoresTab && (
-              <TabsBarTrigger value="scores">Scores</TabsBarTrigger>
             )}
 
             {/* View toggle (Formatted/JSON) - show for preview and log tabs when pretty view available */}
@@ -407,25 +389,6 @@ export function TraceDetailView({
             currentView={isLogViewVirtualized ? "pretty" : currentView}
           />
         </TabsBarContent>
-
-        {/* Scores tab content */}
-        {showScoresTab && (
-          <TabsBarContent
-            value="scores"
-            className="mt-0 flex max-h-full min-h-0 w-full flex-1 overflow-hidden"
-          >
-            <div className="flex h-full min-h-0 w-full flex-col overflow-hidden pr-3">
-              <ScoresTable
-                projectId={projectId}
-                omittedFilter={["Trace ID"]}
-                traceId={trace.id}
-                hiddenColumns={["traceName", "jobConfigurationId", "userId"]}
-                localStorageSuffix="TracePreview"
-                disableUrlPersistence
-              />
-            </div>
-          </TabsBarContent>
-        )}
       </TabsBar>
     </div>
   );

@@ -20,6 +20,7 @@ import { useTraceComments } from "./api/useTraceComments";
 import { useViewPreferences } from "./contexts/ViewPreferencesContext";
 import { useTraceGraphData } from "./contexts/TraceGraphDataContext";
 import { TraceGraphView } from "./components/TraceGraphView/TraceGraphView";
+import { TraceGovernanceBanner } from "./components/GovernanceBanner/TraceGovernanceBanner";
 
 import { useMemo } from "react";
 
@@ -111,10 +112,17 @@ function TraceContent() {
   const { isGraphViewAvailable } = useTraceGraphData();
   const shouldShowGraph = showGraph && isGraphViewAvailable;
 
-  return isMobile ? (
-    <MobileTraceContent shouldShowGraph={shouldShowGraph} />
-  ) : (
-    <DesktopTraceContent shouldShowGraph={shouldShowGraph} />
+  return (
+    <div className="flex h-full w-full flex-col gap-2 overflow-hidden p-2">
+      <TraceGovernanceBanner />
+      <div className="min-h-0 flex-1">
+        {isMobile ? (
+          <MobileTraceContent shouldShowGraph={shouldShowGraph} />
+        ) : (
+          <DesktopTraceContent shouldShowGraph={shouldShowGraph} />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -124,7 +132,7 @@ function TraceContent() {
  * Purpose:
  * - Composes desktop-specific layout structure
  * - Horizontal resizable panels with collapse functionality
- * - Navigation panel (left) + Detail panel (right)
+ * - Navigation panel (left) + Graph panel (middle) + Detail panel (right)
  */
 function DesktopTraceContent({
   shouldShowGraph,
@@ -134,17 +142,35 @@ function DesktopTraceContent({
   return (
     <TraceLayoutDesktop>
       <TraceLayoutDesktop.NavigationPanel>
-        <TracePanelNavigationLayoutDesktop
-          secondaryContent={shouldShowGraph ? <TraceGraphView /> : undefined}
-        >
+        <TracePanelNavigationLayoutDesktop>
           <TracePanelNavigation />
         </TracePanelNavigationLayoutDesktop>
       </TraceLayoutDesktop.NavigationPanel>
       <TraceLayoutDesktop.ResizeHandle />
-      <TraceLayoutDesktop.DetailPanel>
-        <TracePanelDetail />
-      </TraceLayoutDesktop.DetailPanel>
+      {shouldShowGraph ? (
+        <>
+          <TraceLayoutDesktop.GraphPanel defaultSize={32} minSize={20}>
+            <TracePanelGraph />
+          </TraceLayoutDesktop.GraphPanel>
+          <TraceLayoutDesktop.ResizeHandle />
+          <TraceLayoutDesktop.DetailPanel defaultSize={40} minSize={30}>
+            <TracePanelDetail />
+          </TraceLayoutDesktop.DetailPanel>
+        </>
+      ) : (
+        <TraceLayoutDesktop.DetailPanel defaultSize={70} minSize={40}>
+          <TracePanelDetail />
+        </TraceLayoutDesktop.DetailPanel>
+      )}
     </TraceLayoutDesktop>
+  );
+}
+
+function TracePanelGraph() {
+  return (
+    <div className="flex h-full w-full flex-col border-r bg-background">
+      <TraceGraphView />
+    </div>
   );
 }
 

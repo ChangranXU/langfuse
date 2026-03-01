@@ -1,9 +1,5 @@
 import { PrettyJsonView } from "@/src/components/ui/PrettyJsonView";
-import {
-  AnnotationQueueObjectType,
-  type ScoreDomain,
-  isGenerationLike,
-} from "@langfuse/shared";
+import { type ScoreDomain, isGenerationLike } from "@langfuse/shared";
 import { Badge } from "@/src/components/ui/badge";
 import { type ObservationReturnType } from "@/src/server/api/routers/traces";
 import { api } from "@/src/utils/api";
@@ -12,14 +8,8 @@ import { formatIntervalSeconds } from "@/src/utils/dates";
 import Link from "next/link";
 import { usdFormatter, formatTokenCounts } from "@/src/utils/numbers";
 import { withDefault, StringParam, useQueryParam } from "use-query-params";
-import ScoresTable from "@/src/components/table/use-cases/scores";
-import { JumpToPlaygroundButton } from "@/src/features/playground/page/components/JumpToPlaygroundButton";
-import { AnnotateDrawer } from "@/src/features/scores/components/AnnotateDrawer";
 import useLocalStorage from "@/src/components/useLocalStorage";
 import { CommentDrawerButton } from "@/src/features/comments/CommentDrawerButton";
-import { cn } from "@/src/utils/tailwind";
-import { NewDatasetItemFromExistingObject } from "@/src/features/datasets/components/NewDatasetItemFromExistingObject";
-import { CreateNewAnnotationQueueItem } from "@/src/features/annotation-queues/components/CreateNewAnnotationQueueItem";
 import { calculateDisplayTotalCost } from "@/src/components/trace2/lib/helpers";
 import { Fragment, useMemo, useState } from "react";
 import type Decimal from "decimal.js";
@@ -46,7 +36,6 @@ import { CopyIdsPopover } from "@/src/components/trace2/components/_shared/CopyI
 import { useJsonExpansion } from "@/src/components/trace2/contexts/JsonExpansionContext";
 import { type WithStringifiedMetadata } from "@/src/utils/clientSideDomainTypes";
 import { useParsedObservation } from "@/src/hooks/useParsedObservation";
-import { PromptBadge } from "@/src/components/trace2/components/_shared/PromptBadge";
 import { useJsonBetaToggle } from "@/src/components/trace2/hooks/useJsonBetaToggle";
 import { getMostRecentCorrection } from "@/src/features/corrections/utils/getMostRecentCorrection";
 import { buildKernelObservationIoSourceMap } from "@/src/components/trace2/lib/observationIoSource";
@@ -54,13 +43,12 @@ import { buildKernelObservationIoSourceMap } from "@/src/components/trace2/lib/o
 export const ObservationPreview = ({
   observations,
   projectId,
-  serverScores: scores,
+  serverScores: _scores,
   corrections,
   currentObservationId,
   traceId,
   commentCounts,
   viewType = "detailed",
-  isTimeline,
   showCommentButton = false,
   precomputedCost,
 }: {
@@ -72,7 +60,6 @@ export const ObservationPreview = ({
   traceId: string;
   commentCounts?: Map<string, number>;
   viewType?: "focused" | "detailed";
-  isTimeline?: boolean;
   showCommentButton?: boolean;
   precomputedCost: Decimal | undefined;
 }) => {
@@ -96,8 +83,6 @@ export const ObservationPreview = ({
   const isAuthenticatedAndProjectMember =
     useIsAuthenticatedAndProjectMember(projectId);
   const router = useRouter();
-  const { peek } = router.query;
-  const showScoresTab = isAuthenticatedAndProjectMember && peek === undefined;
   const {
     formattedExpansion,
     setFormattedFieldExpansion,
@@ -115,10 +100,6 @@ export const ObservationPreview = ({
     [observations],
   );
   const ioSource = observationIoSourceById.get(currentObservationId);
-
-  const currentObservationScores = scores.filter(
-    (s) => s.observationId === currentObservationId,
-  );
 
   const currentObservationCorrections = corrections.filter(
     (c) => c.observationId === currentObservationId,
@@ -197,54 +178,8 @@ export const ObservationPreview = ({
             />
           </div>
           <div className="flex h-full flex-wrap content-start items-start justify-start gap-0.5 @2xl:mr-1 @2xl:justify-end">
-            {observationWithIO && (
-              <NewDatasetItemFromExistingObject
-                traceId={preloadedObservation.traceId}
-                observationId={preloadedObservation.id}
-                projectId={projectId}
-                input={observationWithIO.input}
-                output={observationWithIO.output}
-                metadata={observationWithIO.metadata}
-                key={preloadedObservation.id}
-                size="sm"
-              />
-            )}
             {viewType === "detailed" && (
               <>
-                <div className="flex items-start">
-                  <AnnotateDrawer
-                    key={"annotation-drawer" + preloadedObservation.id}
-                    projectId={projectId}
-                    scoreTarget={{
-                      type: "trace",
-                      traceId: traceId,
-                      observationId: preloadedObservation.id,
-                    }}
-                    scores={currentObservationScores}
-                    scoreMetadata={{
-                      projectId: projectId,
-                      environment: preloadedObservation.environment,
-                    }}
-                    size="sm"
-                  />
-
-                  <CreateNewAnnotationQueueItem
-                    projectId={projectId}
-                    objectId={preloadedObservation.id}
-                    objectType={AnnotationQueueObjectType.OBSERVATION}
-                    size="sm"
-                  />
-                </div>
-                {observationWithIO &&
-                  isGenerationLike(observationWithIO.type) && (
-                    <JumpToPlaygroundButton
-                      source="generation"
-                      generation={observationWithIO}
-                      analyticsEventName="trace_detail:test_in_playground_button_click"
-                      className={cn(isTimeline ? "!hidden" : "")}
-                      size="sm"
-                    />
-                  )}
                 <CommentDrawerButton
                   projectId={preloadedObservation.projectId}
                   objectId={preloadedObservation.id}
@@ -326,12 +261,6 @@ export const ObservationPreview = ({
                     </Badge>
                   ) : undefined}
 
-                  {preloadedObservation.promptId ? (
-                    <PromptBadge
-                      promptId={preloadedObservation.promptId}
-                      projectId={preloadedObservation.projectId}
-                    />
-                  ) : undefined}
                   {isGenerationLike(preloadedObservation.type) &&
                     (() => {
                       const aggregatedUsage = calculateAggregatedUsage(
@@ -452,17 +381,14 @@ export const ObservationPreview = ({
         </div>
 
         <TabsBar
-          value={selectedTab.includes("preview") ? "preview" : "scores"}
+          value="preview"
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onValueChange={(value) => setSelectedTab(value)}
+          onValueChange={() => setSelectedTab("preview")}
         >
           {viewType === "detailed" && (
             <TabsBarList>
               <TabsBarTrigger value="preview">Preview</TabsBarTrigger>
-              {showScoresTab && (
-                <TabsBarTrigger value="scores">Scores</TabsBarTrigger>
-              )}
-              {selectedTab.includes("preview") && isPrettyViewAvailable && (
+              {isPrettyViewAvailable && (
                 <>
                   <Tabs
                     className="ml-auto h-fit px-2 py-0.5"
@@ -593,30 +519,6 @@ export const ObservationPreview = ({
               </div>
             </div>
           </TabsBarContent>
-          {showScoresTab && (
-            <TabsBarContent
-              value="scores"
-              className="mb-2 mr-4 mt-0 flex h-full min-h-0 flex-1 overflow-hidden"
-            >
-              <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
-                <ScoresTable
-                  projectId={projectId}
-                  traceId={traceId}
-                  omittedFilter={["Observation ID"]}
-                  observationId={preloadedObservation.id}
-                  hiddenColumns={[
-                    "traceId",
-                    "observationId",
-                    "traceName",
-                    "jobConfigurationId",
-                    "userId",
-                  ]}
-                  localStorageSuffix="ObservationPreview"
-                  disableUrlPersistence
-                />
-              </div>
-            </TabsBarContent>
-          )}
         </TabsBar>
       </div>
     </div>

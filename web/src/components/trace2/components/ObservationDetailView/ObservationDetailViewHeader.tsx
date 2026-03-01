@@ -10,22 +10,13 @@
  */
 
 import { memo } from "react";
-import {
-  type ObservationType,
-  AnnotationQueueObjectType,
-  isGenerationLike,
-} from "@langfuse/shared";
+import { type ObservationType } from "@langfuse/shared";
 import { type SelectionData } from "@/src/features/comments/contexts/InlineCommentSelectionContext";
 import { type ObservationReturnTypeWithMetadata } from "@/src/server/api/routers/traces";
 import { ItemBadge } from "@/src/components/ItemBadge";
 import { LocalIsoDate } from "@/src/components/LocalIsoDate";
 import { CopyIdsPopover } from "@/src/components/trace2/components/_shared/CopyIdsPopover";
-import { NewDatasetItemFromExistingObject } from "@/src/features/datasets/components/NewDatasetItemFromExistingObject";
-import { AnnotateDrawer } from "@/src/features/scores/components/AnnotateDrawer";
-import { CreateNewAnnotationQueueItem } from "@/src/features/annotation-queues/components/CreateNewAnnotationQueueItem";
 import { CommentDrawerButton } from "@/src/features/comments/CommentDrawerButton";
-import { JumpToPlaygroundButton } from "@/src/features/playground/page/components/JumpToPlaygroundButton";
-import { PromptBadge } from "@/src/components/trace2/components/_shared/PromptBadge";
 import { ErrorAnalysisButton } from "@/src/features/error-analysis/components/ErrorAnalysisButton";
 import { api } from "@/src/utils/api";
 import {
@@ -45,28 +36,14 @@ import { CostBadge, UsageBadge } from "./ObservationMetadataBadgesTooltip";
 import { ModelBadge } from "./ObservationMetadataBadgeModel";
 import { ModelParametersBadges } from "./ObservationMetadataBadgeModelParameters";
 import { formatParserNodeName } from "@/src/features/trace-graph-view/nodeNameUtils";
-import {
-  type WithStringifiedMetadata,
-  type MetadataDomainClient,
-} from "@/src/utils/clientSideDomainTypes";
-import { type ScoreDomain } from "@langfuse/shared";
 import { type AggregatedTraceMetrics } from "@/src/components/trace2/lib/trace-aggregation";
 import type Decimal from "decimal.js";
 
 export interface ObservationDetailViewHeaderProps {
   observation: ObservationReturnTypeWithMetadata;
-  observationWithIO:
-    | (Omit<ObservationReturnTypeWithMetadata, "traceId" | "metadata"> & {
-        traceId: string | null;
-        input: string | null;
-        output: string | null;
-        metadata: MetadataDomainClient;
-      })
-    | undefined;
   projectId: string;
   traceId: string;
   latencySeconds: number | null;
-  observationScores: WithStringifiedMetadata<ScoreDomain>[];
   commentCount: number | undefined;
   // Inline comment props
   pendingSelection?: SelectionData | null;
@@ -80,11 +57,9 @@ export interface ObservationDetailViewHeaderProps {
 export const ObservationDetailViewHeader = memo(
   function ObservationDetailViewHeader({
     observation,
-    observationWithIO,
     projectId,
     traceId,
     latencySeconds,
-    observationScores,
     commentCount,
     pendingSelection,
     onSelectionUsed,
@@ -141,49 +116,6 @@ export const ObservationDetailViewHeader = memo(
           </div>
           {/* Action buttons */}
           <div className="flex h-full flex-wrap content-start items-start justify-start gap-0.5 @2xl:mr-1 @2xl:justify-end">
-            {observationWithIO && (
-              <NewDatasetItemFromExistingObject
-                traceId={traceId}
-                observationId={observation.id}
-                projectId={projectId}
-                input={observationWithIO.input}
-                output={observationWithIO.output}
-                metadata={observationWithIO.metadata}
-                key={observation.id}
-                size="sm"
-              />
-            )}
-            <div className="flex items-start">
-              <AnnotateDrawer
-                key={"annotation-drawer-" + observation.id}
-                projectId={projectId}
-                scoreTarget={{
-                  type: "trace",
-                  traceId: traceId,
-                  observationId: observation.id,
-                }}
-                scores={observationScores}
-                scoreMetadata={{
-                  projectId: projectId,
-                  environment: observation.environment,
-                }}
-                size="sm"
-              />
-              <CreateNewAnnotationQueueItem
-                projectId={projectId}
-                objectId={observation.id}
-                objectType={AnnotationQueueObjectType.OBSERVATION}
-                size="sm"
-              />
-            </div>
-            {observationWithIO && isGenerationLike(observationWithIO.type) && (
-              <JumpToPlaygroundButton
-                source="generation"
-                generation={observationWithIO}
-                analyticsEventName="trace_detail:test_in_playground_button_click"
-                size="sm"
-              />
-            )}
             <CommentDrawerButton
               projectId={projectId}
               objectId={observation.id}
@@ -278,12 +210,6 @@ export const ObservationDetailViewHeader = memo(
               level={observation.level}
             />
             <StatusMessageBadge statusMessage={observation.statusMessage} />
-            {observation.promptId && (
-              <PromptBadge
-                promptId={observation.promptId}
-                projectId={projectId}
-              />
-            )}
           </div>
         </div>
       </div>

@@ -28,9 +28,7 @@ const groupProcessedNavigation = (items: NavigationItem[]) => {
   const groupedItems = groupedResult
     ? [
         ...(grouped[RouteGroup.Observability] || []),
-        ...(grouped[RouteGroup.PromptManagement] || []),
-        ...(grouped[RouteGroup.Evaluation] || []),
-        ...(grouped[RouteGroup.Experience] || []),
+        ...(grouped[RouteGroup.Governance] || []),
       ]
     : [];
 

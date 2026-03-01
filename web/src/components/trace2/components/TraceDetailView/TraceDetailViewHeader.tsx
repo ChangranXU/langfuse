@@ -12,8 +12,6 @@
 import { memo, useMemo } from "react";
 import {
   type TraceDomain,
-  type ScoreDomain,
-  AnnotationQueueObjectType,
   LangfuseInternalTraceEnvironment,
 } from "@langfuse/shared";
 import { type SelectionData } from "@/src/features/comments/contexts/InlineCommentSelectionContext";
@@ -22,9 +20,6 @@ import { type ObservationReturnTypeWithMetadata } from "@/src/server/api/routers
 import { ItemBadge } from "@/src/components/ItemBadge";
 import { LocalIsoDate } from "@/src/components/LocalIsoDate";
 import { CopyIdsPopover } from "@/src/components/trace2/components/_shared/CopyIdsPopover";
-import { NewDatasetItemFromExistingObject } from "@/src/features/datasets/components/NewDatasetItemFromExistingObject";
-import { AnnotateDrawer } from "@/src/features/scores/components/AnnotateDrawer";
-import { CreateNewAnnotationQueueItem } from "@/src/features/annotation-queues/components/CreateNewAnnotationQueueItem";
 import { CommentDrawerButton } from "@/src/features/comments/CommentDrawerButton";
 import {
   SessionBadge,
@@ -51,7 +46,6 @@ export interface TraceDetailViewHeaderProps {
   observations: ObservationReturnTypeWithMetadata[];
   parsedMetadata: unknown;
   projectId: string;
-  traceScores: WithStringifiedMetadata<ScoreDomain>[];
   commentCount: number | undefined;
   // Inline comment props
   pendingSelection?: SelectionData | null;
@@ -65,7 +59,6 @@ export const TraceDetailViewHeader = memo(function TraceDetailViewHeader({
   observations,
   parsedMetadata,
   projectId,
-  traceScores,
   commentCount,
   pendingSelection,
   onSelectionUsed,
@@ -97,37 +90,6 @@ export const TraceDetailViewHeader = memo(function TraceDetailViewHeader({
         </div>
         {/* Action buttons */}
         <div className="flex h-full flex-wrap content-start items-start justify-start gap-0.5 @2xl:mr-1 @2xl:justify-end">
-          <NewDatasetItemFromExistingObject
-            traceId={trace.id}
-            projectId={projectId}
-            input={trace.input}
-            output={trace.output}
-            metadata={trace.metadata}
-            key={trace.id}
-            size="sm"
-          />
-          <div className="flex items-start">
-            <AnnotateDrawer
-              key={"annotation-drawer-" + trace.id}
-              projectId={projectId}
-              scoreTarget={{
-                type: "trace",
-                traceId: trace.id,
-              }}
-              scores={traceScores}
-              scoreMetadata={{
-                projectId: projectId,
-                environment: trace.environment,
-              }}
-              size="sm"
-            />
-            <CreateNewAnnotationQueueItem
-              projectId={projectId}
-              objectId={trace.id}
-              objectType={AnnotationQueueObjectType.TRACE}
-              size="sm"
-            />
-          </div>
           <CommentDrawerButton
             projectId={projectId}
             objectId={trace.id}

@@ -7,7 +7,7 @@
  *
  * Hooks:
  * - useSelection() - for selected node state
- * - useTraceData() - for trace, nodeMap, observations, scores
+ * - useTraceData() - for trace, nodeMap, observations
  *
  * Re-renders when:
  * - Selection changes (clicking nodes)
@@ -23,14 +23,7 @@ import { useMemo, useEffect } from "react";
 
 export function TracePanelDetail() {
   const { selectedNodeId, setSelectedNodeId } = useSelection();
-  const {
-    trace,
-    roots,
-    nodeMap,
-    observations,
-    serverScores: scores,
-    corrections,
-  } = useTraceData();
+  const { trace, roots, nodeMap, observations, corrections } = useTraceData();
 
   // Auto-select first root observation when roots are observations (not TRACE wrapped)
   // This happens for events-based traces with observation roots
@@ -75,12 +68,11 @@ export function TracePanelDetail() {
       <TraceDetailView
         trace={trace}
         observations={observations}
-        scores={scores}
         corrections={corrections}
         projectId={trace.projectId}
       />
     );
-  }, [selectedNodeId, nodeMap, trace, observations, scores, corrections]);
+  }, [selectedNodeId, nodeMap, trace, observations, corrections]);
 
   return (
     <div className="h-full w-full overflow-y-auto bg-background">{content}</div>

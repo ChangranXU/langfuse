@@ -28,6 +28,23 @@ export default function AnalysisPage() {
   );
   const forcedLevel = useMemo(() => toLevel(tab), [tab]);
   const { isBetaEnabled } = useV4Beta();
+  const omittedAnalysisColumns = useMemo(
+    () => [
+      "latency",
+      "totalCost",
+      "timeToFirstToken",
+      "tokens",
+      "usage",
+      "model",
+      "providedModelName",
+      "promptName",
+      "environment",
+      "traceTags",
+      "metadata",
+      "scores",
+    ],
+    [],
+  );
 
   const { data: hasTracingConfigured, isLoading } =
     api.traces.hasTracingConfigured.useQuery(
@@ -89,6 +106,9 @@ export default function AnalysisPage() {
                 forcedLevel={forcedLevel}
                 disableDefaultTypeFilter
                 clearTypeFilter
+                defaultSidebarCollapsed
+                replaceLevelWithErrorType
+                omittedColumns={omittedAnalysisColumns}
                 forceViewMode="observation"
                 showOpenTraceButton
                 showBulkAnalysisButton
@@ -99,6 +119,9 @@ export default function AnalysisPage() {
                 forcedLevel={forcedLevel}
                 disableDefaultTypeFilter
                 clearTypeFilter
+                defaultSidebarCollapsed
+                replaceLevelWithErrorType
+                omittedColumns={omittedAnalysisColumns}
                 showOpenTraceButton
                 showBulkAnalysisButton
               />

@@ -1,23 +1,17 @@
 import { type Flag } from "@/src/features/feature-flags/types";
 import { type ProjectScope } from "@/src/features/rbac/constants/projectAccessRights";
 import {
-  Database,
   LayoutDashboard,
   LifeBuoy,
   ListTree,
   type LucideIcon,
   Settings,
   UsersIcon,
-  TerminalIcon,
-  Lightbulb,
   BookOpen,
   Grid2X2,
   Sparkle,
-  FileJson,
   Search,
   Home,
-  SquarePercent,
-  ClipboardPen,
   Clock,
 } from "lucide-react";
 import { type ReactNode } from "react";
@@ -41,9 +35,7 @@ export enum RouteSection {
 
 export enum RouteGroup {
   Observability = "Observability",
-  PromptManagement = "Prompt Management",
-  Evaluation = "Evaluation",
-  Experience = "Experience",
+  Governance = "Governance",
 }
 
 export type Route = {
@@ -125,67 +117,18 @@ export const ROUTES: Route[] = [
     section: RouteSection.Main,
   },
   {
-    title: "Prompts",
-    pathname: "/project/[projectId]/prompts",
-    icon: FileJson,
-    projectRbacScopes: ["prompts:read"],
-    productModule: "prompt-management",
-    group: RouteGroup.PromptManagement,
-    section: RouteSection.Main,
-  },
-  {
-    title: "Playground",
-    pathname: "/project/[projectId]/playground",
-    icon: TerminalIcon,
-    productModule: "playground",
-    group: RouteGroup.PromptManagement,
-    section: RouteSection.Main,
-  },
-  {
-    title: "Scores",
-    pathname: `/project/[projectId]/scores`,
-    group: RouteGroup.Evaluation,
-    section: RouteSection.Main,
-    icon: SquarePercent,
-  },
-  {
     title: "Analysis",
     pathname: `/project/[projectId]/analysis`,
-    group: RouteGroup.Evaluation,
+    group: RouteGroup.Governance,
     section: RouteSection.Main,
     icon: AnalysisIcon,
   },
   {
     title: "Summary",
     pathname: `/project/[projectId]/experience`,
-    group: RouteGroup.Experience,
+    group: RouteGroup.Governance,
     section: RouteSection.Main,
     icon: BookOpen,
-  },
-  {
-    title: "LLM-as-a-Judge",
-    icon: Lightbulb,
-    productModule: "evaluation",
-    projectRbacScopes: ["evalJob:read"],
-    group: RouteGroup.Evaluation,
-    section: RouteSection.Main,
-    pathname: `/project/[projectId]/evals`,
-  },
-  {
-    title: "Human Annotation",
-    pathname: `/project/[projectId]/annotation-queues`,
-    projectRbacScopes: ["annotationQueues:read"],
-    group: RouteGroup.Evaluation,
-    section: RouteSection.Main,
-    icon: ClipboardPen,
-  },
-  {
-    title: "Datasets",
-    pathname: `/project/[projectId]/datasets`,
-    icon: Database,
-    productModule: "datasets",
-    group: RouteGroup.Evaluation,
-    section: RouteSection.Main,
   },
   {
     title: "Upgrade",

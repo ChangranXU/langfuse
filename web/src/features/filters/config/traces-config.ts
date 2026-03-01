@@ -7,6 +7,7 @@ export const traceFilterConfig: FilterConfig = {
   columnDefinitions: tracesTableCols,
 
   defaultExpanded: ["environment", "name"],
+  defaultSidebarCollapsed: true,
 
   facets: [
     {
@@ -67,11 +68,6 @@ export const traceFilterConfig: FilterConfig = {
       type: "string" as const,
       column: "commentContent",
       label: "Comment Content",
-    },
-    {
-      type: "categorical" as const,
-      column: "tags",
-      label: "Tags",
     },
     {
       type: "categorical" as const,

@@ -5,7 +5,7 @@
  * - Tracks selected node ID (synced to URL query param)
  * - Manages collapsed/expanded state for tree nodes
  * - Handles search query with debounced input
- * - Tracks selected tab (preview/log/scores) - synced to URL query param `traceTab`
+ * - Tracks selected tab (preview/log) - synced to URL query param `traceTab`
  * - Tracks view preference (formatted/json) - synced to URL query param AND localStorage
  *
  * View Preference Behavior:
@@ -34,8 +34,8 @@ import {
 } from "./ViewPreferencesContext";
 
 // Valid tab values for detail view
-export type DetailTab = "preview" | "log" | "scores";
-const VALID_TABS: DetailTab[] = ["preview", "log", "scores"];
+export type DetailTab = "preview" | "log";
+const VALID_TABS: DetailTab[] = ["preview", "log"];
 const DEFAULT_TAB: DetailTab = "preview";
 
 // Valid view preference values

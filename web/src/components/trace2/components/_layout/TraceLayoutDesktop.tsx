@@ -16,8 +16,9 @@ import {
 } from "react";
 
 const RESIZABLE_PANEL_GROUP_ID = "trace-layout";
-const RESIZABLE_PANEL_HANDLE_ID = "trace-layout-handle";
+const RESIZABLE_PANEL_HANDLE_SELECTOR = "[data-trace-layout-handle='true']";
 const RESIZABLE_PANEL_NAVIGATION_ID = "trace-layout-panel-navigation";
+const RESIZABLE_PANEL_GRAPH_ID = "trace-layout-panel-graph";
 const RESIZABLE_PANEL_PREVIEW_ID = "trace-layout-panel-preview";
 
 const NAVIGATION_PANEL_DEFAULT_SIZE_IN_PIXELS = 450;
@@ -26,6 +27,7 @@ const NAVIGATION_PANEL_COLLAPSED_SIZE_IN_PIXELS = 40;
 
 // Context for sharing panel state with compound components
 interface TraceLayoutDesktopContext {
+  navigationPanelDefaultSize: number;
   navigationPanelMinSize: number;
   navigationPanelCollapsedSize: number;
   isNavigationPanelCollapsed: boolean;
@@ -81,7 +83,7 @@ export function TraceLayoutDesktop({ children }: { children: ReactNode }) {
       `#${RESIZABLE_PANEL_GROUP_ID}`,
     ) as HTMLElement;
     const resizeHandles = document.querySelectorAll(
-      `#${RESIZABLE_PANEL_HANDLE_ID}`,
+      RESIZABLE_PANEL_HANDLE_SELECTOR,
     ) as NodeListOf<HTMLElement>;
 
     if (!panelGroup || !resizeHandles) {
@@ -155,6 +157,7 @@ export function TraceLayoutDesktop({ children }: { children: ReactNode }) {
   }, [isTimelineView]);
 
   const contextValue: TraceLayoutDesktopContext = {
+    navigationPanelDefaultSize,
     navigationPanelMinSize,
     navigationPanelCollapsedSize,
     isNavigationPanelCollapsed,
@@ -182,6 +185,7 @@ TraceLayoutDesktop.NavigationPanel = function Navigation({
   children: ReactNode;
 }) {
   const {
+    navigationPanelDefaultSize,
     navigationPanelMinSize,
     navigationPanelCollapsedSize,
     setIsNavigationPanelCollapsed,
@@ -193,6 +197,7 @@ TraceLayoutDesktop.NavigationPanel = function Navigation({
       id={RESIZABLE_PANEL_NAVIGATION_ID}
       ref={panelRef}
       collapsible={true}
+      defaultSize={navigationPanelDefaultSize}
       collapsedSize={navigationPanelCollapsedSize}
       minSize={navigationPanelMinSize}
       onCollapse={() => setIsNavigationPanelCollapsed(true)}
@@ -209,21 +214,50 @@ TraceLayoutDesktop.ResizeHandle = function ResizeHandle() {
 
   return (
     <PanelResizeHandle
-      id={RESIZABLE_PANEL_HANDLE_ID}
+      data-trace-layout-handle="true"
       className="relative w-px bg-border transition-colors duration-200 after:absolute after:inset-y-0 after:left-0 after:w-1 after:bg-blue-200 after:opacity-0 after:transition-opacity after:duration-200 hover:after:opacity-100 data-[resize-handle-state='drag']:after:opacity-100"
       onDoubleClick={handleTogglePanel}
     />
   );
 };
 
+// Compound component: Graph panel
+TraceLayoutDesktop.GraphPanel = function Graph({
+  children,
+  defaultSize = 32,
+  minSize = 20,
+}: {
+  children: ReactNode;
+  defaultSize?: number;
+  minSize?: number;
+}) {
+  return (
+    <Panel
+      id={RESIZABLE_PANEL_GRAPH_ID}
+      defaultSize={defaultSize}
+      minSize={minSize}
+    >
+      {children}
+    </Panel>
+  );
+};
+
 // Compound component: Detail panel
 TraceLayoutDesktop.DetailPanel = function Detail({
   children,
+  defaultSize = 70,
+  minSize = 30,
 }: {
   children: ReactNode;
+  defaultSize?: number;
+  minSize?: number;
 }) {
   return (
-    <Panel id={RESIZABLE_PANEL_PREVIEW_ID} defaultSize={70} minSize={50}>
+    <Panel
+      id={RESIZABLE_PANEL_PREVIEW_ID}
+      defaultSize={defaultSize}
+      minSize={minSize}
+    >
       {children}
     </Panel>
   );

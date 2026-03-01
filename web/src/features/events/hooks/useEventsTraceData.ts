@@ -22,6 +22,7 @@ interface UseEventsTraceDataProps {
   traceId: string;
   timestamp?: Date;
   enabled?: boolean;
+  refetchIntervalMs?: number;
 }
 
 interface UseEventsTraceDataResult {
@@ -51,7 +52,7 @@ interface UseEventsTraceDataResult {
 export function useEventsTraceData(
   props: UseEventsTraceDataProps,
 ): UseEventsTraceDataResult {
-  const { projectId, traceId, enabled = true } = props;
+  const { projectId, traceId, enabled = true, refetchIntervalMs } = props;
 
   // Step 1: Fetch all observations for this trace (without I/O for performance)
   const eventsQuery = api.events.byTraceId.useQuery(
@@ -62,6 +63,9 @@ export function useEventsTraceData(
     },
     {
       enabled: enabled && !!traceId,
+      refetchInterval: refetchIntervalMs,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
       retry(failureCount, error) {
         if (error.data?.code === "UNAUTHORIZED") return false;
         return failureCount < 3;
@@ -102,6 +106,9 @@ export function useEventsTraceData(
     {
       enabled:
         enabled && !!rootObservation && !!timeRange && !!eventsQuery.data,
+      refetchInterval: refetchIntervalMs,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
       staleTime: 60 * 1000,
     },
   );
@@ -111,6 +118,9 @@ export function useEventsTraceData(
     { traceId, projectId, timestamp: props.timestamp },
     {
       enabled: enabled && !!traceId,
+      refetchInterval: refetchIntervalMs,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
       staleTime: 60 * 1000,
     },
   );

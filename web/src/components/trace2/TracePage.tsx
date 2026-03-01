@@ -19,6 +19,8 @@ import { useEventsTraceData } from "@/src/features/events/hooks/useEventsTraceDa
 import { showErrorToast } from "@/src/features/notifications/showErrorToast";
 import { useEffect } from "react";
 
+const TRACE_LIVE_REFRESH_INTERVAL_MS = 5_000;
+
 export function TracePage({
   traceId,
   timestamp,
@@ -40,6 +42,9 @@ export function TracePage({
     },
     {
       enabled: !isBetaEnabled,
+      refetchInterval: TRACE_LIVE_REFRESH_INTERVAL_MS,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
       retry(failureCount, error) {
         if (
           error.data?.code === "UNAUTHORIZED" ||
@@ -57,6 +62,7 @@ export function TracePage({
     traceId,
     timestamp,
     enabled: isBetaEnabled,
+    refetchIntervalMs: TRACE_LIVE_REFRESH_INTERVAL_MS,
   });
 
   // Use the appropriate data source based on beta toggle

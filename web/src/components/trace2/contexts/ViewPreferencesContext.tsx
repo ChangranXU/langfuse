@@ -116,7 +116,7 @@ export function ViewPreferencesProvider({
     useLocalStorage<LogViewTreeStyle>("logViewTreeStyle", "flat");
   const [graphViewMode, setGraphViewMode] = useLocalStorage<GraphViewMode>(
     "graphViewMode",
-    "execution",
+    "hierarchy",
   );
   const [jsonViewPreference, setJsonViewPreference] =
     useLocalStorage<JsonViewPreference>("jsonViewPreference", "pretty");

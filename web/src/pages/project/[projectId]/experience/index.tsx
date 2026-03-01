@@ -77,15 +77,6 @@ export default function ExperienceSummaryPage() {
       toast.error(err.message);
     },
   });
-  const createPrompt = api.prompts.create.useMutation({
-    onSuccess: () => {
-      toast.success("Saved prompt");
-      void utils.prompts.invalidate();
-    },
-    onError: (err) => {
-      toast.error(err.message);
-    },
-  });
 
   const row = getQuery.data;
   const summary = row?.summary ?? null;
@@ -102,7 +93,7 @@ export default function ExperienceSummaryPage() {
   return (
     <Page
       headerProps={{
-        title: "Experience",
+        title: "Governance",
       }}
       scrollable
       withPadding
@@ -185,27 +176,6 @@ export default function ExperienceSummaryPage() {
               }}
             >
               Copy all
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!summary || createPrompt.isPending}
-              loading={createPrompt.isPending}
-              onClick={() => {
-                if (!summary || !projectId) return;
-                createPrompt.mutate({
-                  projectId,
-                  name: summary.promptPack.title,
-                  type: "text",
-                  prompt: buildExperienceCopyAllText(summary),
-                  config: {},
-                  labels: [],
-                  tags: ["experience-summary"],
-                  commitMessage: "Save auto-generated experience prompt lines",
-                });
-              }}
-            >
-              Save prompt
             </Button>
             <Button
               variant="outline"

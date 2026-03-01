@@ -1,4 +1,4 @@
-import { api } from "@/src/utils/api";
+import { api, directApi } from "@/src/utils/api";
 import { DataTable } from "@/src/components/table/data-table";
 import { DataTableToolbar } from "@/src/components/table/data-table-toolbar";
 import {
@@ -49,12 +49,24 @@ import {
   BreakdownTooltip,
   calculateAggregatedUsage,
 } from "@/src/components/trace2/components/_shared/BreakdownToolTip";
-import { ArrowUpRight, InfoIcon, PlusCircle } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  InfoIcon,
+  PlusCircle,
+} from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/src/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/src/components/ui/dropdown-menu";
 import { UpsertModelFormDialog } from "@/src/features/models/components/UpsertModelFormDialog";
 import { LocalIsoDate } from "@/src/components/LocalIsoDate";
 import { Badge } from "@/src/components/ui/badge";
@@ -155,6 +167,9 @@ export type ObservationsTableProps = {
   externalDateRange?: TableDateRange;
   limitRows?: number;
   showBulkAnalysisButton?: boolean;
+  defaultSidebarCollapsed?: boolean;
+  replaceLevelWithErrorType?: boolean;
+  omittedColumns?: string[];
 };
 
 export default function ObservationsTable({
@@ -173,6 +188,9 @@ export default function ObservationsTable({
   externalDateRange,
   limitRows,
   showBulkAnalysisButton = false,
+  defaultSidebarCollapsed,
+  replaceLevelWithErrorType = false,
+  omittedColumns,
 }: ObservationsTableProps) {
   const router = useRouter();
   const { viewId } = router.query;
@@ -180,6 +198,13 @@ export default function ObservationsTable({
 
   const { setDetailPageList } = useDetailPageLists();
   const [selectedRows, setSelectedRows] = useState<RowSelectionState>({});
+  const [errorTypeByObservationId, setErrorTypeByObservationId] = useState<
+    Record<string, string | null>
+  >({});
+  const [isErrorTypeLoading, setIsErrorTypeLoading] = useState(false);
+  const [selectedErrorType, setSelectedErrorType] = useState<string | null>(
+    null,
+  );
   const [rawRefreshInterval, setRawRefreshInterval] =
     useSessionStorage<RefreshInterval>(
       `tableRefreshInterval-${projectId}`,
@@ -466,6 +491,27 @@ export default function ObservationsTable({
     };
   }, [environmentFilterOptions.data, filterOptions.data]);
 
+  const errorTypeDropdownOptions = useMemo(() => {
+    // Use only currently loaded row types to avoid showing global options
+    // that are not present in the current result set.
+    const normalizedTypes = Object.values(errorTypeByObservationId)
+      .filter((value): value is string => value !== null && value.length > 0)
+      .sort((a, b) => a.localeCompare(b));
+
+    const uniqueOptions = Array.from(new Set(normalizedTypes)).map((value) => ({
+      value,
+      label: value,
+    }));
+
+    if (
+      Object.values(errorTypeByObservationId).some((value) => value === null)
+    ) {
+      uniqueOptions.push({ value: "unclassified", label: "unclassified" });
+    }
+
+    return uniqueOptions;
+  }, [errorTypeByObservationId]);
+
   const queryFilter = useSidebarFilterState(
     observationFilterConfig,
     newFilterOptions,
@@ -483,6 +529,8 @@ export default function ObservationsTable({
   const upsertAnalysisFilters = useCallback(
     (state: FilterState): FilterState => {
       let next = state;
+      const normalizeColumn = (column: unknown) =>
+        String(column).toLowerCase().replace(/[\s_]/g, "");
 
       if (clearTypeFilter) {
         // Stored filters may use either column id ("type") or display name ("Type"/"type").
@@ -505,13 +553,33 @@ export default function ObservationsTable({
         ];
       }
 
+      if (replaceLevelWithErrorType) {
+        next = next.filter((f) => normalizeColumn(f.column) !== "errortype");
+        if (selectedErrorType) {
+          next = [
+            ...next,
+            {
+              column: "errorType",
+              type: "stringOptions",
+              operator: "any of",
+              value: [selectedErrorType],
+            },
+          ];
+        }
+      }
+
       return next;
     },
-    [clearTypeFilter, forcedLevel],
+    [
+      clearTypeFilter,
+      forcedLevel,
+      replaceLevelWithErrorType,
+      selectedErrorType,
+    ],
   );
 
   useEffect(() => {
-    if (!clearTypeFilter && !forcedLevel) return;
+    if (!clearTypeFilter && !forcedLevel && !replaceLevelWithErrorType) return;
     const next = upsertAnalysisFilters(queryFilter.filterState);
     if (
       serializeSidebarFilterState(next) !==
@@ -522,6 +590,7 @@ export default function ObservationsTable({
   }, [
     clearTypeFilter,
     forcedLevel,
+    replaceLevelWithErrorType,
     queryFilter.filterState,
     queryFilter.setFilterState,
     serializeSidebarFilterState,
@@ -828,16 +897,79 @@ export default function ObservationsTable({
     {
       accessorKey: "level",
       id: "level",
-      header: "Level",
+      header: replaceLevelWithErrorType
+        ? () => (
+            <div className="flex items-center gap-1">
+              <span>Type</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 gap-1 px-1 text-[10px] font-normal"
+                    aria-label="Filter by error type"
+                  >
+                    <span>{selectedErrorType ?? "all"}</span>
+                    <ChevronDown className="h-3 w-3 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="max-h-64 overflow-y-auto"
+                >
+                  <DropdownMenuItem
+                    onClick={() => setSelectedErrorType(null)}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span>All</span>
+                    {!selectedErrorType ? <Check className="h-3 w-3" /> : null}
+                  </DropdownMenuItem>
+                  {errorTypeDropdownOptions.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      onClick={() => setSelectedErrorType(option.value)}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span>{option.label}</span>
+                      {selectedErrorType === option.value ? (
+                        <Check className="h-3 w-3" />
+                      ) : null}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )
+        : "Level",
       size: 100,
-      headerTooltip: {
-        description:
-          "You can differentiate the importance of observations with the level attribute to control the verbosity of your traces and highlight errors and warnings.",
-        href: "https://langfuse.com/docs/observability/features/log-levels",
-      },
+      headerTooltip: replaceLevelWithErrorType
+        ? undefined
+        : {
+            description:
+              "You can differentiate the importance of observations with the level attribute to control the verbosity of your traces and highlight errors and warnings.",
+            href: "https://langfuse.com/docs/observability/features/log-levels",
+          },
       enableHiding: true,
       cell({ row }) {
         const value: ObservationLevelType | undefined = row.getValue("level");
+        if (replaceLevelWithErrorType) {
+          if (!value || (value !== "ERROR" && value !== "WARNING")) {
+            return undefined;
+          }
+
+          const errorType = errorTypeByObservationId[row.original.id];
+          const displayValue =
+            isErrorTypeLoading && errorType === undefined
+              ? "..."
+              : (errorType ?? "unclassified");
+
+          return (
+            <span className="rounded-sm bg-red-100 p-0.5 text-xs text-red-700 dark:bg-red-900/40 dark:text-red-300">
+              {displayValue}
+            </span>
+          );
+        }
+
         return value ? (
           <span
             className={cn(
@@ -850,7 +982,7 @@ export default function ObservationsTable({
           </span>
         ) : undefined;
       },
-      enableSorting,
+      enableSorting: replaceLevelWithErrorType ? false : enableSorting,
     },
     {
       accessorKey: "statusMessage",
@@ -1337,15 +1469,31 @@ export default function ObservationsTable({
     },
   ];
 
+  const effectiveColumns = useMemo(() => {
+    if (!omittedColumns?.length) {
+      return columns;
+    }
+
+    const omittedColumnSet = new Set(omittedColumns);
+    return columns.filter((column) => {
+      const columnKey =
+        (typeof column.id === "string" ? column.id : undefined) ??
+        (typeof column.accessorKey === "string"
+          ? column.accessorKey
+          : undefined);
+      return !columnKey || !omittedColumnSet.has(columnKey);
+    });
+  }, [columns, omittedColumns]);
+
   const [columnVisibility, setColumnVisibilityState] =
     useColumnVisibility<ObservationsTableRow>(
       `observationColumnVisibility-${projectId}`,
-      columns,
+      effectiveColumns,
     );
 
   const [columnOrder, setColumnOrder] = useColumnOrder<ObservationsTableRow>(
     `observationsColumnOrder-${projectId}`,
-    columns,
+    effectiveColumns,
   );
 
   const peekNavigationProps = usePeekNavigation({
@@ -1372,7 +1520,7 @@ export default function ObservationsTable({
       setSearchQuery: setSearchQuery,
     },
     validationContext: {
-      columns,
+      columns: effectiveColumns,
       filterColumnDefinition: observationFilterConfig.columnDefinitions,
     },
     currentFilterState: queryFilter.filterState,
@@ -1434,6 +1582,97 @@ export default function ObservationsTable({
       : [];
   }, [generations]);
 
+  const errorTypeTargets = useMemo(
+    () =>
+      replaceLevelWithErrorType
+        ? rows
+            .filter(
+              (row) =>
+                (row.level === "ERROR" || row.level === "WARNING") &&
+                !!row.traceId,
+            )
+            .map((row) => ({
+              id: row.id,
+              traceId: row.traceId as string,
+            }))
+        : [],
+    [replaceLevelWithErrorType, rows],
+  );
+
+  const errorTypeTargetKey = useMemo(
+    () =>
+      errorTypeTargets
+        .map((target) => `${target.id}:${target.traceId}`)
+        .join("|"),
+    [errorTypeTargets],
+  );
+
+  useEffect(() => {
+    if (!replaceLevelWithErrorType) {
+      setErrorTypeByObservationId((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
+      setIsErrorTypeLoading(false);
+      return;
+    }
+
+    if (errorTypeTargets.length === 0) {
+      setErrorTypeByObservationId((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
+      setIsErrorTypeLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsErrorTypeLoading(true);
+
+    void Promise.all(
+      errorTypeTargets.map(async (target) => {
+        try {
+          const result = await directApi.errorAnalysis.getSummary.query({
+            projectId,
+            traceId: target.traceId,
+            observationId: target.id,
+          });
+
+          return {
+            observationId: target.id,
+            errorType: result?.errorType ?? null,
+          };
+        } catch {
+          return {
+            observationId: target.id,
+            errorType: null,
+          };
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+
+      const nextMap = Object.fromEntries(
+        results.map((item) => [item.observationId, item.errorType]),
+      ) as Record<string, string | null>;
+
+      setErrorTypeByObservationId((prev) => {
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(nextMap);
+        if (
+          prevKeys.length === nextKeys.length &&
+          nextKeys.every((key) => prev[key] === nextMap[key])
+        ) {
+          return prev;
+        }
+        return nextMap;
+      });
+      setIsErrorTypeLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [replaceLevelWithErrorType, errorTypeTargetKey, projectId]);
+
   const selectedObservationIdSet = useMemo(
     () => new Set(selectedObservationIds),
     [selectedObservationIds],
@@ -1452,12 +1691,15 @@ export default function ObservationsTable({
   );
 
   return (
-    <DataTableControlsProvider>
+    <DataTableControlsProvider
+      tableName={observationFilterConfig.tableName}
+      defaultSidebarCollapsed={defaultSidebarCollapsed}
+    >
       <div className="flex h-full w-full flex-col">
         {/* Toolbar spanning full width */}
         {!hideControls && (
           <DataTableToolbar
-            columns={columns}
+            columns={effectiveColumns}
             filterState={queryFilter.filterState}
             searchConfig={{
               metadataSearchFields: ["ID", "Name", "Trace Name", "Model"],
@@ -1551,7 +1793,7 @@ export default function ObservationsTable({
           <div className="flex flex-1 flex-col overflow-hidden">
             <DataTable
               tableName={"observations"}
-              columns={columns}
+              columns={effectiveColumns}
               peekView={peekConfig}
               data={
                 generations.isPending || isViewLoading

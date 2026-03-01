@@ -26,7 +26,6 @@ import {
 } from "@/src/utils/date-range-utils";
 import { useDashboardDateRange } from "@/src/hooks/useDashboardDateRange";
 import { useDebounce } from "@/src/hooks/useDebounce";
-import { ScoreAnalytics } from "@/src/features/dashboard/components/score-analytics/ScoreAnalytics";
 import SetupTracingButton from "@/src/features/setup/components/SetupTracingButton";
 import { useUiCustomization } from "@/src/ee/features/ui-customization/useUiCustomization";
 import { useEntitlementLimit } from "@/src/features/entitlements/hooks";
@@ -332,16 +331,6 @@ export default function Dashboard() {
           className="col-span-1 flex-auto justify-between lg:col-span-full"
           projectId={projectId}
           agg={agg}
-          globalFilterState={[...userFilterState, ...environmentFilter]}
-          fromTimestamp={fromTimestamp}
-          toTimestamp={toTimestamp}
-          isLoading={environmentFilterOptions.isPending}
-          metricsVersion={metricsVersion}
-        />
-        <ScoreAnalytics
-          className="col-span-1 flex-auto justify-between lg:col-span-full"
-          agg={agg}
-          projectId={projectId}
           globalFilterState={[...userFilterState, ...environmentFilter]}
           fromTimestamp={fromTimestamp}
           toTimestamp={toTimestamp}

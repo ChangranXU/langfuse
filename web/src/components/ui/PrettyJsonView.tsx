@@ -1362,9 +1362,7 @@ export function PrettyJsonView(props: {
             isMarkdownMode ? getBackgroundColorClass() : "rounded-sm border",
           )}
         >
-          <div className="max-h-full min-h-0 w-full overflow-y-auto">
-            {body}
-          </div>
+          <div className="max-h-full min-h-0 w-full overflow-auto">{body}</div>
         </div>
       ) : isMarkdownMode ? (
         <div className={getBackgroundColorClass()}>{body}</div>

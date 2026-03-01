@@ -15,6 +15,10 @@ import {
 import { copyTextToClipboard } from "@/src/utils/clipboard";
 import type { ExperienceSummaryJson } from "../types";
 
+function getExperienceAnchorId(key: string) {
+  return `experience-pack-${key}`;
+}
+
 export function ExperienceSummaryView(props: {
   summary: ExperienceSummaryJson;
 }) {
@@ -77,7 +81,11 @@ export function ExperienceSummaryView(props: {
       </Card>
 
       {summary.experiences.map((exp) => (
-        <Card key={exp.key}>
+        <Card
+          key={exp.key}
+          id={getExperienceAnchorId(exp.key)}
+          className="scroll-mt-20"
+        >
           <CardHeader>
             <div className="flex flex-wrap items-center gap-2">
               <CardTitle className="text-base">{exp.key}</CardTitle>

@@ -87,7 +87,7 @@ export function JSONView(props: {
     <>
       <div
         className={cn(
-          "io-message-content flex gap-2 whitespace-pre-wrap break-words text-xs",
+          "io-message-content flex min-w-0 max-w-full gap-2 whitespace-pre-wrap break-words text-xs",
           props.borderless ? "" : "p-2",
           props.title === "assistant" || props.title === "Output"
             ? "bg-accent-light-green dark:border-accent-dark-green"
@@ -114,6 +114,7 @@ export function JSONView(props: {
           </code>
         ) : (
           <div
+            className="min-w-0 max-w-full overflow-x-auto [overflow-wrap:anywhere] [&_*]:max-w-full [&_*]:break-words"
             onClick={() => {
               // If externally collapsed and user clicks to expand, sync the state
               if (props.externalJsonCollapsed && props.onToggleCollapse) {
@@ -139,7 +140,7 @@ export function JSONView(props: {
               displaySize={isCollapsed ? "collapsed" : "expanded"}
               matchesURL={true}
               customizeCopy={(node) => stringifyJsonNode(node)}
-              className="w-full"
+              className="min-w-0 max-w-full"
             />
           </div>
         )}
@@ -199,9 +200,7 @@ export function JSONView(props: {
       ) : null}
       {props.scrollable ? (
         <div className="flex h-full min-h-0 overflow-hidden rounded-sm border">
-          <div className="max-h-full min-h-0 w-full overflow-y-auto">
-            {body}
-          </div>
+          <div className="max-h-full min-h-0 w-full overflow-auto">{body}</div>
         </div>
       ) : (
         body

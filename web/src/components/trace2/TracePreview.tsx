@@ -2,7 +2,6 @@ import { PrettyJsonView } from "@/src/components/ui/PrettyJsonView";
 import {
   type ScoreDomain,
   type TraceDomain,
-  AnnotationQueueObjectType,
   isGenerationLike,
   LangfuseInternalTraceEnvironment,
 } from "@langfuse/shared";
@@ -12,13 +11,9 @@ import { type ObservationReturnTypeWithMetadata } from "@/src/server/api/routers
 import { IOPreview } from "@/src/components/trace2/components/IOPreview/IOPreview";
 import { formatIntervalSeconds } from "@/src/utils/dates";
 import { withDefault, StringParam, useQueryParam } from "use-query-params";
-import ScoresTable from "@/src/components/table/use-cases/scores";
-import { AnnotateDrawer } from "@/src/features/scores/components/AnnotateDrawer";
 import useLocalStorage from "@/src/components/useLocalStorage";
 import { CommentDrawerButton } from "@/src/features/comments/CommentDrawerButton";
 import { api } from "@/src/utils/api";
-import { NewDatasetItemFromExistingObject } from "@/src/features/datasets/components/NewDatasetItemFromExistingObject";
-import { CreateNewAnnotationQueueItem } from "@/src/features/annotation-queues/components/CreateNewAnnotationQueueItem";
 import { useMemo, useState, useEffect } from "react";
 import { usdFormatter } from "@/src/utils/numbers";
 import { useIsAuthenticatedAndProjectMember } from "@/src/features/auth/hooks";
@@ -112,8 +107,6 @@ export const TracePreview = ({
   );
   const capture = usePostHogClientCapture();
   const router = useRouter();
-  const { peek } = router.query;
-  const showScoresTab = isAuthenticatedAndProjectMember && peek === undefined;
   const {
     formattedExpansion,
     setFormattedFieldExpansion,
@@ -206,39 +199,8 @@ export const TracePreview = ({
             <CopyIdsPopover idItems={[{ id: trace.id, name: "Trace ID" }]} />
           </div>
           <div className="flex h-full flex-wrap content-start items-start justify-start gap-0.5 @2xl:mr-1 @2xl:justify-end">
-            <NewDatasetItemFromExistingObject
-              traceId={trace.id}
-              projectId={trace.projectId}
-              input={trace.input}
-              output={trace.output}
-              metadata={trace.metadata}
-              key={trace.id}
-              size="sm"
-            />
             {viewType === "detailed" && (
               <>
-                <div className="flex items-start">
-                  <AnnotateDrawer
-                    key={"annotation-drawer" + trace.id}
-                    projectId={trace.projectId}
-                    scoreTarget={{
-                      type: "trace",
-                      traceId: trace.id,
-                    }}
-                    scores={scores}
-                    scoreMetadata={{
-                      projectId: trace.projectId,
-                      environment: trace.environment,
-                    }}
-                    size="sm"
-                  />
-                  <CreateNewAnnotationQueueItem
-                    projectId={trace.projectId}
-                    objectId={trace.id}
-                    objectType={AnnotationQueueObjectType.TRACE}
-                    size="sm"
-                  />
-                </div>
                 <CommentDrawerButton
                   projectId={trace.projectId}
                   objectId={trace.id}
@@ -353,13 +315,7 @@ export const TracePreview = ({
         </div>
 
         <TabsBar
-          value={
-            selectedTab === "log"
-              ? "log"
-              : selectedTab.includes("preview")
-                ? "preview"
-                : "scores"
-          }
+          value={selectedTab === "log" ? "log" : "preview"}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onValueChange={(value) => {
             // on tab click, is confirmation is needed?
@@ -394,9 +350,6 @@ export const TracePreview = ({
                       </TooltipContent>
                     </Tooltip>
                   </TabsBarTrigger>
-                )}
-                {showScoresTab && (
-                  <TabsBarTrigger value="scores">Scores</TabsBarTrigger>
                 )}
                 {selectedTab.includes("preview") && isPrettyViewAvailable && (
                   <>
@@ -575,23 +528,6 @@ export const TracePreview = ({
               </ViewPreferencesProvider>
             </TraceDataProvider>
           </TabsBarContent>
-          {showScoresTab && (
-            <TabsBarContent
-              value="scores"
-              className="mb-2 mr-4 mt-0 flex h-full min-h-0 w-full overflow-hidden md:flex-1"
-            >
-              <div className="flex h-full min-h-0 w-full flex-col overflow-hidden pr-3 md:flex-1">
-                <ScoresTable
-                  projectId={trace.projectId}
-                  omittedFilter={["Trace ID"]}
-                  traceId={trace.id}
-                  hiddenColumns={["traceName", "jobConfigurationId", "userId"]}
-                  localStorageSuffix="TracePreview"
-                  disableUrlPersistence
-                />
-              </div>
-            </TabsBarContent>
-          )}
         </TabsBar>
       </div>
 
