@@ -5,6 +5,7 @@ export const LevelColors = {
   DEBUG: { text: "text-muted-foreground", bg: "bg-primary-foreground" },
   WARNING: { text: "text-dark-yellow", bg: "bg-light-yellow" },
   ERROR: { text: "text-dark-red", bg: "bg-light-red" },
+  POLICY_VIOLATION: { text: "text-dark-red", bg: "bg-light-red" },
 };
 
 export const LevelSymbols = {
@@ -12,8 +13,13 @@ export const LevelSymbols = {
   DEBUG: "🔍",
   WARNING: "⚠️",
   ERROR: "🚨",
+  POLICY_VIOLATION: "⚔️",
 };
 
 export const formatAsLabel = (countLabel: string) => {
-  return countLabel.replace(/Count$/, "").toUpperCase() as ObservationLevelType;
+  const normalized = countLabel.replace(/Count$/, "");
+  if (normalized === "policyViolation") {
+    return "POLICY_VIOLATION";
+  }
+  return normalized.toUpperCase() as ObservationLevelType;
 };

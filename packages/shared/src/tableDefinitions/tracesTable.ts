@@ -79,6 +79,7 @@ export const tracesOnlyCols: ColumnDefinition[] = [
       { value: "DEFAULT" },
       { value: "WARNING" },
       { value: "ERROR" },
+      { value: "POLICY_VIOLATION" },
     ] as { value: ObservationLevelType }[],
   },
   {

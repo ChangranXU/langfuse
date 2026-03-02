@@ -63,6 +63,7 @@ function getObservationLevels(minLevel: ObservationLevelType | undefined) {
     ObservationLevel.DEFAULT,
     ObservationLevel.WARNING,
     ObservationLevel.ERROR,
+    ObservationLevel.POLICY_VIOLATION,
   ];
 
   if (!minLevel) return ascendingLevels;

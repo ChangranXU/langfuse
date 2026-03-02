@@ -19,17 +19,26 @@ import { useSelection } from "../../contexts/SelectionContext";
 import { useTraceData } from "../../contexts/TraceDataContext";
 import { TraceDetailView } from "../TraceDetailView/TraceDetailView";
 import { ObservationDetailView } from "../ObservationDetailView/ObservationDetailView";
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useRef } from "react";
 
 export function TracePanelDetail() {
   const { selectedNodeId, setSelectedNodeId } = useSelection();
   const { trace, roots, nodeMap, observations, corrections } = useTraceData();
+  const hasAutoSelectedRootRef = useRef(false);
+
+  useEffect(() => {
+    hasAutoSelectedRootRef.current = false;
+  }, [trace.id]);
 
   // Auto-select first root observation when roots are observations (not TRACE wrapped)
   // This happens for events-based traces with observation roots
   useEffect(() => {
+    if (hasAutoSelectedRootRef.current) {
+      return;
+    }
     if (!selectedNodeId && roots.length > 0 && roots[0].type !== "TRACE") {
       setSelectedNodeId(roots[0].id);
+      hasAutoSelectedRootRef.current = true;
     }
   }, [selectedNodeId, roots, setSelectedNodeId]);
 

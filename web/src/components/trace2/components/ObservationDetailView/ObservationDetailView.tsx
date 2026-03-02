@@ -90,7 +90,7 @@ export function ObservationDetailView({
 
   // V4 beta mode and observations for log tab
   const { isBetaEnabled: isV4BetaEnabled } = useV4Beta();
-  const { observations, roots, nodeMap, observationIoSourceById } =
+  const { trace, observations, roots, nodeMap, observationIoSourceById } =
     useTraceData();
   const showLogViewTab = isV4BetaEnabled && observations.length > 0;
   const isLogViewVirtualized =
@@ -265,7 +265,9 @@ export function ObservationDetailView({
   }, [observation.latency, observation.startTime, observation.endTime]);
 
   const showGovernanceSplitPanel =
-    observation.level === "ERROR" || observation.level === "WARNING";
+    observation.level === "ERROR" ||
+    observation.level === "WARNING" ||
+    observation.level === "POLICY_VIOLATION";
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -505,6 +507,8 @@ export function ObservationDetailView({
               observationId={observation.id}
               level={observation.level}
               statusMessage={observation.statusMessage}
+              metadata={observation.metadata}
+              traceMetadata={trace.metadata}
               hasProjectAccess={hasProjectAccess}
             />
           </ResizablePanel>

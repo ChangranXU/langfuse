@@ -184,6 +184,7 @@ export type EventsTableProps = {
   limitRows?: number;
   sessionId?: string;
   forcedLevel?: ObservationLevelType;
+  forcedLevels?: ObservationLevelType[];
   disableDefaultTypeFilter?: boolean;
   clearTypeFilter?: boolean;
   filterQueryParamKey?: string;
@@ -216,6 +217,7 @@ export default function ObservationsEventsTable({
   limitRows,
   sessionId,
   forcedLevel,
+  forcedLevels,
   disableDefaultTypeFilter = false,
   clearTypeFilter = false,
   filterQueryParamKey,
@@ -238,6 +240,19 @@ export default function ObservationsEventsTable({
   const [isErrorTypeLoading, setIsErrorTypeLoading] = useState(false);
   const [selectedErrorType, setSelectedErrorType] = useState<string | null>(
     null,
+  );
+  const normalizedForcedLevels = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          forcedLevels && forcedLevels.length > 0
+            ? forcedLevels
+            : forcedLevel
+              ? [forcedLevel]
+              : [],
+        ),
+      ),
+    [forcedLevels, forcedLevel],
   );
   const { searchQuery, searchType, setSearchQuery, setSearchType } =
     useFullTextSearch();
@@ -455,16 +470,16 @@ export default function ObservationsEventsTable({
         next = next.filter((f) => String(f.column).toLowerCase() !== "type");
       }
 
-      // Analysis (forcedLevel) should always include nested observations.
+      // Analysis (forced levels) should always include nested observations.
       // Users may have an "Is Root Observation" facet persisted from other views (trace mode),
       // which maps to `hasParentObservation=false` and would otherwise hide most errors/warnings.
-      if (forcedLevel) {
+      if (normalizedForcedLevels.length > 0) {
         next = next.filter(
           (f) => String(f.column).toLowerCase() !== "hasparentobservation",
         );
       }
 
-      if (forcedLevel) {
+      if (normalizedForcedLevels.length > 0) {
         next = [
           // Stored filters may use either column id ("level") or display name ("Level").
           ...next.filter((f) => String(f.column).toLowerCase() !== "level"),
@@ -475,7 +490,7 @@ export default function ObservationsEventsTable({
             column: "level",
             type: "stringOptions",
             operator: "any of",
-            value: [forcedLevel],
+            value: normalizedForcedLevels,
           },
         ];
       }
@@ -499,14 +514,20 @@ export default function ObservationsEventsTable({
     },
     [
       clearTypeFilter,
-      forcedLevel,
+      normalizedForcedLevels,
       replaceLevelWithErrorType,
       selectedErrorType,
     ],
   );
 
   useEffect(() => {
-    if (!clearTypeFilter && !forcedLevel && !replaceLevelWithErrorType) return;
+    if (
+      !clearTypeFilter &&
+      normalizedForcedLevels.length === 0 &&
+      !replaceLevelWithErrorType
+    ) {
+      return;
+    }
     const next = upsertAnalysisFilters(queryFilter.filterState);
     if (
       serializeSidebarFilterState(next) !==
@@ -516,7 +537,7 @@ export default function ObservationsEventsTable({
     }
   }, [
     clearTypeFilter,
-    forcedLevel,
+    normalizedForcedLevels,
     replaceLevelWithErrorType,
     queryFilter.filterState,
     queryFilter.setFilterState,

@@ -75,6 +75,7 @@ export type TracesMetricsUiReturnType = {
   scores: ScoreAggregate;
   usageDetails: Record<string, number>;
   costDetails: Record<string, number>;
+  policyViolationCount: bigint;
   errorCount: bigint;
   warningCount: bigint;
   defaultCount: bigint;
@@ -135,6 +136,7 @@ export const convertToUITableMetrics = (
       ? new Decimal(row.cost_details.output)
       : null,
     level: row.level,
+    policyViolationCount: BigInt(row.policy_violation_count ?? 0),
     debugCount: BigInt(row.debug_count ?? 0),
     warningCount: BigInt(row.warning_count ?? 0),
     errorCount: BigInt(row.error_count ?? 0),
@@ -152,6 +154,7 @@ export type TracesTableMetricsClickhouseReturnType = {
   usage_details: Record<string, number>;
   cost_details: Record<string, number>;
   scores_avg: Array<{ name: string; avg_value: number }>;
+  policy_violation_count: number | null;
   error_count: number | null;
   warning_count: number | null;
   default_count: number | null;
@@ -288,11 +291,31 @@ async function getTracesTableGeneric(props: FetchTracesTableProps) {
         sumMap(usage_details) as usage_details,
         SUM(total_cost) AS total_cost,
         date_diff('millisecond', least(min(start_time), min(end_time)), greatest(max(start_time), max(end_time))) as latency_milliseconds,
+        countIf(
+          (
+            level = 'POLICY_VIOLATION'
+            OR lowerUTF8(ifNull(metadata['policy_violation'], '')) IN ('true', '1')
+          )
+          AND (
+            startsWith(ifNull(metadata['parser_stage'], ''), 'pre_')
+            OR ifNull(metadata['node_type'], '') = 'output'
+          )
+        ) as policy_violation_count,
         countIf(level = 'ERROR') as error_count,
         countIf(level = 'WARNING') as warning_count,
         countIf(level = 'DEFAULT') as default_count,
         countIf(level = 'DEBUG') as debug_count,
         multiIf(
+          countIf(
+            (
+              level = 'POLICY_VIOLATION'
+              OR lowerUTF8(ifNull(metadata['policy_violation'], '')) IN ('true', '1')
+            )
+            AND (
+              startsWith(ifNull(metadata['parser_stage'], ''), 'pre_')
+              OR ifNull(metadata['node_type'], '') = 'output'
+            )
+          ) > 0, 'POLICY_VIOLATION',
           arrayExists(x -> x = 'ERROR', groupArray(level)), 'ERROR',
           arrayExists(x -> x = 'WARNING', groupArray(level)), 'WARNING',
           arrayExists(x -> x = 'DEFAULT', groupArray(level)), 'DEFAULT',
@@ -365,6 +388,7 @@ async function getTracesTableGeneric(props: FetchTracesTableProps) {
             o.cost_details as cost_details,
             o.usage_details as usage_details,
             o.aggregated_level as level,
+            o.policy_violation_count as policy_violation_count,
             o.error_count as error_count,
             o.warning_count as warning_count,
             o.default_count as default_count,

@@ -98,11 +98,31 @@ export const checkTraceExistsAndGetTimestamp = async ({
     WITH observations_agg AS (
       SELECT
         multiIf(
+          countIf(
+            (
+              level = 'POLICY_VIOLATION'
+              OR lowerUTF8(ifNull(metadata['policy_violation'], '')) IN ('true', '1')
+            )
+            AND (
+              startsWith(ifNull(metadata['parser_stage'], ''), 'pre_')
+              OR ifNull(metadata['node_type'], '') = 'output'
+            )
+          ) > 0, 'POLICY_VIOLATION',
           arrayExists(x -> x = 'ERROR', groupArray(level)), 'ERROR',
           arrayExists(x -> x = 'WARNING', groupArray(level)), 'WARNING',
           arrayExists(x -> x = 'DEFAULT', groupArray(level)), 'DEFAULT',
           'DEBUG'
         ) AS aggregated_level,
+        countIf(
+          (
+            level = 'POLICY_VIOLATION'
+            OR lowerUTF8(ifNull(metadata['policy_violation'], '')) IN ('true', '1')
+          )
+          AND (
+            startsWith(ifNull(metadata['parser_stage'], ''), 'pre_')
+            OR ifNull(metadata['node_type'], '') = 'output'
+          )
+        ) as policy_violation_count,
         countIf(level = 'ERROR') as error_count,
         countIf(level = 'WARNING') as warning_count,
         countIf(level = 'DEFAULT') as default_count,

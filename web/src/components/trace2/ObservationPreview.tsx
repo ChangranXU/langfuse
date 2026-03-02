@@ -484,16 +484,17 @@ export const ObservationPreview = ({
                 />
               </div>
               <div>
-                {preloadedObservation.statusMessage && (
-                  <PrettyJsonView
-                    key={preloadedObservation.id + "-status"}
-                    title="Status Message"
-                    json={preloadedObservation.statusMessage}
-                    currentView={
-                      currentView === "json-beta" ? "pretty" : currentView
-                    }
-                  />
-                )}
+                {preloadedObservation.statusMessage &&
+                  preloadedObservation.level !== "POLICY_VIOLATION" && (
+                    <PrettyJsonView
+                      key={preloadedObservation.id + "-status"}
+                      title="Status Message"
+                      json={preloadedObservation.statusMessage}
+                      currentView={
+                        currentView === "json-beta" ? "pretty" : currentView
+                      }
+                    />
+                  )}
               </div>
               <div className="px-2">
                 {observationWithIO?.metadata && (

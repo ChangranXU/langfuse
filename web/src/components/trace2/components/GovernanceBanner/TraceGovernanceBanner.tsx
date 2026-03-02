@@ -6,6 +6,95 @@ import { useSelection } from "@/src/components/trace2/contexts/SelectionContext"
 
 const GOVERNANCE_REFRESH_INTERVAL_MS = 5_000;
 
+function getMetadataRecord(metadata: unknown): Record<string, unknown> {
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    return metadata as Record<string, unknown>;
+  }
+
+  if (typeof metadata === "string") {
+    try {
+      const parsed = JSON.parse(metadata);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // no-op
+    }
+  }
+
+  return {};
+}
+
+function derivePolicyViolationTags(metadata: unknown): string[] {
+  const record = getMetadataRecord(metadata);
+  const tags: string[] = [];
+  const rawTags = record.policy_violation_tags;
+  if (Array.isArray(rawTags)) {
+    tags.push(
+      ...rawTags.filter(
+        (tag): tag is string => typeof tag === "string" && !!tag,
+      ),
+    );
+  }
+
+  const policyProtected = record.policy_protected;
+  if (typeof policyProtected === "string" && policyProtected.trim()) {
+    const lowered = policyProtected.toLowerCase();
+    tags.push("policy_protected");
+    if (lowered.includes("hard_code")) tags.push("hard_code");
+    if (lowered.includes(".env")) tags.push("dotenv");
+    if (lowered.includes("read path")) tags.push("read_path");
+  }
+
+  return [...new Set(tags)];
+}
+
+function derivePolicyViolationType(tags: string[]): string {
+  const priority = ["hard_code", "dotenv", "read_path", "policy_protected"];
+  for (const candidate of priority) {
+    if (tags.includes(candidate)) return candidate;
+  }
+  return tags[0] ?? "policy_violation";
+}
+
+function getPolicyViolationFlag(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1";
+  }
+  return false;
+}
+
+function isPolicyCheckNode(record: Record<string, unknown>): boolean {
+  const parserStage =
+    typeof record.parser_stage === "string"
+      ? record.parser_stage.trim()
+      : typeof record.parserStage === "string"
+        ? record.parserStage.trim()
+        : "";
+  const nodeType =
+    typeof record.node_type === "string"
+      ? record.node_type
+      : typeof record.nodeType === "string"
+        ? record.nodeType
+        : "";
+  return parserStage.startsWith("pre_") || nodeType === "output";
+}
+
+function isPolicyViolationObservation(params: {
+  level: string | null | undefined;
+  metadata: unknown;
+}): boolean {
+  const metadataRecord = getMetadataRecord(params.metadata);
+  const hasViolationSignal =
+    params.level === "POLICY_VIOLATION" ||
+    getPolicyViolationFlag(metadataRecord.policy_violation);
+  if (!hasViolationSignal) return false;
+  return isPolicyCheckNode(metadataRecord);
+}
+
 export function TraceGovernanceBanner() {
   const { trace, observations } = useTraceData();
   const { selectedNodeId, setSelectedNodeId } = useSelection();
@@ -17,6 +106,8 @@ export function TraceGovernanceBanner() {
   const [expandedErrorType, setExpandedErrorType] = useState<string | null>(
     null,
   );
+  const [expandedPolicyViolationType, setExpandedPolicyViolationType] =
+    useState<string | null>(null);
 
   const errorAnalysisSettingsQuery =
     api.projects.getErrorAnalysisSettings.useQuery(
@@ -28,7 +119,23 @@ export function TraceGovernanceBanner() {
       },
     );
 
-  const { errorCount, warningCount, errorObservationIds } = useMemo(() => {
+  const policyViolationObservations = useMemo(() => {
+    const strict = observations.filter((obs) =>
+      isPolicyViolationObservation({
+        level: obs.level,
+        metadata: obs.metadata,
+      }),
+    );
+    if (strict.length > 0) return strict;
+    return observations.filter((obs) => obs.level === "POLICY_VIOLATION");
+  }, [observations]);
+
+  const {
+    errorCount,
+    warningCount,
+    policyViolationCount,
+    errorObservationIds,
+  } = useMemo(() => {
     const errorObservations = observations.filter(
       (obs) => obs.level === "ERROR",
     );
@@ -36,13 +143,15 @@ export function TraceGovernanceBanner() {
     const warningCount = observations.filter(
       (obs) => obs.level === "WARNING",
     ).length;
+    const policyViolationCount = policyViolationObservations.length;
 
     return {
       errorCount,
       warningCount,
+      policyViolationCount,
       errorObservationIds: errorObservations.map((obs) => obs.id),
     };
-  }, [observations]);
+  }, [observations, policyViolationObservations]);
 
   useEffect(() => {
     if (!hasProjectAccess || errorObservationIds.length === 0) {
@@ -152,6 +261,61 @@ export function TraceGovernanceBanner() {
     }
   }, [errorGroups, expandedErrorType]);
 
+  const policyViolationGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        type: string;
+        count: number;
+        nodes: Array<{ id: string; label: string; tags: string[] }>;
+      }
+    >();
+
+    policyViolationObservations.forEach((obs) => {
+      const tags = derivePolicyViolationTags(obs.metadata);
+      const type = derivePolicyViolationType(tags);
+      const node = {
+        id: obs.id,
+        label: obs.name?.trim() || obs.id,
+        tags,
+      };
+      const existing = groups.get(type);
+      if (existing) {
+        existing.count += 1;
+        existing.nodes.push(node);
+      } else {
+        groups.set(type, {
+          type,
+          count: 1,
+          nodes: [node],
+        });
+      }
+    });
+
+    return [...groups.values()].sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.type.localeCompare(b.type);
+    });
+  }, [policyViolationObservations]);
+
+  const activePolicyViolationGroup = useMemo(
+    () =>
+      policyViolationGroups.find(
+        (group) => group.type === expandedPolicyViolationType,
+      ) ?? null,
+    [policyViolationGroups, expandedPolicyViolationType],
+  );
+
+  useEffect(() => {
+    if (!expandedPolicyViolationType) return;
+    const stillExists = policyViolationGroups.some(
+      (group) => group.type === expandedPolicyViolationType,
+    );
+    if (!stillExists) {
+      setExpandedPolicyViolationType(null);
+    }
+  }, [policyViolationGroups, expandedPolicyViolationType]);
+
   const enhancedGovernanceEnabled =
     errorAnalysisSettingsQuery.data?.enabled === true;
   return (
@@ -167,13 +331,21 @@ export function TraceGovernanceBanner() {
         ) : null}
       </div>
       <div className="mt-1 text-sm text-muted-foreground">
-        Governance Summary: {errorCount} errors, {warningCount} warnings across{" "}
-        {observations.length} nodes.
+        Governance Summary:{" "}
+        <span className="font-bold text-foreground">{errorCount}</span> errors,{" "}
+        <span className="font-bold text-foreground">{warningCount}</span>{" "}
+        warnings,{" "}
+        <span className="font-bold text-foreground">
+          {policyViolationCount}
+        </span>{" "}
+        policy violations across{" "}
+        <span className="font-bold text-foreground">{observations.length}</span>{" "}
+        nodes.
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
         <span>Error node types:</span>
         {errorCount === 0 ? (
-          <span>none</span>
+          <span className="font-bold text-foreground">none</span>
         ) : !hasProjectAccess ? (
           <span>unavailable (project access required)</span>
         ) : isErrorTypeLoading && errorGroups.length === 0 ? (
@@ -202,6 +374,71 @@ export function TraceGovernanceBanner() {
           })
         )}
       </div>
+      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+        <span>Policy violation node types:</span>
+        {policyViolationCount === 0 ? (
+          <span>none</span>
+        ) : (
+          policyViolationGroups.map((group) => {
+            const isActive = expandedPolicyViolationType === group.type;
+            return (
+              <button
+                key={group.type}
+                type="button"
+                className={`rounded-md border px-2 py-0.5 text-xs font-medium transition-colors ${
+                  isActive
+                    ? "border-amber-500 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                    : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-900/40"
+                }`}
+                onClick={() =>
+                  setExpandedPolicyViolationType((prev) =>
+                    prev === group.type ? null : group.type,
+                  )
+                }
+              >
+                {group.type}({group.count})
+              </button>
+            );
+          })
+        )}
+      </div>
+      {activePolicyViolationGroup ? (
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/40 p-2 dark:border-amber-900 dark:bg-amber-950/20">
+          <div className="mb-1 text-xs font-medium text-muted-foreground">
+            {activePolicyViolationGroup.type} nodes (
+            {activePolicyViolationGroup.count})
+          </div>
+          <div className="max-h-40 space-y-1 overflow-y-auto">
+            {activePolicyViolationGroup.nodes.map((node) => {
+              const isSelected = selectedNodeId === node.id;
+              return (
+                <button
+                  key={node.id}
+                  type="button"
+                  className={`flex w-full flex-wrap items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
+                    isSelected
+                      ? "bg-primary/10 text-primary"
+                      : "text-foreground hover:bg-muted"
+                  }`}
+                  onClick={() => setSelectedNodeId(node.id)}
+                >
+                  <span className="line-clamp-1 break-all">{node.label}</span>
+                  <span className="flex flex-wrap items-center gap-1">
+                    {node.tags.map((tag) => (
+                      <span
+                        key={`${node.id}-${tag}`}
+                        className="rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
       {activeErrorGroup ? (
         <div className="mt-2 rounded-md border border-red-200 bg-red-50/40 p-2 dark:border-red-900 dark:bg-red-950/20">
           <div className="mb-1 text-xs font-medium text-muted-foreground">

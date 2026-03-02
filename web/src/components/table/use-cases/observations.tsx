@@ -153,6 +153,7 @@ export type ObservationsTableProps = {
   modelId?: string;
   omittedFilter?: string[];
   forcedLevel?: ObservationLevelType;
+  forcedLevels?: ObservationLevelType[];
   disableDefaultTypeFilter?: boolean;
   clearTypeFilter?: boolean;
   filterQueryParamKey?: string;
@@ -178,6 +179,7 @@ export default function ObservationsTable({
   promptVersion,
   modelId,
   forcedLevel,
+  forcedLevels,
   disableDefaultTypeFilter = false,
   clearTypeFilter = false,
   filterQueryParamKey,
@@ -204,6 +206,19 @@ export default function ObservationsTable({
   const [isErrorTypeLoading, setIsErrorTypeLoading] = useState(false);
   const [selectedErrorType, setSelectedErrorType] = useState<string | null>(
     null,
+  );
+  const normalizedForcedLevels = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          forcedLevels && forcedLevels.length > 0
+            ? forcedLevels
+            : forcedLevel
+              ? [forcedLevel]
+              : [],
+        ),
+      ),
+    [forcedLevels, forcedLevel],
   );
   const [rawRefreshInterval, setRawRefreshInterval] =
     useSessionStorage<RefreshInterval>(
@@ -440,7 +455,7 @@ export default function ObservationsTable({
           value: tn.value,
           count: tn.count !== undefined ? Number(tn.count) : undefined,
         })) ?? undefined,
-      level: ["DEFAULT", "DEBUG", "WARNING", "ERROR"],
+      level: ["DEFAULT", "DEBUG", "WARNING", "ERROR", "POLICY_VIOLATION"],
       errorType:
         filterOptions.data?.errorType?.map((t) => ({
           value: t.value,
@@ -537,7 +552,7 @@ export default function ObservationsTable({
         next = next.filter((f) => String(f.column).toLowerCase() !== "type");
       }
 
-      if (forcedLevel) {
+      if (normalizedForcedLevels.length > 0) {
         next = [
           // Stored filters may use either column id ("level") or display name ("Level").
           ...next.filter((f) => String(f.column).toLowerCase() !== "level"),
@@ -548,7 +563,7 @@ export default function ObservationsTable({
             column: "level",
             type: "stringOptions",
             operator: "any of",
-            value: [forcedLevel],
+            value: normalizedForcedLevels,
           },
         ];
       }
@@ -572,14 +587,20 @@ export default function ObservationsTable({
     },
     [
       clearTypeFilter,
-      forcedLevel,
+      normalizedForcedLevels,
       replaceLevelWithErrorType,
       selectedErrorType,
     ],
   );
 
   useEffect(() => {
-    if (!clearTypeFilter && !forcedLevel && !replaceLevelWithErrorType) return;
+    if (
+      !clearTypeFilter &&
+      normalizedForcedLevels.length === 0 &&
+      !replaceLevelWithErrorType
+    ) {
+      return;
+    }
     const next = upsertAnalysisFilters(queryFilter.filterState);
     if (
       serializeSidebarFilterState(next) !==
@@ -589,7 +610,7 @@ export default function ObservationsTable({
     }
   }, [
     clearTypeFilter,
-    forcedLevel,
+    normalizedForcedLevels,
     replaceLevelWithErrorType,
     queryFilter.filterState,
     queryFilter.setFilterState,

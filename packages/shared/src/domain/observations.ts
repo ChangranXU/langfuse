@@ -34,12 +34,14 @@ export const ObservationLevel = {
   DEFAULT: "DEFAULT",
   WARNING: "WARNING",
   ERROR: "ERROR",
+  POLICY_VIOLATION: "POLICY_VIOLATION",
 } as const;
 export const ObservationLevelDomain = z.enum([
   "DEBUG",
   "DEFAULT",
   "WARNING",
   "ERROR",
+  "POLICY_VIOLATION",
 ]);
 export type ObservationLevelType = z.infer<typeof ObservationLevelDomain>;
 

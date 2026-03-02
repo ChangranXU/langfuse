@@ -80,6 +80,13 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
     nodeType: string;
     level?: string | null;
   }) => {
+    if (params.level === "POLICY_VIOLATION") {
+      return {
+        border: "#b91c1c", // red-700
+        background: "#fee2e2", // red-100
+        highlight: { border: "#991b1b", background: "#fecaca" }, // red-800 / red-200
+      };
+    }
     if (params.level === "ERROR") {
       return {
         border: "#b91c1c", // red-700
@@ -229,8 +236,9 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                 : null,
               (node.metadataSummary.errorCount ?? 0) > 0 ||
               (node.metadataSummary.warningCount ?? 0) > 0 ||
+              (node.metadataSummary.policyViolationCount ?? 0) > 0 ||
               (node.metadataSummary.parserInconsistencyCount ?? 0) > 0
-                ? `Risk: E${node.metadataSummary.errorCount ?? 0} W${node.metadataSummary.warningCount ?? 0} P${node.metadataSummary.parserInconsistencyCount ?? 0}`
+                ? `Risk: E${node.metadataSummary.errorCount ?? 0} W${node.metadataSummary.warningCount ?? 0} V${node.metadataSummary.policyViolationCount ?? 0} P${node.metadataSummary.parserInconsistencyCount ?? 0}`
                 : null,
             ].filter((line): line is string => Boolean(line))
           : [];

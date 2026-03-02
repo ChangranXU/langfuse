@@ -255,6 +255,7 @@ export function buildGraphFromStepData(
     const obs = observations[0];
 
     const severityRank = (level?: string | null) => {
+      if (level === "POLICY_VIOLATION") return 4;
       if (level === "ERROR") return 3;
       if (level === "WARNING") return 2;
       if (level === "DEFAULT") return 1;
@@ -267,6 +268,8 @@ export function buildGraphFromStepData(
         .sort((a, b) => severityRank(b) - severityRank(a))[0] ?? null;
 
     const firstErrorStatus =
+      observations.find((o) => o?.level === "POLICY_VIOLATION")
+        ?.statusMessage ??
       observations.find((o) => o?.level === "ERROR")?.statusMessage ??
       observations.find((o) => o?.level === "WARNING")?.statusMessage ??
       null;
@@ -327,6 +330,18 @@ export function buildGraphFromStepData(
   const TOOL_RESULT_UI_NODE_RE = /^parser\.(?<toolName>[^.]+)\.(?<index>\d+)$/;
   const TOOL_PRE_UI_NODE_RE = /^parser\.pre_(?<toolName>[^.]+)\.(?<index>\d+)$/;
   const STRUCTURED_OUTPUT_UI_NODE_RE = /^parser\.turn_\d+\.structured_output$/;
+  const isKernelLikeObservation = (params: {
+    observationName: string | null | undefined;
+    normalizedNodeName: string;
+  }) => {
+    const { observationName, normalizedNodeName } = params;
+    const rawName = typeof observationName === "string" ? observationName : "";
+    return (
+      rawName.includes(" - kernel.") ||
+      rawName.includes("kernel.") ||
+      normalizedNodeName.includes("kernel.")
+    );
+  };
 
   let latestKernelNodeName: string | null = null;
   let activeTurnIndex = 0;
@@ -390,7 +405,12 @@ export function buildGraphFromStepData(
     }
 
     // Track kernel nodes (topic - kernel.xxx)
-    if (typeof o.name === "string" && o.name.includes(" - kernel.")) {
+    if (
+      isKernelLikeObservation({
+        observationName: o.name,
+        normalizedNodeName: o.normalizedNodeName,
+      })
+    ) {
       if (nodeExists(o.normalizedNodeName)) {
         latestKernelNodeName = o.normalizedNodeName;
       }
@@ -456,7 +476,12 @@ export function buildGraphFromStepData(
       }
 
       // Record kernel nodes for this turn.
-      if (typeof o.name === "string" && o.name.includes(" - kernel.")) {
+      if (
+        isKernelLikeObservation({
+          observationName: o.name,
+          normalizedNodeName: o.normalizedNodeName,
+        })
+      ) {
         latestKernelByTurn.set(activeTurn.nodeName, o.normalizedNodeName);
       }
 
@@ -795,6 +820,21 @@ export function buildHierarchyGraphFromStepData(params: {
       metadata,
       candidateKeys: [["node_type"], ["nodeType"]],
     });
+  const isKernelObservation = (params: {
+    observation: AgentGraphDataResponse | undefined;
+    metadata: Record<string, unknown> | null;
+  }) => {
+    const { observation, metadata } = params;
+    const observationName =
+      typeof observation?.name === "string" ? observation.name : null;
+    const metadataNodeType = getMetadataNodeType(metadata);
+    return (
+      metadataNodeType === "kernel_step" ||
+      (typeof observationName === "string" &&
+        (observationName.includes(" - kernel.") ||
+          observationName.includes("kernel.")))
+    );
+  };
 
   for (const turnWindow of turnWindows) {
     const observationIds = nodeToObservationsMap.get(turnWindow.nodeName) ?? [];
@@ -809,12 +849,13 @@ export function buildHierarchyGraphFromStepData(params: {
     const toolCount = turnMetadataSummary.toolCount ?? 0;
     const errorCount = turnMetadataSummary.errorCount ?? 0;
     const warningCount = turnMetadataSummary.warningCount ?? 0;
+    const policyViolationCount = turnMetadataSummary.policyViolationCount ?? 0;
     const parserInconsistencyCount =
       turnMetadataSummary.parserInconsistencyCount ?? 0;
     const hasPolicyBlock = turnMetadataSummary.policy?.hasBlock ?? false;
 
     const level =
-      errorCount > 0 || hasPolicyBlock
+      errorCount > 0 || policyViolationCount > 0 || hasPolicyBlock
         ? "ERROR"
         : warningCount > 0 || parserInconsistencyCount > 0
           ? "WARNING"
@@ -840,6 +881,9 @@ export function buildHierarchyGraphFromStepData(params: {
       `Tool nodes: ${toolCount}`,
       errorCount > 0 ? `Errors: ${errorCount}` : null,
       warningCount > 0 ? `Warnings: ${warningCount}` : null,
+      policyViolationCount > 0
+        ? `Policy violations: ${policyViolationCount}`
+        : null,
       parserInconsistencyCount > 0
         ? `Parser consistency issues: ${parserInconsistencyCount}`
         : null,
@@ -977,14 +1021,11 @@ export function buildHierarchyGraphFromStepData(params: {
       }
     }
 
-    // Result node: only bind to "topic - kernel.xxx" observation for concise UX.
+    // Result node: prefer kernel-step observations (with or without topic prefix).
     const kernelObservationIds = observationIds.filter((id) => {
       const observation = observationsById.get(id);
-      return Boolean(
-        observation?.name &&
-          typeof observation.name === "string" &&
-          observation.name.includes(" - kernel."),
-      );
+      const metadata = getMetadata(id);
+      return isKernelObservation({ observation, metadata });
     });
     const resultObservationId =
       kernelObservationIds[kernelObservationIds.length - 1];
@@ -1153,6 +1194,7 @@ function buildTurnMetadataSummary(params: {
   >();
   let errorCount = 0;
   let warningCount = 0;
+  let policyViolationCount = 0;
   let parserInconsistencyCount = 0;
   let minStartMs = Number.POSITIVE_INFINITY;
   let maxEndMs = Number.NEGATIVE_INFINITY;
@@ -1229,6 +1271,8 @@ function buildTurnMetadataSummary(params: {
 
     if (observation.level === "ERROR") {
       errorCount++;
+    } else if (observation.level === "POLICY_VIOLATION") {
+      policyViolationCount++;
     } else if (observation.level === "WARNING") {
       warningCount++;
     }
@@ -1466,6 +1510,7 @@ function buildTurnMetadataSummary(params: {
     toolBreakdown,
     errorCount,
     warningCount,
+    policyViolationCount,
     parserInconsistencyCount,
     durationMs,
     policy,

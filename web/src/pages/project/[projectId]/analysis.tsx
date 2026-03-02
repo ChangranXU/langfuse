@@ -9,14 +9,17 @@ import ObservationsEventsTable from "@/src/features/events/components/EventsTabl
 import ObservationsTable from "@/src/components/table/use-cases/observations";
 import type { ObservationLevelType } from "@langfuse/shared";
 
-type AnalysisTab = "error" | "warning";
+type AnalysisTab = "error_warning" | "policy_violation";
 
-function toLevel(tab: AnalysisTab): ObservationLevelType {
-  return tab === "warning" ? "WARNING" : "ERROR";
+function toLevels(tab: AnalysisTab): ObservationLevelType[] {
+  return tab === "policy_violation"
+    ? ["POLICY_VIOLATION"]
+    : ["ERROR", "WARNING"];
 }
 
 function parseTab(value: unknown): AnalysisTab {
-  return value === "warning" ? "warning" : "error";
+  if (value === "policy_violation") return "policy_violation";
+  return "error_warning";
 }
 
 export default function AnalysisPage() {
@@ -26,7 +29,7 @@ export default function AnalysisPage() {
     () => parseTab(router.query.analysisLevel),
     [router.query.analysisLevel],
   );
-  const forcedLevel = useMemo(() => toLevel(tab), [tab]);
+  const forcedLevels = useMemo(() => toLevels(tab), [tab]);
   const { isBetaEnabled } = useV4Beta();
   const omittedAnalysisColumns = useMemo(
     () => [
@@ -67,7 +70,7 @@ export default function AnalysisPage() {
           query: {
             ...router.query,
             analysisLevel: nextTab,
-            // Reset pagination when switching between error/warning
+            // Reset pagination when switching analysis tabs
             pageIndex: 0,
             page: 1,
           },
@@ -93,8 +96,10 @@ export default function AnalysisPage() {
           <div className="flex items-center justify-between px-3 pt-3">
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
-                <TabsTrigger value="error">Error</TabsTrigger>
-                <TabsTrigger value="warning">Warning</TabsTrigger>
+                <TabsTrigger value="error_warning">Error & Warning</TabsTrigger>
+                <TabsTrigger value="policy_violation">
+                  Policy Violation
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -103,27 +108,27 @@ export default function AnalysisPage() {
             {isBetaEnabled ? (
               <ObservationsEventsTable
                 projectId={projectId}
-                forcedLevel={forcedLevel}
+                forcedLevels={forcedLevels}
                 disableDefaultTypeFilter
                 clearTypeFilter
                 defaultSidebarCollapsed
-                replaceLevelWithErrorType
+                replaceLevelWithErrorType={tab === "error_warning"}
                 omittedColumns={omittedAnalysisColumns}
                 forceViewMode="observation"
                 showOpenTraceButton
-                showBulkAnalysisButton
+                showBulkAnalysisButton={tab === "error_warning"}
               />
             ) : (
               <ObservationsTable
                 projectId={projectId}
-                forcedLevel={forcedLevel}
+                forcedLevels={forcedLevels}
                 disableDefaultTypeFilter
                 clearTypeFilter
                 defaultSidebarCollapsed
-                replaceLevelWithErrorType
+                replaceLevelWithErrorType={tab === "error_warning"}
                 omittedColumns={omittedAnalysisColumns}
                 showOpenTraceButton
-                showBulkAnalysisButton
+                showBulkAnalysisButton={tab === "error_warning"}
               />
             )}
           </div>

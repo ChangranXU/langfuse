@@ -89,6 +89,7 @@ export type TracesTableRow = {
   timestamp: Date;
   name: string;
   levelCounts: {
+    policyViolationCount?: bigint;
     errorCount?: bigint;
     warningCount?: bigint;
     debugCount?: bigint;
@@ -303,7 +304,7 @@ export default function TracesTable({
       environment:
         environmentFilterOptions.data?.map((value) => value.environment) ??
         undefined,
-      level: ["DEFAULT", "DEBUG", "WARNING", "ERROR"],
+      level: ["DEFAULT", "DEBUG", "WARNING", "ERROR", "POLICY_VIOLATION"],
       bookmarked: ["Bookmarked", "Not bookmarked"],
       userId:
         traceFilterOptionsResponse.data?.users?.map((u) => ({
@@ -1113,6 +1114,7 @@ export default function TracesTable({
               totalUsage: trace.totalTokens,
             },
             levelCounts: {
+              policyViolationCount: trace.policyViolationCount,
               errorCount: trace.errorCount,
               warningCount: trace.warningCount,
               defaultCount: trace.defaultCount,

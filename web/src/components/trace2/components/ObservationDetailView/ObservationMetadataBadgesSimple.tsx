@@ -62,7 +62,7 @@ export function LevelBadge({ level }: { level: string | null | undefined }) {
       variant={
         level === "ERROR"
           ? "destructive"
-          : level === "WARNING"
+          : level === "WARNING" || level === "POLICY_VIOLATION"
             ? "warning"
             : "tertiary"
       }
@@ -74,10 +74,12 @@ export function LevelBadge({ level }: { level: string | null | undefined }) {
 
 export function StatusMessageBadge({
   statusMessage,
+  level,
 }: {
   statusMessage: string | null | undefined;
+  level?: string | null | undefined;
 }) {
-  if (!statusMessage) return null;
+  if (!statusMessage || level === "POLICY_VIOLATION") return null;
 
   return (
     <Badge

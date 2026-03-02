@@ -179,10 +179,21 @@ function slugifyErrorTypeKey(input: string): string {
   return safe.slice(0, 48);
 }
 
-type ErrorTypeKey = keyof typeof ERROR_TYPE_CATALOG;
-
 function inferErrorTypeKeyFromText(text: string): ErrorTypeKey {
   const s = text.toLowerCase();
+
+  // File/path I/O failures are usually tool execution failures (not "model_not_found").
+  if (
+    s.includes("file not found") ||
+    s.includes("no such file or directory") ||
+    s.includes("enoent") ||
+    s.includes("permission denied") ||
+    s.includes("eacces") ||
+    s.includes("is a directory") ||
+    s.includes("enotdir")
+  ) {
+    return "tool_execution_error";
+  }
 
   if (
     s.includes("maximum context") ||
@@ -213,19 +224,26 @@ function inferErrorTypeKeyFromText(text: string): ErrorTypeKey {
     s.includes("forbidden") ||
     s.includes("invalid api key") ||
     s.includes("authentication") ||
-    s.includes("permission") ||
     s.includes("401") ||
     s.includes("403")
   ) {
     return "auth_error";
   }
 
+  // Avoid mapping generic "not found" (e.g. "File not found") to model_not_found.
+  // Only classify model_not_found when the missing entity is explicitly a model/deployment.
+  const hasModelContext =
+    s.includes("model") ||
+    s.includes("deployment") ||
+    s.includes("engine") ||
+    s.includes("endpoint");
   if (
     s.includes("model not found") ||
     s.includes("unknown model") ||
-    s.includes("does not exist") ||
-    s.includes("not found") ||
-    s.includes("404")
+    (hasModelContext &&
+      (s.includes("does not exist") ||
+        s.includes("not found") ||
+        s.includes("404")))
   ) {
     return "model_not_found";
   }
@@ -508,6 +526,51 @@ function normalizeAndCoerceResult(raw: unknown): unknown {
     preventionNextCall: coerceToStringArray(normalized.preventionNextCall),
     relevantObservations: coerceToStringArray(normalized.relevantObservations),
     contextSufficient: coerceBoolean(normalized.contextSufficient),
+    confidence: coerceConfidence(normalized.confidence),
+  };
+}
+
+function normalizeAndCoerceTypeClassificationResult(raw: unknown): unknown {
+  if (raw == null) return raw;
+  let parsed: unknown = raw;
+  if (typeof parsed === "string") {
+    try {
+      parsed = parseJsonObjectFromCompletion(parsed);
+    } catch {
+      // keep original string
+    }
+  }
+  if (!parsed || typeof parsed !== "object") return parsed;
+  const obj = parsed as Record<string, unknown>;
+
+  const selectedType =
+    obj.selectedType ??
+    obj.selected_type ??
+    obj.selected ??
+    obj.type ??
+    obj.errorType ??
+    obj.error_type;
+
+  const normalized: Record<string, unknown> = {
+    ...obj,
+    selectedType,
+    otherTypeLabel:
+      obj.otherTypeLabel ?? obj.other_type_label ?? obj.otherLabel,
+    otherTypeDescription:
+      obj.otherTypeDescription ??
+      obj.other_type_description ??
+      obj.otherDescription,
+    why: obj.why ?? obj.reason ?? obj.rationale ?? obj.explanation,
+    confidence: obj.confidence ?? obj.confidenceScore ?? obj.confidence_score,
+  };
+
+  return {
+    ...normalized,
+    selectedType: coerceToString(normalized.selectedType).trim(),
+    otherTypeLabel: coerceToString(normalized.otherTypeLabel).trim() || null,
+    otherTypeDescription:
+      coerceToString(normalized.otherTypeDescription).trim() || null,
+    why: coerceToString(normalized.why),
     confidence: coerceConfidence(normalized.confidence),
   };
 }
@@ -861,6 +924,10 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
         current.output == null
           ? null
           : truncateString(safeStringify(current.output), 2_000),
+      metadata:
+        current.metadata == null
+          ? null
+          : truncateString(safeStringify(current.metadata), 2_000),
     };
 
     const messagesForType: ChatMessage[] = [
@@ -868,7 +935,7 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
         type: ChatMessageType.System,
         role: ChatMessageRole.System,
         content:
-          "You are an expert at classifying error/warning types in LLM traces. Return ONLY the structured JSON object that matches the provided schema.",
+          "You are an expert at classifying error/warning types in LLM traces. Return ONLY the structured JSON object that matches the provided schema.\n\nGuidance:\n- If the observation is a TOOL (or the name indicates a tool call) and it failed with file/path I/O errors (e.g. file not found, permission denied), classify as tool_execution_error.\n- Only use model_not_found when the missing thing is explicitly a model/deployment (e.g. provider message about an unavailable model, or HTTP 404 for a model/deployment endpoint). Do NOT treat generic 'not found' as model_not_found.",
       },
       {
         type: ChatMessageType.User,
@@ -879,7 +946,7 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
           observation: observationPreview,
           typeCatalog,
           instruction:
-            "Classify the error/warning type. Choose from the catalog. If none match well, set selectedType=OTHER and propose a short label + description.",
+            "Classify the error/warning type. Choose from the catalog. If none match well, set selectedType=OTHER and propose a short label + description. Be careful with 'not found': file/path not found -> tool_execution_error; only model/deployment not found -> model_not_found.",
         }),
       },
     ];
@@ -927,7 +994,68 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
           : fallbackCompletion;
     }
 
-    const parsedType = ErrorTypeClassificationResultSchema.safeParse(rawType);
+    // LLM-first: normalize/coerce common variants before giving up to heuristics.
+    let parsedType = ErrorTypeClassificationResultSchema.safeParse(
+      normalizeAndCoerceTypeClassificationResult(rawType),
+    );
+    if (!parsedType.success) {
+      // One more LLM attempt to correct shape if the model returned invalid keys/format.
+      const repairMessages: ChatMessage[] = [
+        {
+          type: ChatMessageType.System,
+          role: ChatMessageRole.System,
+          content:
+            "You will be given an object that is intended to match a JSON schema for error type classification but may be invalid. Rewrite it to EXACTLY match the schema keys and allowed values. Return ONLY JSON.",
+        },
+        {
+          type: ChatMessageType.User,
+          role: ChatMessageRole.User,
+          content: safeStringify({
+            original: rawType,
+            schema: {
+              selectedType: ERROR_TYPE_CHOICES,
+              otherTypeLabel:
+                "string (required only when selectedType=OTHER, else omit or null)",
+              otherTypeDescription:
+                "string (required only when selectedType=OTHER, else omit or null)",
+              why: "string",
+              confidence: "number 0..1",
+            },
+          }),
+        },
+      ];
+      try {
+        const repairCompletion = await fetchLLMCompletion({
+          llmConnection: parsedKey.data,
+          messages: repairMessages,
+          modelParams: {
+            provider: parsedKey.data.provider,
+            adapter: LLMAdapter.OpenAI,
+            model: modelName,
+            temperature: 0,
+            max_tokens: 220,
+          },
+          streaming: false,
+        });
+        const repaired =
+          typeof repairCompletion === "string"
+            ? parseJsonObjectFromCompletion(repairCompletion)
+            : repairCompletion;
+        parsedType = ErrorTypeClassificationResultSchema.safeParse(
+          normalizeAndCoerceTypeClassificationResult(repaired),
+        );
+      } catch (repairError) {
+        logger.debug("Auto error analysis type classification repair failed", {
+          projectId,
+          traceId,
+          observationId,
+          error:
+            repairError instanceof Error
+              ? repairError.message
+              : String(repairError),
+        });
+      }
+    }
     if (parsedType.success) {
       const v = parsedType.data;
       const why = v.why ?? null;

@@ -55,7 +55,7 @@ export const APIObservation = z
     input: z.any(),
     output: z.any(),
     metadata: z.any(),
-    level: z.enum(["DEBUG", "DEFAULT", "WARNING", "ERROR"]),
+    level: z.enum(["DEBUG", "DEFAULT", "WARNING", "ERROR", "POLICY_VIOLATION"]),
     statusMessage: z.string().nullable(),
 
     model: z.string().nullable(),

@@ -209,7 +209,10 @@ export const ObservationDetailViewHeader = memo(
               observationId={observation.id}
               level={observation.level}
             />
-            <StatusMessageBadge statusMessage={observation.statusMessage} />
+            <StatusMessageBadge
+              statusMessage={observation.statusMessage}
+              level={observation.level}
+            />
           </div>
         </div>
       </div>

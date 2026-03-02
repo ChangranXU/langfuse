@@ -14,7 +14,13 @@ export const idSchema = z
     message: "ID cannot contain carriage return characters",
   });
 
-const ObservationLevel = z.enum(["DEBUG", "DEFAULT", "WARNING", "ERROR"]);
+const ObservationLevel = z.enum([
+  "DEBUG",
+  "DEFAULT",
+  "WARNING",
+  "ERROR",
+  "POLICY_VIOLATION",
+]);
 
 export const Usage = z.object({
   input: z.number().int().nullish(),

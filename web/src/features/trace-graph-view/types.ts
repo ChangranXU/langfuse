@@ -18,6 +18,7 @@ export type GraphNodeMetadataSummary = {
   }>;
   errorCount?: number;
   warningCount?: number;
+  policyViolationCount?: number;
   parserInconsistencyCount?: number;
   durationMs?: number | null;
   policy?: {
