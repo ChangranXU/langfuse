@@ -1,9 +1,7 @@
 import { useRouter } from "next/router";
 import { GenerationLatencyChart } from "@/src/features/dashboard/components/LatencyChart";
-import { ChartScores } from "@/src/features/dashboard/components/ChartScores";
 import { TracesBarListChart } from "@/src/features/dashboard/components/TracesBarListChart";
 import { ModelCostTable } from "@/src/features/dashboard/components/ModelCostTable";
-import { ScoresTable } from "@/src/features/dashboard/components/ScoresTable";
 import { ModelUsageChart } from "@/src/features/dashboard/components/ModelUsageChart";
 import { TracesAndObservationsTimeSeriesChart } from "@/src/features/dashboard/components/TracesTimeSeriesChart";
 import { UserChart } from "@/src/features/dashboard/components/UserChart";
@@ -265,7 +263,7 @@ export default function Dashboard() {
       />
       <div className="grid w-full grid-cols-1 gap-3 overflow-hidden lg:grid-cols-2 xl:grid-cols-6">
         <TracesBarListChart
-          className="col-span-1 xl:col-span-2"
+          className="col-span-1 xl:col-span-3"
           projectId={projectId}
           globalFilterState={[...userFilterState, ...environmentFilter]}
           fromTimestamp={fromTimestamp}
@@ -274,18 +272,11 @@ export default function Dashboard() {
           metricsVersion={metricsVersion}
         />
         <ModelCostTable
-          className="col-span-1 xl:col-span-2"
+          className="col-span-1 xl:col-span-3"
           projectId={projectId}
           globalFilterState={[...userFilterState, ...environmentFilter]}
           fromTimestamp={fromTimestamp}
           toTimestamp={toTimestamp}
-          isLoading={environmentFilterOptions.isPending}
-          metricsVersion={metricsVersion}
-        />
-        <ScoresTable
-          className="col-span-1 xl:col-span-2"
-          projectId={projectId}
-          globalFilterState={mergedFilterState}
           isLoading={environmentFilterOptions.isPending}
           metricsVersion={metricsVersion}
         />
@@ -311,17 +302,7 @@ export default function Dashboard() {
           metricsVersion={metricsVersion}
         />
         <UserChart
-          className="col-span-1 xl:col-span-3"
-          projectId={projectId}
-          globalFilterState={[...userFilterState, ...environmentFilter]}
-          fromTimestamp={fromTimestamp}
-          toTimestamp={toTimestamp}
-          isLoading={environmentFilterOptions.isPending}
-          metricsVersion={metricsVersion}
-        />
-        <ChartScores
-          className="col-span-1 xl:col-span-3"
-          agg={agg}
+          className="col-span-1 xl:col-span-6"
           projectId={projectId}
           globalFilterState={[...userFilterState, ...environmentFilter]}
           fromTimestamp={fromTimestamp}
