@@ -250,7 +250,7 @@ export function GovernanceOverviewPanel(props: {
             <CardTitle className="text-sm">Policy Violations</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold text-amber-700 dark:text-amber-400">
+            <div className="text-2xl font-semibold text-emerald-500 dark:text-emerald-200">
               {compactNumberFormatter(policyViolationCount)}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
