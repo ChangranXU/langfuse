@@ -363,5 +363,8 @@ export async function getErrorTypeFilterOptions(params: {
     },
   ];
 
-  return withUnclassified.sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
+  return withUnclassified.sort(
+    (a, b) =>
+      ("count" in b ? (b.count ?? 0) : 0) - ("count" in a ? (a.count ?? 0) : 0),
+  );
 }
