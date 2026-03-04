@@ -484,6 +484,56 @@ describe("buildGraphFromStepData parser pruning", () => {
     ).toBe(true);
   });
 
+  it("keeps session.trace.start before turn chain when timestamps tie", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "turn-1",
+        name: "session.turn.001",
+        node: "session.turn.001",
+        step: 1,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:10.000Z",
+        observationType: "CHAIN",
+      }),
+      createObservation({
+        id: "trace-start",
+        name: "session.trace.start",
+        node: "session.trace.start",
+        step: 2,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:00.001Z",
+        parentObservationId: "turn-1",
+        observationType: "SPAN",
+      }),
+      createObservation({
+        id: "kernel",
+        name: "Topic - kernel.cognitive_core__respond",
+        node: "Topic - kernel.cognitive_core__respond",
+        step: 3,
+        startTime: "2026-01-01T00:00:01.000Z",
+        endTime: "2026-01-01T00:00:01.001Z",
+        observationType: "AGENT",
+      }),
+    ];
+
+    const { graph } = buildGraphFromStepData(data);
+    expect(
+      graph.edges.some(
+        (e) => e.from === "__start__" && e.to === "session.trace.start",
+      ),
+    ).toBe(true);
+    expect(
+      graph.edges.some(
+        (e) => e.from === "session.trace.start" && e.to === "session.turn.001",
+      ),
+    ).toBe(true);
+    expect(
+      graph.edges.some(
+        (e) => e.from === "session.turn.001" && e.to === "session.trace.start",
+      ),
+    ).toBe(false);
+  });
+
   it("numbers session.failure nodes to keep them distinct", () => {
     const data: AgentGraphDataResponse[] = [
       createObservation({

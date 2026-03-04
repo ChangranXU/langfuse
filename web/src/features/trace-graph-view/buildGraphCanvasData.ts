@@ -24,6 +24,7 @@ type ObservationMetadataById = Record<
 >;
 
 const SESSION_TURN_HIERARCHY_NODE_RE = /^session\.turn\.(?<turn>\d+)$/;
+const TRACE_START_NODE_NAME = "session.trace.start";
 
 export function transformLanggraphToGeneralized(
   data: AgentGraphDataResponse[],
@@ -488,6 +489,7 @@ export function buildGraphFromStepData(
       // Build per-turn main-chain candidate nodes (non-parser only).
       const isMainChainCandidate =
         nodeExists(o.normalizedNodeName) &&
+        o.normalizedNodeName !== TRACE_START_NODE_NAME &&
         (!o.normalizedNodeName.startsWith("parser.") ||
           o.normalizedNodeName.startsWith("parser.pre_"));
       if (isMainChainCandidate) {
@@ -627,7 +629,6 @@ export function buildGraphFromStepData(
 
     // Prefer a dedicated trace-start node if present; otherwise fall back to the first turn node.
     // This avoids `session.trace.start` becoming an isolated node in some traces.
-    const TRACE_START_NODE_NAME = "session.trace.start";
     const traceStartNode = nodeExists(TRACE_START_NODE_NAME)
       ? TRACE_START_NODE_NAME
       : null;
