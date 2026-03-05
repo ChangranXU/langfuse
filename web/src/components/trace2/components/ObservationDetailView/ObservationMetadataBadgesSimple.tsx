@@ -6,6 +6,46 @@
 import { Badge } from "@/src/components/ui/badge";
 import { formatIntervalSeconds } from "@/src/utils/dates";
 
+function getMetadataRecord(metadata: unknown): Record<string, unknown> {
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    return metadata as Record<string, unknown>;
+  }
+  if (typeof metadata === "string") {
+    try {
+      const parsed = JSON.parse(metadata);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // no-op
+    }
+  }
+  return {};
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is string => typeof item === "string" && !!item.trim(),
+    );
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (item): item is string => typeof item === "string" && !!item.trim(),
+        );
+      }
+    } catch {
+      // no-op
+    }
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
+}
+
 export function LatencyBadge({
   latencySeconds,
 }: {
@@ -118,5 +158,32 @@ export function ErrorTypeBadge({
         ? ` (${errorTypeConfidence.toFixed(2)})`
         : ""}
     </Badge>
+  );
+}
+
+export function PolicyNameBadges({
+  level,
+  metadata,
+}: {
+  level: string | null | undefined;
+  metadata: unknown;
+}) {
+  if (level !== "POLICY_VIOLATION") return null;
+  const metadataRecord = getMetadataRecord(metadata);
+  const policyNames = parseStringArray(metadataRecord.policy_names);
+  if (policyNames.length === 0) return null;
+
+  return (
+    <>
+      {policyNames.map((policyName) => (
+        <Badge
+          key={`policy-name-${policyName}`}
+          variant="warning"
+          className="max-w-full whitespace-normal break-all"
+        >
+          Policy: {policyName}
+        </Badge>
+      ))}
+    </>
   );
 }

@@ -174,6 +174,56 @@ export type EventsTableRow = {
   scores: ScoreAggregate;
 };
 
+function parsePolicyNamesFromMetadata(metadata: unknown): string[] {
+  if (!metadata) return [];
+  let metadataRecord: Record<string, unknown> | null = null;
+  if (typeof metadata === "string") {
+    try {
+      const parsed = JSON.parse(metadata);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        metadataRecord = parsed as Record<string, unknown>;
+      }
+    } catch {
+      return [];
+    }
+  } else if (typeof metadata === "object" && !Array.isArray(metadata)) {
+    metadataRecord = metadata as Record<string, unknown>;
+  }
+  if (!metadataRecord) return [];
+
+  const rawPolicyNames = metadataRecord.policy_names;
+  if (Array.isArray(rawPolicyNames)) {
+    return rawPolicyNames.filter(
+      (item): item is string => typeof item === "string" && !!item.trim(),
+    );
+  }
+  if (typeof rawPolicyNames === "string") {
+    try {
+      const parsed = JSON.parse(rawPolicyNames);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (item): item is string => typeof item === "string" && !!item.trim(),
+        );
+      }
+    } catch {
+      // no-op
+    }
+    const trimmed = rawPolicyNames.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
+}
+
+const UNCLASSIFIED_POLICY_TYPE = "unclassified";
+
+function normalizePolicyTypeFilter(
+  value: string | null | undefined,
+): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export type EventsTableProps = {
   projectId: string;
   userId?: string;
@@ -205,6 +255,8 @@ export type EventsTableProps = {
   showBulkAnalysisButton?: boolean;
   defaultSidebarCollapsed?: boolean;
   replaceLevelWithErrorType?: boolean;
+  replaceLevelWithPolicyType?: boolean;
+  initialPolicyTypeFilter?: string | null;
   omittedColumns?: string[];
 };
 
@@ -227,6 +279,8 @@ export default function ObservationsEventsTable({
   showBulkAnalysisButton = false,
   defaultSidebarCollapsed,
   replaceLevelWithErrorType = false,
+  replaceLevelWithPolicyType = false,
+  initialPolicyTypeFilter,
   omittedColumns,
 }: EventsTableProps) {
   const router = useRouter();
@@ -241,6 +295,15 @@ export default function ObservationsEventsTable({
   const [selectedErrorType, setSelectedErrorType] = useState<string | null>(
     null,
   );
+  const [selectedPolicyType, setSelectedPolicyType] = useState<string | null>(
+    normalizePolicyTypeFilter(initialPolicyTypeFilter),
+  );
+  useEffect(() => {
+    if (!replaceLevelWithPolicyType) {
+      return;
+    }
+    setSelectedPolicyType(normalizePolicyTypeFilter(initialPolicyTypeFilter));
+  }, [initialPolicyTypeFilter, replaceLevelWithPolicyType]);
   const normalizedForcedLevels = useMemo(
     () =>
       Array.from(
@@ -452,6 +515,32 @@ export default function ObservationsEventsTable({
     return uniqueOptions;
   }, [errorTypeByObservationId]);
 
+  const policyTypeDropdownOptions = useMemo(() => {
+    const options = new Set<string>();
+    (observations.rows ?? []).forEach((observation) => {
+      const policyNames = parsePolicyNamesFromMetadata(observation.metadata);
+      if (policyNames.length === 0) return;
+      policyNames.forEach((policyName) => options.add(policyName));
+    });
+    if (
+      selectedPolicyType &&
+      selectedPolicyType !== UNCLASSIFIED_POLICY_TYPE &&
+      !options.has(selectedPolicyType)
+    ) {
+      options.add(selectedPolicyType);
+    }
+    const sortedOptions = Array.from(options)
+      .sort((a, b) => a.localeCompare(b))
+      .map((value) => ({ value, label: value }));
+    if (!options.has(UNCLASSIFIED_POLICY_TYPE)) {
+      sortedOptions.push({
+        value: UNCLASSIFIED_POLICY_TYPE,
+        label: UNCLASSIFIED_POLICY_TYPE,
+      });
+    }
+    return sortedOptions;
+  }, [observations.rows, selectedPolicyType]);
+
   const serializeSidebarFilterState = useCallback((state: FilterState) => {
     return JSON.stringify(state, (_k, v) =>
       v instanceof Date ? v.toISOString() : v,
@@ -463,6 +552,18 @@ export default function ObservationsEventsTable({
       let next = state;
       const normalizeColumn = (column: unknown) =>
         String(column).toLowerCase().replace(/[\s_]/g, "");
+
+      // Always clear policy-type specific filters first. We only re-apply them
+      // when the policy-type mode is active.
+      next = next.filter((f) => normalizeColumn(f.column) !== "policytype");
+      next = next.filter(
+        (f) =>
+          !(
+            f.type === "stringObject" &&
+            f.column === "metadata" &&
+            f.key === "policy_names"
+          ),
+      );
 
       if (clearTypeFilter) {
         // Stored filters may use either column id ("type") or display name ("Type").
@@ -509,6 +610,28 @@ export default function ObservationsEventsTable({
           ];
         }
       }
+      if (replaceLevelWithPolicyType) {
+        if (selectedPolicyType) {
+          next = [
+            ...next,
+            selectedPolicyType === UNCLASSIFIED_POLICY_TYPE
+              ? {
+                  column: "metadata",
+                  type: "stringObject",
+                  key: "policy_names",
+                  operator: "does not contain",
+                  value: '"',
+                }
+              : {
+                  column: "metadata",
+                  type: "stringObject",
+                  key: "policy_names",
+                  operator: "contains",
+                  value: selectedPolicyType,
+                },
+          ];
+        }
+      }
 
       return next;
     },
@@ -516,7 +639,9 @@ export default function ObservationsEventsTable({
       clearTypeFilter,
       normalizedForcedLevels,
       replaceLevelWithErrorType,
+      replaceLevelWithPolicyType,
       selectedErrorType,
+      selectedPolicyType,
     ],
   );
 
@@ -524,7 +649,8 @@ export default function ObservationsEventsTable({
     if (
       !clearTypeFilter &&
       normalizedForcedLevels.length === 0 &&
-      !replaceLevelWithErrorType
+      !replaceLevelWithErrorType &&
+      !replaceLevelWithPolicyType
     ) {
       return;
     }
@@ -539,6 +665,7 @@ export default function ObservationsEventsTable({
     clearTypeFilter,
     normalizedForcedLevels,
     replaceLevelWithErrorType,
+    replaceLevelWithPolicyType,
     queryFilter.filterState,
     queryFilter.setFilterState,
     serializeSidebarFilterState,
@@ -812,7 +939,7 @@ export default function ObservationsEventsTable({
       accessorKey: "input",
       header: getEventsColumnName("input"),
       id: "input",
-      size: 300,
+      size: 220,
       cell: ({ row }) => {
         const value: string | undefined = row.getValue("input");
         if (ioLoading) {
@@ -837,7 +964,7 @@ export default function ObservationsEventsTable({
       accessorKey: "output",
       id: "output",
       header: getEventsColumnName("output"),
-      size: 300,
+      size: 220,
       cell: ({ row }) => {
         const value: string | undefined = row.getValue("output");
         if (ioLoading) {
@@ -890,19 +1017,20 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "level",
       id: "level",
-      header: replaceLevelWithErrorType
+      header: replaceLevelWithPolicyType
         ? () => (
             <div className="flex items-center gap-1">
-              <span>Type</span>
+              <span>Policy type</span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-5 gap-1 px-1 text-[10px] font-normal"
-                    aria-label="Filter by error type"
+                    aria-label="Filter by policy type"
+                    title={selectedPolicyType ?? undefined}
                   >
-                    <span>{selectedErrorType ?? "all"}</span>
+                    <span>{selectedPolicyType ? "filtered" : "all"}</span>
                     <ChevronDown className="h-3 w-3 opacity-70" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -911,20 +1039,20 @@ export default function ObservationsEventsTable({
                   className="max-h-64 overflow-y-auto"
                 >
                   <DropdownMenuItem
-                    onClick={() => setSelectedErrorType(null)}
+                    onClick={() => setSelectedPolicyType(null)}
                     className="flex items-center justify-between gap-2"
                   >
                     <span>All</span>
-                    {!selectedErrorType ? <Check className="h-3 w-3" /> : null}
+                    {!selectedPolicyType ? <Check className="h-3 w-3" /> : null}
                   </DropdownMenuItem>
-                  {errorTypeDropdownOptions.map((option) => (
+                  {policyTypeDropdownOptions.map((option) => (
                     <DropdownMenuItem
                       key={option.value}
-                      onClick={() => setSelectedErrorType(option.value)}
+                      onClick={() => setSelectedPolicyType(option.value)}
                       className="flex items-center justify-between gap-2"
                     >
                       <span>{option.label}</span>
-                      {selectedErrorType === option.value ? (
+                      {selectedPolicyType === option.value ? (
                         <Check className="h-3 w-3" />
                       ) : null}
                     </DropdownMenuItem>
@@ -933,18 +1061,88 @@ export default function ObservationsEventsTable({
               </DropdownMenu>
             </div>
           )
-        : getEventsColumnName("level"),
-      size: 100,
-      headerTooltip: replaceLevelWithErrorType
+        : replaceLevelWithErrorType
+          ? () => (
+              <div className="flex items-center gap-1">
+                <span>Type</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 gap-1 px-1 text-[10px] font-normal"
+                      aria-label="Filter by error type"
+                    >
+                      <span>{selectedErrorType ?? "all"}</span>
+                      <ChevronDown className="h-3 w-3 opacity-70" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="max-h-64 overflow-y-auto"
+                  >
+                    <DropdownMenuItem
+                      onClick={() => setSelectedErrorType(null)}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span>All</span>
+                      {!selectedErrorType ? (
+                        <Check className="h-3 w-3" />
+                      ) : null}
+                    </DropdownMenuItem>
+                    {errorTypeDropdownOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option.value}
+                        onClick={() => setSelectedErrorType(option.value)}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span>{option.label}</span>
+                        {selectedErrorType === option.value ? (
+                          <Check className="h-3 w-3" />
+                        ) : null}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )
+          : getEventsColumnName("level"),
+      size: 320,
+      minSize: 260,
+      headerTooltip: replaceLevelWithPolicyType
         ? undefined
-        : {
-            description:
-              "You can differentiate the importance of observations with the level attribute to control the verbosity of your traces and highlight errors and warnings.",
-            href: "https://langfuse.com/docs/observability/features/log-levels",
-          },
+        : replaceLevelWithErrorType
+          ? undefined
+          : {
+              description:
+                "You can differentiate the importance of observations with the level attribute to control the verbosity of your traces and highlight errors and warnings.",
+              href: "https://langfuse.com/docs/observability/features/log-levels",
+            },
       enableHiding: true,
       cell: ({ row }) => {
         const value: ObservationLevelType | undefined = row.getValue("level");
+        if (replaceLevelWithPolicyType) {
+          if (value !== "POLICY_VIOLATION") {
+            return undefined;
+          }
+          const policyNames = parsePolicyNamesFromMetadata(
+            row.original.metadata,
+          );
+          const displayValues =
+            policyNames.length > 0 ? policyNames : [UNCLASSIFIED_POLICY_TYPE];
+          return (
+            <div className="flex flex-wrap items-start gap-2 whitespace-normal py-0.5">
+              {displayValues.map((displayValue, idx) => (
+                <span
+                  key={`${row.original.id}-${displayValue}-${idx}`}
+                  className="inline-flex max-w-full whitespace-normal break-all rounded-md bg-amber-100 px-2 py-0.5 text-xs leading-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                >
+                  {displayValue}
+                </span>
+              ))}
+            </div>
+          );
+        }
         if (replaceLevelWithErrorType) {
           if (!value || (value !== "ERROR" && value !== "WARNING")) {
             return undefined;
@@ -975,7 +1173,10 @@ export default function ObservationsEventsTable({
           </span>
         ) : undefined;
       },
-      enableSorting: replaceLevelWithErrorType ? false : enableSorting,
+      enableSorting:
+        replaceLevelWithErrorType || replaceLevelWithPolicyType
+          ? false
+          : enableSorting,
     },
     {
       accessorKey: "statusMessage",

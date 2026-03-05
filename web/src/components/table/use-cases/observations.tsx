@@ -146,6 +146,56 @@ export type ObservationsTableRow = {
   toolCalls?: number;
 };
 
+function parsePolicyNamesFromMetadata(metadata: unknown): string[] {
+  if (!metadata) return [];
+  let metadataRecord: Record<string, unknown> | null = null;
+  if (typeof metadata === "string") {
+    try {
+      const parsed = JSON.parse(metadata);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        metadataRecord = parsed as Record<string, unknown>;
+      }
+    } catch {
+      return [];
+    }
+  } else if (typeof metadata === "object" && !Array.isArray(metadata)) {
+    metadataRecord = metadata as Record<string, unknown>;
+  }
+  if (!metadataRecord) return [];
+
+  const rawPolicyNames = metadataRecord.policy_names;
+  if (Array.isArray(rawPolicyNames)) {
+    return rawPolicyNames.filter(
+      (item): item is string => typeof item === "string" && !!item.trim(),
+    );
+  }
+  if (typeof rawPolicyNames === "string") {
+    try {
+      const parsed = JSON.parse(rawPolicyNames);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (item): item is string => typeof item === "string" && !!item.trim(),
+        );
+      }
+    } catch {
+      // no-op
+    }
+    const trimmed = rawPolicyNames.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
+}
+
+const UNCLASSIFIED_POLICY_TYPE = "unclassified";
+
+function normalizePolicyTypeFilter(
+  value: string | null | undefined,
+): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export type ObservationsTableProps = {
   projectId: string;
   promptName?: string;
@@ -170,6 +220,8 @@ export type ObservationsTableProps = {
   showBulkAnalysisButton?: boolean;
   defaultSidebarCollapsed?: boolean;
   replaceLevelWithErrorType?: boolean;
+  replaceLevelWithPolicyType?: boolean;
+  initialPolicyTypeFilter?: string | null;
   omittedColumns?: string[];
 };
 
@@ -192,6 +244,8 @@ export default function ObservationsTable({
   showBulkAnalysisButton = false,
   defaultSidebarCollapsed,
   replaceLevelWithErrorType = false,
+  replaceLevelWithPolicyType = false,
+  initialPolicyTypeFilter,
   omittedColumns,
 }: ObservationsTableProps) {
   const router = useRouter();
@@ -207,6 +261,19 @@ export default function ObservationsTable({
   const [selectedErrorType, setSelectedErrorType] = useState<string | null>(
     null,
   );
+  const [selectedPolicyType, setSelectedPolicyType] = useState<string | null>(
+    normalizePolicyTypeFilter(initialPolicyTypeFilter),
+  );
+  useEffect(() => {
+    if (!replaceLevelWithPolicyType) {
+      return;
+    }
+    setSelectedPolicyType(normalizePolicyTypeFilter(initialPolicyTypeFilter));
+  }, [initialPolicyTypeFilter, replaceLevelWithPolicyType]);
+  const [policyNamesByObservationId, setPolicyNamesByObservationId] = useState<
+    Record<string, string[]>
+  >({});
+  const [isPolicyTypeLoading, setIsPolicyTypeLoading] = useState(false);
   const normalizedForcedLevels = useMemo(
     () =>
       Array.from(
@@ -527,6 +594,31 @@ export default function ObservationsTable({
     return uniqueOptions;
   }, [errorTypeByObservationId]);
 
+  const policyTypeDropdownOptions = useMemo(() => {
+    const options = new Set<string>();
+    Object.values(policyNamesByObservationId).forEach((policyNames) => {
+      if (policyNames.length === 0) return;
+      policyNames.forEach((policyName) => options.add(policyName));
+    });
+    if (
+      selectedPolicyType &&
+      selectedPolicyType !== UNCLASSIFIED_POLICY_TYPE &&
+      !options.has(selectedPolicyType)
+    ) {
+      options.add(selectedPolicyType);
+    }
+    const sortedOptions = Array.from(options)
+      .sort((a, b) => a.localeCompare(b))
+      .map((value) => ({ value, label: value }));
+    if (!options.has(UNCLASSIFIED_POLICY_TYPE)) {
+      sortedOptions.push({
+        value: UNCLASSIFIED_POLICY_TYPE,
+        label: UNCLASSIFIED_POLICY_TYPE,
+      });
+    }
+    return sortedOptions;
+  }, [policyNamesByObservationId, selectedPolicyType]);
+
   const queryFilter = useSidebarFilterState(
     observationFilterConfig,
     newFilterOptions,
@@ -546,6 +638,18 @@ export default function ObservationsTable({
       let next = state;
       const normalizeColumn = (column: unknown) =>
         String(column).toLowerCase().replace(/[\s_]/g, "");
+
+      // Always clear policy-type specific filters first. We only re-apply them
+      // when the policy-type mode is active.
+      next = next.filter((f) => normalizeColumn(f.column) !== "policytype");
+      next = next.filter(
+        (f) =>
+          !(
+            f.type === "stringObject" &&
+            f.column === "metadata" &&
+            f.key === "policy_names"
+          ),
+      );
 
       if (clearTypeFilter) {
         // Stored filters may use either column id ("type") or display name ("Type"/"type").
@@ -582,6 +686,28 @@ export default function ObservationsTable({
           ];
         }
       }
+      if (replaceLevelWithPolicyType) {
+        if (selectedPolicyType) {
+          next = [
+            ...next,
+            selectedPolicyType === UNCLASSIFIED_POLICY_TYPE
+              ? {
+                  column: "metadata",
+                  type: "stringObject",
+                  key: "policy_names",
+                  operator: "does not contain",
+                  value: '"',
+                }
+              : {
+                  column: "metadata",
+                  type: "stringObject",
+                  key: "policy_names",
+                  operator: "contains",
+                  value: selectedPolicyType,
+                },
+          ];
+        }
+      }
 
       return next;
     },
@@ -589,7 +715,9 @@ export default function ObservationsTable({
       clearTypeFilter,
       normalizedForcedLevels,
       replaceLevelWithErrorType,
+      replaceLevelWithPolicyType,
       selectedErrorType,
+      selectedPolicyType,
     ],
   );
 
@@ -597,7 +725,8 @@ export default function ObservationsTable({
     if (
       !clearTypeFilter &&
       normalizedForcedLevels.length === 0 &&
-      !replaceLevelWithErrorType
+      !replaceLevelWithErrorType &&
+      !replaceLevelWithPolicyType
     ) {
       return;
     }
@@ -612,6 +741,7 @@ export default function ObservationsTable({
     clearTypeFilter,
     normalizedForcedLevels,
     replaceLevelWithErrorType,
+    replaceLevelWithPolicyType,
     queryFilter.filterState,
     queryFilter.setFilterState,
     serializeSidebarFilterState,
@@ -877,7 +1007,7 @@ export default function ObservationsTable({
       accessorKey: "input",
       header: "Input",
       id: "input",
-      size: 300,
+      size: 220,
       cell: ({ row }) => {
         const observationId: string = row.getValue("id");
         const traceId: string = row.getValue("traceId");
@@ -898,7 +1028,7 @@ export default function ObservationsTable({
       accessorKey: "output",
       id: "output",
       header: "Output",
-      size: 300,
+      size: 220,
       cell: ({ row }) => {
         const observationId: string = row.getValue("id");
         const traceId: string = row.getValue("traceId");
@@ -918,19 +1048,20 @@ export default function ObservationsTable({
     {
       accessorKey: "level",
       id: "level",
-      header: replaceLevelWithErrorType
+      header: replaceLevelWithPolicyType
         ? () => (
             <div className="flex items-center gap-1">
-              <span>Type</span>
+              <span>Policy type</span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-5 gap-1 px-1 text-[10px] font-normal"
-                    aria-label="Filter by error type"
+                    aria-label="Filter by policy type"
+                    title={selectedPolicyType ?? undefined}
                   >
-                    <span>{selectedErrorType ?? "all"}</span>
+                    <span>{selectedPolicyType ? "filtered" : "all"}</span>
                     <ChevronDown className="h-3 w-3 opacity-70" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -939,20 +1070,20 @@ export default function ObservationsTable({
                   className="max-h-64 overflow-y-auto"
                 >
                   <DropdownMenuItem
-                    onClick={() => setSelectedErrorType(null)}
+                    onClick={() => setSelectedPolicyType(null)}
                     className="flex items-center justify-between gap-2"
                   >
                     <span>All</span>
-                    {!selectedErrorType ? <Check className="h-3 w-3" /> : null}
+                    {!selectedPolicyType ? <Check className="h-3 w-3" /> : null}
                   </DropdownMenuItem>
-                  {errorTypeDropdownOptions.map((option) => (
+                  {policyTypeDropdownOptions.map((option) => (
                     <DropdownMenuItem
                       key={option.value}
-                      onClick={() => setSelectedErrorType(option.value)}
+                      onClick={() => setSelectedPolicyType(option.value)}
                       className="flex items-center justify-between gap-2"
                     >
                       <span>{option.label}</span>
-                      {selectedErrorType === option.value ? (
+                      {selectedPolicyType === option.value ? (
                         <Check className="h-3 w-3" />
                       ) : null}
                     </DropdownMenuItem>
@@ -961,18 +1092,90 @@ export default function ObservationsTable({
               </DropdownMenu>
             </div>
           )
-        : "Level",
-      size: 100,
-      headerTooltip: replaceLevelWithErrorType
+        : replaceLevelWithErrorType
+          ? () => (
+              <div className="flex items-center gap-1">
+                <span>Type</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 gap-1 px-1 text-[10px] font-normal"
+                      aria-label="Filter by error type"
+                    >
+                      <span>{selectedErrorType ?? "all"}</span>
+                      <ChevronDown className="h-3 w-3 opacity-70" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="max-h-64 overflow-y-auto"
+                  >
+                    <DropdownMenuItem
+                      onClick={() => setSelectedErrorType(null)}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span>All</span>
+                      {!selectedErrorType ? (
+                        <Check className="h-3 w-3" />
+                      ) : null}
+                    </DropdownMenuItem>
+                    {errorTypeDropdownOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option.value}
+                        onClick={() => setSelectedErrorType(option.value)}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span>{option.label}</span>
+                        {selectedErrorType === option.value ? (
+                          <Check className="h-3 w-3" />
+                        ) : null}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )
+          : "Level",
+      size: 320,
+      minSize: 260,
+      headerTooltip: replaceLevelWithPolicyType
         ? undefined
-        : {
-            description:
-              "You can differentiate the importance of observations with the level attribute to control the verbosity of your traces and highlight errors and warnings.",
-            href: "https://langfuse.com/docs/observability/features/log-levels",
-          },
+        : replaceLevelWithErrorType
+          ? undefined
+          : {
+              description:
+                "You can differentiate the importance of observations with the level attribute to control the verbosity of your traces and highlight errors and warnings.",
+              href: "https://langfuse.com/docs/observability/features/log-levels",
+            },
       enableHiding: true,
       cell({ row }) {
         const value: ObservationLevelType | undefined = row.getValue("level");
+        if (replaceLevelWithPolicyType) {
+          if (value !== "POLICY_VIOLATION") {
+            return undefined;
+          }
+          const policyNames = policyNamesByObservationId[row.original.id];
+          const displayValues =
+            isPolicyTypeLoading && policyNames === undefined
+              ? ["..."]
+              : policyNames && policyNames.length > 0
+                ? policyNames
+                : [UNCLASSIFIED_POLICY_TYPE];
+          return (
+            <div className="flex flex-wrap items-start gap-2 whitespace-normal py-0.5">
+              {displayValues.map((displayValue, idx) => (
+                <span
+                  key={`${row.original.id}-${displayValue}-${idx}`}
+                  className="inline-flex max-w-full whitespace-normal break-all rounded-md bg-amber-100 px-2 py-0.5 text-xs leading-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                >
+                  {displayValue}
+                </span>
+              ))}
+            </div>
+          );
+        }
         if (replaceLevelWithErrorType) {
           if (!value || (value !== "ERROR" && value !== "WARNING")) {
             return undefined;
@@ -1003,7 +1206,10 @@ export default function ObservationsTable({
           </span>
         ) : undefined;
       },
-      enableSorting: replaceLevelWithErrorType ? false : enableSorting,
+      enableSorting:
+        replaceLevelWithErrorType || replaceLevelWithPolicyType
+          ? false
+          : enableSorting,
     },
     {
       accessorKey: "statusMessage",
@@ -1620,12 +1826,37 @@ export default function ObservationsTable({
     [replaceLevelWithErrorType, rows],
   );
 
+  const policyTypeTargets = useMemo(
+    () =>
+      replaceLevelWithPolicyType
+        ? rows
+            .filter((row) => row.level === "POLICY_VIOLATION" && !!row.traceId)
+            .map((row) => ({
+              id: row.id,
+              traceId: row.traceId as string,
+              startTime: row.startTime,
+            }))
+        : [],
+    [replaceLevelWithPolicyType, rows],
+  );
+
   const errorTypeTargetKey = useMemo(
     () =>
       errorTypeTargets
         .map((target) => `${target.id}:${target.traceId}`)
         .join("|"),
     [errorTypeTargets],
+  );
+
+  const policyTypeTargetKey = useMemo(
+    () =>
+      policyTypeTargets
+        .map(
+          (target) =>
+            `${target.id}:${target.traceId}:${target.startTime?.toISOString() ?? ""}`,
+        )
+        .join("|"),
+    [policyTypeTargets],
   );
 
   useEffect(() => {
@@ -1693,6 +1924,80 @@ export default function ObservationsTable({
       cancelled = true;
     };
   }, [replaceLevelWithErrorType, errorTypeTargetKey, projectId]);
+
+  useEffect(() => {
+    if (!replaceLevelWithPolicyType) {
+      setPolicyNamesByObservationId((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
+      setIsPolicyTypeLoading(false);
+      return;
+    }
+
+    if (policyTypeTargets.length === 0) {
+      setPolicyNamesByObservationId((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
+      setIsPolicyTypeLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsPolicyTypeLoading(true);
+
+    void Promise.all(
+      policyTypeTargets.map(async (target) => {
+        try {
+          const result = await directApi.observations.byId.query({
+            projectId,
+            traceId: target.traceId,
+            observationId: target.id,
+            startTime: target.startTime,
+            verbosity: "compact",
+          });
+          return {
+            observationId: target.id,
+            policyNames: parsePolicyNamesFromMetadata(result.metadata),
+          };
+        } catch {
+          return {
+            observationId: target.id,
+            policyNames: [] as string[],
+          };
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+
+      const nextMap = Object.fromEntries(
+        results.map((item) => [item.observationId, item.policyNames]),
+      ) as Record<string, string[]>;
+
+      setPolicyNamesByObservationId((prev) => {
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(nextMap);
+        if (
+          prevKeys.length === nextKeys.length &&
+          nextKeys.every((key) => {
+            const prevArr = prev[key] ?? [];
+            const nextArr = nextMap[key] ?? [];
+            return (
+              prevArr.length === nextArr.length &&
+              prevArr.every((value, idx) => value === nextArr[idx])
+            );
+          })
+        ) {
+          return prev;
+        }
+        return nextMap;
+      });
+      setIsPolicyTypeLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [replaceLevelWithPolicyType, policyTypeTargetKey, projectId]);
 
   const selectedObservationIdSet = useMemo(
     () => new Set(selectedObservationIds),

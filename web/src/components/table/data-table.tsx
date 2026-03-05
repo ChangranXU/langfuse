@@ -528,12 +528,14 @@ function TableBodyComponent<TData>({
   onRowClick,
   getRowClassName,
 }: TableBodyComponentProps<TData>) {
+  const visibleColumnCount = Math.max(1, table.getVisibleLeafColumns().length);
+
   return (
     <TableBody>
       {data.isLoading || !data.data ? (
         <TableRow className="h-svh">
           <TableCell
-            colSpan={columns.length}
+            colSpan={visibleColumnCount}
             className="content-start border-b text-center"
           >
             Loading...
@@ -598,8 +600,8 @@ function TableBodyComponent<TData>({
         ))
       ) : (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={columns.length} className="h-24">
-            <div className="pointer-events-none absolute left-[50%] flex -translate-x-1/2 -translate-y-1/2 items-center justify-center text-center">
+          <TableCell colSpan={visibleColumnCount} className="h-24 p-0">
+            <div className="flex h-full w-full items-center justify-center text-center">
               {noResultsMessage ?? (
                 <>
                   No results.{" "}

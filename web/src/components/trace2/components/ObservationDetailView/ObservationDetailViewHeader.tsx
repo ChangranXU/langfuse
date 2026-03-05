@@ -27,6 +27,7 @@ import {
   LevelBadge,
   StatusMessageBadge,
   ErrorTypeBadge,
+  PolicyNameBadges,
 } from "./ObservationMetadataBadgesSimple";
 import {
   SessionBadge,
@@ -197,6 +198,10 @@ export const ObservationDetailViewHeader = memo(
               modelParameters={observation.modelParameters}
             />
             <LevelBadge level={observation.level} />
+            <PolicyNameBadges
+              level={observation.level}
+              metadata={observation.metadata}
+            />
             <ErrorTypeBadge
               errorType={errorTypeSummary?.errorType}
               errorTypeDescription={errorTypeSummary?.errorTypeDescription}

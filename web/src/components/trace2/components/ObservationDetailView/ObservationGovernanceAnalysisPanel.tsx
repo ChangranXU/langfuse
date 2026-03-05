@@ -51,184 +51,54 @@ function derivePolicyActions(policyReason: string | null): PolicyAction[] {
   return results;
 }
 
-const POLICY_SIGNAL_STOPWORDS = new Set([
-  "policy",
-  "policy_block",
-  "policy_transform",
-  "tool",
-  "tools",
-  "reason",
-  "path",
-  "paths",
-  "blocked",
-  "block",
-  "allow",
-  "deny",
-  "prefixes",
-  "outside",
-  "requested",
-  "execution",
-  "not",
-  "in",
-]);
-
-function extractExplicitPolicySignals(policyReason: string): string[] {
-  const reason = policyReason.toLowerCase();
-  const signals: string[] = [];
-
-  // Explicit dotted key path signals, e.g. "paths.allow_prefixes"
-  const dottedMatches = reason.match(
-    /\b[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\b/g,
-  );
-  if (dottedMatches) {
-    for (const match of dottedMatches) {
-      const signal = match.trim();
-      if (!signal) continue;
-      signals.push(signal);
-    }
-  }
-
-  // Explicit snake_case signals, e.g. "allow_prefixes", "max_chars"
-  const snakeMatches = reason.match(/\b[a-z][a-z0-9]*_[a-z0-9_]+\b/g);
-  if (snakeMatches) {
-    for (const match of snakeMatches) {
-      const signal = match.trim();
-      if (!signal || POLICY_SIGNAL_STOPWORDS.has(signal)) continue;
-      signals.push(signal);
-    }
-  }
-
-  // "schema read" => "schemas.read"
-  const schemaMatches = reason.match(/\bschema\s+([a-z][a-z0-9_]*)\b/g);
-  if (schemaMatches) {
-    for (const match of schemaMatches) {
-      const schemaName = match.replace(/^schema\s+/i, "").trim();
-      if (!schemaName || POLICY_SIGNAL_STOPWORDS.has(schemaName)) continue;
-      signals.push(`schemas.${schemaName}`);
-    }
-  }
-
-  return [...new Set(signals)];
-}
-
-function setNestedValue(
-  target: Record<string, unknown>,
-  path: string[],
-  value: unknown,
-): void {
-  if (path.length === 0) return;
-  let cursor: Record<string, unknown> = target;
-  for (let i = 0; i < path.length - 1; i++) {
-    const key = path[i]!;
-    const current = cursor[key];
-    if (!current || typeof current !== "object" || Array.isArray(current)) {
-      cursor[key] = {};
-    }
-    cursor = cursor[key] as Record<string, unknown>;
-  }
-  cursor[path[path.length - 1]!] = value;
-}
-
-function doesPathMatchSignal(path: string[], signal: string): boolean {
-  const pathStr = path.join(".");
-  if (signal.includes(".")) {
-    return (
-      pathStr === signal ||
-      pathStr.startsWith(`${signal}.`) ||
-      pathStr.endsWith(`.${signal}`) ||
-      pathStr.includes(`.${signal}.`)
-    );
-  }
-  return path.includes(signal);
-}
-
-function compactPolicyValue(value: unknown): unknown {
+function parseStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
-    if (value.length <= 20) return value;
-    return [...value.slice(0, 20), "... truncated ..."];
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-  const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length <= 12) return value;
-  return {
-    ...Object.fromEntries(entries.slice(0, 12)),
-    _truncated: true,
-  };
-}
-
-function collectMatchedPolicyPaths(
-  value: unknown,
-  signals: string[],
-  path: string[] = [],
-  out: string[][] = [],
-  maxMatches = 8,
-): string[][] {
-  if (out.length >= maxMatches || !value || typeof value !== "object")
-    return out;
-  if (Array.isArray(value)) return out;
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (out.length >= maxMatches) break;
-    const nextPath = [...path, key];
-    const isMatch = signals.some((signal) =>
-      doesPathMatchSignal(nextPath, signal),
+    return value.filter(
+      (item): item is string => typeof item === "string" && !!item.trim(),
     );
-    if (isMatch) {
-      out.push(nextPath);
-    }
-    if (child !== null && typeof child === "object" && !Array.isArray(child)) {
-      collectMatchedPolicyPaths(child, signals, nextPath, out, maxMatches);
-    }
   }
-  return out;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (item): item is string => typeof item === "string" && !!item.trim(),
+        );
+      }
+    } catch {
+      // no-op
+    }
+    if (value.includes(",")) {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
 }
 
-function extractRelevantPolicyData(params: {
-  policyReason: string | null;
-  policyConfig: unknown;
-}): { description: string | null; snippet: string | null } {
-  const { policyReason, policyConfig } = params;
-  if (!policyReason || !policyReason.trim()) {
-    return { description: null, snippet: null };
-  }
-
-  const compactReason = policyReason.replace(/\s+/g, " ").trim();
-  if (!policyConfig || typeof policyConfig !== "object") {
-    return { description: `Matched policy: ${compactReason}`, snippet: null };
-  }
-
-  const configRecord = policyConfig as Record<string, unknown>;
-  const signals = extractExplicitPolicySignals(compactReason);
-  const matchedPaths = collectMatchedPolicyPaths(configRecord, signals);
-
-  if (matchedPaths.length === 0) {
-    return { description: `Matched policy: ${compactReason}`, snippet: null };
-  }
-
-  const snippetObj: Record<string, unknown> = {};
-  for (const path of matchedPaths) {
-    let current: unknown = configRecord;
-    let exists = true;
-    for (const segment of path) {
-      if (!current || typeof current !== "object" || Array.isArray(current)) {
-        exists = false;
-        break;
-      }
-      current = (current as Record<string, unknown>)[segment];
+function parseStringRecord(value: unknown): Record<string, string> {
+  let input = value;
+  if (typeof input === "string") {
+    try {
+      input = JSON.parse(input);
+    } catch {
+      return {};
     }
-    if (!exists) continue;
-    setNestedValue(snippetObj, path, compactPolicyValue(current));
   }
-
-  const matchedPathLabels = matchedPaths.map((path) => path.join("."));
-  return {
-    description: `Matched policy keys: ${matchedPathLabels.join(", ")}.`,
-    snippet:
-      Object.keys(snippetObj).length > 0
-        ? JSON.stringify(snippetObj, null, 2)
-        : null,
-  };
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+  const entries = Object.entries(input as Record<string, unknown>).flatMap(
+    ([key, val]) =>
+      typeof val === "string" && val.trim().length > 0
+        ? [[key, val] as const]
+        : [],
+  );
+  return Object.fromEntries(entries);
 }
 
 export function ObservationGovernanceAnalysisPanel(props: {
@@ -269,25 +139,48 @@ export function ObservationGovernanceAnalysisPanel(props: {
     [props.traceMetadata],
   );
   const policyMetadata = useMemo(
-    () => ({
-      ...tracePolicyMetadata,
-      ...observationPolicyMetadata,
-    }),
-    [tracePolicyMetadata, observationPolicyMetadata],
+    () =>
+      isPolicyViolation
+        ? observationPolicyMetadata
+        : {
+            ...tracePolicyMetadata,
+            ...observationPolicyMetadata,
+          },
+    [isPolicyViolation, observationPolicyMetadata, tracePolicyMetadata],
   );
   const policyProtectedReason = useMemo(() => {
     const value = policyMetadata.policy_protected;
-    return typeof value === "string" && value.trim() ? value.trim() : null;
-  }, [policyMetadata]);
-  const { description: matchedPolicyDescription, snippet: policyJsonSnippet } =
-    useMemo(
-      () =>
-        extractRelevantPolicyData({
-          policyReason: policyProtectedReason,
-          policyConfig: policyMetadata.policy_config,
-        }),
-      [policyProtectedReason, policyMetadata.policy_config],
-    );
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (statusMessage?.includes("POLICY_BLOCK")) {
+      return statusMessage;
+    }
+    return null;
+  }, [policyMetadata.policy_protected, statusMessage]);
+  const policyNames = useMemo(
+    () => [
+      ...new Set([
+        ...parseStringArray(policyMetadata.policy_names),
+        ...parseStringArray(policyMetadata.policy_name),
+      ]),
+    ],
+    [policyMetadata.policy_name, policyMetadata.policy_names],
+  );
+  const policyDescriptions = useMemo(
+    () => parseStringRecord(policyMetadata.policy_descriptions),
+    [policyMetadata.policy_descriptions],
+  );
+  const policySources = useMemo(
+    () => parseStringRecord(policyMetadata.policy_sources),
+    [policyMetadata.policy_sources],
+  );
+  const policyNameList = useMemo(() => {
+    const names = new Set(policyNames);
+    Object.keys(policyDescriptions).forEach((name) => names.add(name));
+    Object.keys(policySources).forEach((name) => names.add(name));
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [policyDescriptions, policyNames, policySources]);
 
   if (!isGovernanceLevel) {
     return null;
@@ -300,44 +193,39 @@ export function ObservationGovernanceAnalysisPanel(props: {
     ? "This node was blocked by policy. Action shows what was prevented."
     : "Node-level diagnostics and mitigation guidance for this failure.";
 
-  const rawOutputContent = useMemo(() => {
-    if (isPolicyViolation) {
-      if (policyJsonSnippet) {
-        return policyJsonSnippet;
-      }
-      const raw = policyMetadata.raw_output_content;
-      if (typeof raw === "string" && raw.trim()) {
-        return raw;
-      }
-      if (policyProtectedReason) {
-        return policyProtectedReason;
-      }
-    }
-
-    return statusMessage ?? null;
-  }, [
-    isPolicyViolation,
-    policyJsonSnippet,
-    policyMetadata.raw_output_content,
-    policyProtectedReason,
-    statusMessage,
-  ]);
+  const rawOutputContent = statusMessage ?? null;
   const policyActions = useMemo(
     () => derivePolicyActions(policyProtectedReason),
     [policyProtectedReason],
   );
-  const policyActionLines = useMemo(() => {
+  const policyActionFallback = useMemo(() => {
+    if (policyActions.length > 0 || !policyProtectedReason) return null;
+    const compact = policyProtectedReason
+      .replace(/^POLICY_[A-Z_]+\s+/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return compact || null;
+  }, [policyActions, policyProtectedReason]);
+  const normalizedPolicyProtectedLines = useMemo(() => {
     if (policyActions.length > 0) {
-      return policyActions.map((item) => `${item.tool}: ${item.reason}`);
+      return policyActions.map(
+        (item) => `POLICY_BLOCK tool=${item.tool} reason=${item.reason}`,
+      );
     }
-    if (policyProtectedReason) {
-      const compact = policyProtectedReason
-        .replace(/^POLICY_[A-Z_]+\s+/i, "")
-        .replace(/\s+/g, " ")
-        .trim();
-      return compact ? [compact] : [];
-    }
-    return [];
+    if (!policyProtectedReason) return [];
+    const normalized = policyProtectedReason
+      .replace(/\r\n/g, "\n")
+      .replace(/\s*POLICY_BLOCK\s+tool=/g, "\nPOLICY_BLOCK tool=")
+      .trim();
+    if (!normalized) return [];
+    return Array.from(
+      new Set(
+        normalized
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+      ),
+    );
   }, [policyActions, policyProtectedReason]);
   const canExpandOutput = useMemo(() => {
     if (!rawOutputContent) return false;
@@ -378,18 +266,34 @@ export function ObservationGovernanceAnalysisPanel(props: {
                 Action
               </div>
               <div className="min-w-0 rounded-md border bg-background p-2 text-sm">
-                {policyActionLines.length > 0 ? (
-                  <div className="space-y-1 font-mono text-xs text-muted-foreground">
-                    {policyActionLines.map((line, idx) => (
+                {policyActions.length > 0 ? (
+                  <div className="space-y-2">
+                    {policyActions.map((action, idx) => (
                       <div
-                        key={`policy-action-line-${idx}`}
-                        className="break-words"
+                        key={`policy-action-${idx}`}
+                        className="flex flex-wrap items-center gap-2 rounded border border-amber-200 bg-amber-50/50 px-2 py-1 text-xs dark:border-amber-900 dark:bg-amber-950/20"
                       >
-                        {line}
+                        <Badge
+                          variant="warning"
+                          className="font-mono text-[10px]"
+                        >
+                          {action.tool}
+                        </Badge>
+                        <span className="break-words text-muted-foreground">
+                          {action.reason}
+                        </span>
                       </div>
                     ))}
                   </div>
-                ) : null}
+                ) : policyActionFallback ? (
+                  <div className="font-mono text-xs text-muted-foreground">
+                    {policyActionFallback}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    Not available
+                  </div>
+                )}
               </div>
             </div>
           ) : null}
@@ -398,14 +302,96 @@ export function ObservationGovernanceAnalysisPanel(props: {
             <div className="mb-1 min-w-0 text-xs font-medium text-muted-foreground">
               {isPolicyViolation ? "Policy Details" : "Output"}
             </div>
-            {isPolicyViolation && matchedPolicyDescription ? (
-              <div className="mb-2 rounded-md border bg-background px-2 py-1 text-[11px] text-muted-foreground">
-                <div className="whitespace-pre-wrap break-words">
-                  {matchedPolicyDescription}
+            {isPolicyViolation ? (
+              <div className="divide-y rounded-md border bg-background text-xs">
+                <div className="space-y-2 p-3">
+                  <div className="text-sm font-semibold text-foreground">
+                    Policy Protected
+                  </div>
+                  {normalizedPolicyProtectedLines.length > 0 ? (
+                    <div className="mt-1 space-y-1">
+                      {normalizedPolicyProtectedLines.map((line, idx) => (
+                        <div
+                          key={`policy-protected-line-${idx}`}
+                          className="whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground"
+                        >
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-muted-foreground">
+                      Not available
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2 p-3">
+                  <div className="text-sm font-semibold text-foreground">
+                    Policy Names
+                  </div>
+                  {policyNameList.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {policyNameList.map((policyName) => (
+                        <Badge
+                          key={`policy-name-${policyName}`}
+                          variant="warning"
+                        >
+                          {policyName}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-muted-foreground">
+                      Not available
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2 p-3">
+                  <div className="text-sm font-semibold text-foreground">
+                    Policy Descriptions
+                  </div>
+                  <div className="space-y-1 text-muted-foreground">
+                    {policyNameList.length > 0 ? (
+                      policyNameList.map((policyName) => (
+                        <div key={`policy-description-${policyName}`}>
+                          <span className="font-medium text-foreground">
+                            {policyName}:
+                          </span>{" "}
+                          {policyDescriptions[policyName] ?? "Not available"}
+                        </div>
+                      ))
+                    ) : (
+                      <div>Not available</div>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2 p-3">
+                  <div className="text-sm font-semibold text-foreground">
+                    Policy Sources
+                  </div>
+                  <div className="space-y-2 text-muted-foreground">
+                    {policyNameList.length > 0 ? (
+                      policyNameList.map((policyName) => (
+                        <div
+                          key={`policy-source-${policyName}`}
+                          className="rounded border bg-muted/20 p-2"
+                        >
+                          <div className="font-medium text-foreground">
+                            {policyName}
+                          </div>
+                          <div className="mt-1 whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
+                            {policySources[policyName] ?? "Not available"}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div>Not available</div>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : null}
-            {rawOutputContent ? (
+            {!isPolicyViolation && rawOutputContent ? (
               <div className="rounded-md border bg-background">
                 <div
                   className={`whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs text-muted-foreground ${
@@ -436,11 +422,11 @@ export function ObservationGovernanceAnalysisPanel(props: {
                   </div>
                 ) : null}
               </div>
-            ) : (
+            ) : !isPolicyViolation ? (
               <div className="min-w-0 rounded-md border bg-background p-2 text-xs text-muted-foreground">
                 No status message available.
               </div>
-            )}
+            ) : null}
           </div>
 
           {!canQueryGovernance ? (

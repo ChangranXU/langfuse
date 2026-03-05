@@ -29,6 +29,10 @@ export default function AnalysisPage() {
     () => parseTab(router.query.analysisLevel),
     [router.query.analysisLevel],
   );
+  const initialPolicyType = useMemo(() => {
+    const value = router.query.policyType;
+    return typeof value === "string" && value.trim().length > 0 ? value : null;
+  }, [router.query.policyType]);
   const forcedLevels = useMemo(() => toLevels(tab), [tab]);
   const { isBetaEnabled } = useV4Beta();
   const omittedAnalysisColumns = useMemo(
@@ -64,16 +68,21 @@ export default function AnalysisPage() {
   const setTab = useCallback(
     async (next: string) => {
       const nextTab = parseTab(next);
+      const nextQuery = {
+        ...router.query,
+        analysisLevel: nextTab,
+        // Reset pagination when switching analysis tabs
+        pageIndex: 0,
+        page: 1,
+      } as Record<string, unknown>;
+      if (nextTab !== "policy_violation") {
+        delete nextQuery.policyType;
+      }
+
       await router.replace(
         {
           pathname: router.pathname,
-          query: {
-            ...router.query,
-            analysisLevel: nextTab,
-            // Reset pagination when switching analysis tabs
-            pageIndex: 0,
-            page: 1,
-          },
+          query: nextQuery,
         },
         undefined,
         { shallow: true },
@@ -113,6 +122,8 @@ export default function AnalysisPage() {
                 clearTypeFilter
                 defaultSidebarCollapsed
                 replaceLevelWithErrorType={tab === "error_warning"}
+                replaceLevelWithPolicyType={tab === "policy_violation"}
+                initialPolicyTypeFilter={initialPolicyType}
                 omittedColumns={omittedAnalysisColumns}
                 forceViewMode="observation"
                 showOpenTraceButton
@@ -126,6 +137,8 @@ export default function AnalysisPage() {
                 clearTypeFilter
                 defaultSidebarCollapsed
                 replaceLevelWithErrorType={tab === "error_warning"}
+                replaceLevelWithPolicyType={tab === "policy_violation"}
+                initialPolicyTypeFilter={initialPolicyType}
                 omittedColumns={omittedAnalysisColumns}
                 showOpenTraceButton
                 showBulkAnalysisButton={tab === "error_warning"}

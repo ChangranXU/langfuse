@@ -25,36 +25,71 @@ function getMetadataRecord(metadata: unknown): Record<string, unknown> {
   return {};
 }
 
-function derivePolicyViolationTags(metadata: unknown): string[] {
-  const record = getMetadataRecord(metadata);
-  const tags: string[] = [];
-  const rawTags = record.policy_violation_tags;
-  if (Array.isArray(rawTags)) {
-    tags.push(
-      ...rawTags.filter(
-        (tag): tag is string => typeof tag === "string" && !!tag,
-      ),
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is string => typeof item === "string" && !!item.trim(),
     );
   }
-
-  const policyProtected = record.policy_protected;
-  if (typeof policyProtected === "string" && policyProtected.trim()) {
-    const lowered = policyProtected.toLowerCase();
-    tags.push("policy_protected");
-    if (lowered.includes("hard_code")) tags.push("hard_code");
-    if (lowered.includes(".env")) tags.push("dotenv");
-    if (lowered.includes("read path")) tags.push("read_path");
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (item): item is string => typeof item === "string" && !!item.trim(),
+        );
+      }
+    } catch {
+      // no-op
+    }
+    if (value.includes(",")) {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
   }
-
-  return [...new Set(tags)];
+  return [];
 }
 
-function derivePolicyViolationType(tags: string[]): string {
-  const priority = ["hard_code", "dotenv", "read_path", "policy_protected"];
-  for (const candidate of priority) {
-    if (tags.includes(candidate)) return candidate;
+function parseStringRecord(value: unknown): Record<string, string> {
+  let input = value;
+  if (typeof input === "string") {
+    try {
+      input = JSON.parse(input);
+    } catch {
+      return {};
+    }
   }
-  return tags[0] ?? "policy_violation";
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+  const entries = Object.entries(input as Record<string, unknown>).flatMap(
+    ([key, val]) =>
+      typeof val === "string" && val.trim().length > 0
+        ? [[key, val] as const]
+        : [],
+  );
+  return Object.fromEntries(entries);
+}
+
+function derivePolicyNames(observationMetadata: unknown): string[] {
+  const record = getMetadataRecord(observationMetadata);
+  const policyNames = new Set<string>(parseStringArray(record.policy_names));
+  parseStringArray(record.policy_name).forEach((name) => policyNames.add(name));
+  Object.keys(parseStringRecord(record.policy_descriptions)).forEach((name) =>
+    policyNames.add(name),
+  );
+  Object.keys(parseStringRecord(record.policy_sources)).forEach((name) =>
+    policyNames.add(name),
+  );
+
+  if (policyNames.size > 0) {
+    return Array.from(policyNames);
+  }
+  return ["unclassified"];
 }
 
 function getPolicyViolationFlag(value: unknown): boolean {
@@ -267,28 +302,28 @@ export function TraceGovernanceBanner() {
       {
         type: string;
         count: number;
-        nodes: Array<{ id: string; label: string; tags: string[] }>;
+        nodes: Array<{ id: string; label: string }>;
       }
     >();
 
     policyViolationObservations.forEach((obs) => {
-      const tags = derivePolicyViolationTags(obs.metadata);
-      const type = derivePolicyViolationType(tags);
-      const node = {
-        id: obs.id,
-        label: obs.name?.trim() || obs.id,
-        tags,
-      };
-      const existing = groups.get(type);
-      if (existing) {
-        existing.count += 1;
-        existing.nodes.push(node);
-      } else {
-        groups.set(type, {
-          type,
-          count: 1,
-          nodes: [node],
-        });
+      const policyNames = derivePolicyNames(obs.metadata);
+      for (const policyName of policyNames) {
+        const existing = groups.get(policyName);
+        const node = {
+          id: obs.id,
+          label: obs.name?.trim() || obs.id,
+        };
+        if (existing) {
+          existing.count += 1;
+          existing.nodes.push(node);
+        } else {
+          groups.set(policyName, {
+            type: policyName,
+            count: 1,
+            nodes: [node],
+          });
+        }
       }
     });
 
@@ -423,16 +458,6 @@ export function TraceGovernanceBanner() {
                   onClick={() => setSelectedNodeId(node.id)}
                 >
                   <span className="line-clamp-1 break-all">{node.label}</span>
-                  <span className="flex flex-wrap items-center gap-1">
-                    {node.tags.map((tag) => (
-                      <span
-                        key={`${node.id}-${tag}`}
-                        className="rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </span>
                 </button>
               );
             })}

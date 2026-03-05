@@ -268,6 +268,7 @@ export function ObservationDetailView({
     observation.level === "ERROR" ||
     observation.level === "WARNING" ||
     observation.level === "POLICY_VIOLATION";
+  const governanceObservation = observationWithIOCompat.data ?? observation;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -504,10 +505,10 @@ export function ObservationDetailView({
             <ObservationGovernanceAnalysisPanel
               projectId={projectId}
               traceId={traceId}
-              observationId={observation.id}
-              level={observation.level}
-              statusMessage={observation.statusMessage}
-              metadata={observation.metadata}
+              observationId={governanceObservation.id}
+              level={governanceObservation.level}
+              statusMessage={governanceObservation.statusMessage}
+              metadata={governanceObservation.metadata}
               traceMetadata={trace.metadata}
               hasProjectAccess={hasProjectAccess}
             />

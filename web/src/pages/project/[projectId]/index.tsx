@@ -1,7 +1,7 @@
 import { useRouter } from "next/router";
 import { GenerationLatencyChart } from "@/src/features/dashboard/components/LatencyChart";
 import { TracesBarListChart } from "@/src/features/dashboard/components/TracesBarListChart";
-import { ModelCostTable } from "@/src/features/dashboard/components/ModelCostTable";
+import { PolicyViolationTable } from "@/src/features/dashboard/components/PolicyViolationTable";
 import { ModelUsageChart } from "@/src/features/dashboard/components/ModelUsageChart";
 import { TracesAndObservationsTimeSeriesChart } from "@/src/features/dashboard/components/TracesTimeSeriesChart";
 import { UserChart } from "@/src/features/dashboard/components/UserChart";
@@ -271,7 +271,7 @@ export default function Dashboard() {
           isLoading={environmentFilterOptions.isPending}
           metricsVersion={metricsVersion}
         />
-        <ModelCostTable
+        <PolicyViolationTable
           className="col-span-1 xl:col-span-3"
           projectId={projectId}
           globalFilterState={[...userFilterState, ...environmentFilter]}

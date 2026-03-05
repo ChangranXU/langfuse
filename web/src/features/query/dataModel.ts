@@ -447,6 +447,20 @@ export const observationsView: ViewDeclarationType = {
       description: "Names of tools that were called by the observation.",
       explodeArray: true,
     },
+    policyName: {
+      sql: "if(observations.metadata['policy_names'] = '', [], JSONExtract(observations.metadata['policy_names'], 'Array(String)'))",
+      alias: "policyName",
+      type: "arrayString",
+      description:
+        "Names of policies attached to policy-violation observations.",
+      explodeArray: true,
+    },
+    policyDescription: {
+      sql: "nullIf(JSONExtractString(nullIf(observations.metadata['policy_descriptions'], ''), policyName), '')",
+      alias: "policyDescription",
+      type: "string",
+      description: "Description mapped to a specific policyName entry.",
+    },
   },
   measures: {
     count: {
@@ -1103,6 +1117,20 @@ export const eventsObservationsView: ViewDeclarationType = {
       type: "arrayString",
       description: "Names of tools that were called by the observation.",
       explodeArray: true,
+    },
+    policyName: {
+      sql: "if(events_observations.metadata['policy_names'] = '', [], JSONExtract(events_observations.metadata['policy_names'], 'Array(String)'))",
+      alias: "policyName",
+      type: "arrayString",
+      description:
+        "Names of policies attached to policy-violation observations.",
+      explodeArray: true,
+    },
+    policyDescription: {
+      sql: "nullIf(JSONExtractString(nullIf(events_observations.metadata['policy_descriptions'], ''), policyName), '')",
+      alias: "policyDescription",
+      type: "string",
+      description: "Description mapped to a specific policyName entry.",
     },
     costType: {
       sql: "mapKeys(events_observations.cost_details)",
