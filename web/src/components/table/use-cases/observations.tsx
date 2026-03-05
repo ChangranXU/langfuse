@@ -1188,9 +1188,11 @@ export default function ObservationsTable({
               : (errorType ?? "unclassified");
 
           return (
-            <span className="rounded-sm bg-red-100 p-0.5 text-xs text-red-700 dark:bg-red-900/40 dark:text-red-300">
-              {displayValue}
-            </span>
+            <div className="flex flex-wrap items-start gap-2 whitespace-normal py-0.5">
+              <span className="inline-flex max-w-full whitespace-normal break-all rounded-md bg-red-100 px-2 py-0.5 text-xs leading-normal text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                {displayValue}
+              </span>
+            </div>
           );
         }
 
