@@ -2,7 +2,6 @@ import Link from "next/link";
 import { LeftAlignedCell } from "@/src/features/dashboard/components/LeftAlignedCell";
 import { RightAlignedCell } from "@/src/features/dashboard/components/RightAlignedCell";
 import { DashboardCard } from "@/src/features/dashboard/components/cards/DashboardCard";
-import { ExpandListButton } from "@/src/features/dashboard/components/cards/ChevronButton";
 import { NoDataOrLoading } from "@/src/components/NoDataOrLoading";
 import { type FilterState } from "@langfuse/shared";
 import { api } from "@/src/utils/api";
@@ -141,7 +140,6 @@ export const PolicyViolationTable = ({
       },
     );
 
-  const [isExpanded, setExpanded] = useState(false);
   const unclassifiedCount =
     Number(unclassifiedMissingPolicyNamesMetrics.data?.[0]?.count_count ?? 0) +
     Number(
@@ -169,7 +167,6 @@ export const PolicyViolationTable = ({
     },
   ];
 
-  const visibleRows = rows.slice(0, isExpanded ? 20 : 5);
   const getPolicyAnalysisHref = (policyName: string) => {
     const params = new URLSearchParams({
       analysisLevel: "policy_violation",
@@ -201,80 +198,76 @@ export const PolicyViolationTable = ({
         unclassifiedMissingPolicyNamesMetrics.isLoading ||
         unclassifiedEmptyArrayPolicyNamesMetrics.isLoading
       }
+      cardContentClassName="flex min-h-0 flex-1 flex-col"
     >
       {rows.length > 0 ? (
-        <div className="mt-4">
-          <table className="w-full table-fixed divide-y divide-border">
-            <colgroup>
-              <col style={{ width: "24%" }} />
-              <col style={{ width: "62%" }} />
-              <col style={{ width: "14%" }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th
-                  scope="col"
-                  className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
-                >
-                  Policy name
-                </th>
-                <th
-                  scope="col"
-                  className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
-                >
-                  Description
-                </th>
-                <th
-                  scope="col"
-                  className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
-                >
-                  <RightAlignedCell className="text-center">
-                    Triggered
-                  </RightAlignedCell>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-accent bg-background">
-              {visibleRows.map((row, i) => (
-                <tr key={`${row.policyName}-${i}`}>
-                  <td className="py-2 pl-3 pr-2 text-center align-top text-xs text-muted-foreground sm:pl-0">
-                    <LeftAlignedCell
-                      className="whitespace-normal break-words text-center font-semibold text-foreground"
-                      title={row.policyName}
-                    >
-                      {row.policyName}
-                    </LeftAlignedCell>
-                  </td>
-                  <td className="py-2 pl-3 pr-2 text-center align-top text-xs text-muted-foreground sm:pl-0">
-                    <ExpandableDescriptionCell text={row.policyDescription} />
-                  </td>
-                  <td className="py-2 pl-3 pr-2 text-center align-top text-xs text-muted-foreground sm:pl-0">
-                    <RightAlignedCell className="whitespace-nowrap text-center">
-                      {row.count > 0 ? (
-                        <Link
-                          href={getPolicyAnalysisHref(row.policyName)}
-                          className="font-semibold text-foreground underline hover:text-foreground"
-                        >
-                          {row.count}
-                        </Link>
-                      ) : (
-                        <span className="font-semibold text-foreground underline">
-                          {row.count}
-                        </span>
-                      )}
+        <div className="mt-4 flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <table className="w-full table-fixed divide-y divide-border">
+              <colgroup>
+                <col style={{ width: "24%" }} />
+                <col style={{ width: "62%" }} />
+                <col style={{ width: "14%" }} />
+              </colgroup>
+              <thead className="sticky top-0 z-10 bg-background">
+                <tr>
+                  <th
+                    scope="col"
+                    className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
+                  >
+                    Policy name
+                  </th>
+                  <th
+                    scope="col"
+                    className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
+                  >
+                    Description
+                  </th>
+                  <th
+                    scope="col"
+                    className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
+                  >
+                    <RightAlignedCell className="text-center">
+                      Triggered
                     </RightAlignedCell>
-                  </td>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <ExpandListButton
-            isExpanded={isExpanded}
-            setExpanded={setExpanded}
-            totalLength={rows.length}
-            maxLength={5}
-            expandText={rows.length > 20 ? "Show top 20" : "Show all"}
-          />
+              </thead>
+              <tbody className="divide-y divide-accent bg-background">
+                {rows.map((row, i) => (
+                  <tr key={`${row.policyName}-${i}`}>
+                    <td className="py-2 pl-3 pr-2 text-center align-top text-xs text-muted-foreground sm:pl-0">
+                      <LeftAlignedCell
+                        className="whitespace-normal break-words text-center font-semibold text-foreground"
+                        title={row.policyName}
+                      >
+                        {row.policyName}
+                      </LeftAlignedCell>
+                    </td>
+                    <td className="py-2 pl-3 pr-2 text-center align-top text-xs text-muted-foreground sm:pl-0">
+                      <ExpandableDescriptionCell text={row.policyDescription} />
+                    </td>
+                    <td className="py-2 pl-3 pr-2 text-center align-top text-xs text-muted-foreground sm:pl-0">
+                      <RightAlignedCell className="whitespace-nowrap text-center">
+                        {row.count > 0 ? (
+                          <Link
+                            href={getPolicyAnalysisHref(row.policyName)}
+                            className="font-semibold text-foreground underline hover:text-foreground"
+                          >
+                            {row.count}
+                          </Link>
+                        ) : (
+                          <span className="font-semibold text-foreground underline">
+                            {row.count}
+                          </span>
+                        )}
+                      </RightAlignedCell>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <NoDataOrLoading
