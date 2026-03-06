@@ -75,8 +75,8 @@ function parseStringRecord(value: unknown): Record<string, string> {
   return Object.fromEntries(entries);
 }
 
-function derivePolicyNames(observationMetadata: unknown): string[] {
-  const record = getMetadataRecord(observationMetadata);
+function derivePolicyNamesFromMetadata(metadata: unknown): string[] {
+  const record = getMetadataRecord(metadata);
   const policyNames = new Set<string>(parseStringArray(record.policy_names));
   parseStringArray(record.policy_name).forEach((name) => policyNames.add(name));
   Object.keys(parseStringRecord(record.policy_descriptions)).forEach((name) =>
@@ -89,7 +89,7 @@ function derivePolicyNames(observationMetadata: unknown): string[] {
   if (policyNames.size > 0) {
     return Array.from(policyNames);
   }
-  return ["unclassified"];
+  return [];
 }
 
 function getPolicyViolationFlag(value: unknown): boolean {
@@ -143,6 +143,10 @@ export function TraceGovernanceBanner() {
   );
   const [expandedPolicyViolationType, setExpandedPolicyViolationType] =
     useState<string | null>(null);
+  const [policyNamesByObservationId, setPolicyNamesByObservationId] = useState<
+    Record<string, string[]>
+  >({});
+  const [isPolicyTypeLoading, setIsPolicyTypeLoading] = useState(false);
 
   const errorAnalysisSettingsQuery =
     api.projects.getErrorAnalysisSettings.useQuery(
@@ -246,6 +250,61 @@ export function TraceGovernanceBanner() {
     };
   }, [hasProjectAccess, errorObservationIds, trace.projectId, trace.id]);
 
+  useEffect(() => {
+    if (!hasProjectAccess || policyViolationObservations.length === 0) {
+      setPolicyNamesByObservationId({});
+      setIsPolicyTypeLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchPolicyNames = async () => {
+      setIsPolicyTypeLoading(true);
+      const results = await Promise.all(
+        policyViolationObservations.map(async (obs) => {
+          try {
+            const result = await directApi.observations.byId.query({
+              projectId: trace.projectId,
+              traceId: trace.id,
+              observationId: obs.id,
+              startTime: obs.startTime,
+              verbosity: "compact",
+            });
+            return {
+              observationId: obs.id,
+              policyNames: derivePolicyNamesFromMetadata(result.metadata),
+            };
+          } catch {
+            return {
+              observationId: obs.id,
+              policyNames: [] as string[],
+            };
+          }
+        }),
+      );
+
+      if (cancelled) return;
+
+      setPolicyNamesByObservationId(
+        Object.fromEntries(
+          results.map((item) => [item.observationId, item.policyNames]),
+        ),
+      );
+      setIsPolicyTypeLoading(false);
+    };
+
+    void fetchPolicyNames();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hasProjectAccess,
+    policyViolationObservations,
+    trace.projectId,
+    trace.id,
+  ]);
+
   const errorGroups = useMemo(() => {
     const observationById = new Map(observations.map((obs) => [obs.id, obs]));
     const groups = new Map<
@@ -307,8 +366,15 @@ export function TraceGovernanceBanner() {
     >();
 
     policyViolationObservations.forEach((obs) => {
-      const policyNames = derivePolicyNames(obs.metadata);
-      for (const policyName of policyNames) {
+      const fetchedPolicyNames = policyNamesByObservationId[obs.id] ?? [];
+      const metadataPolicyNames = derivePolicyNamesFromMetadata(obs.metadata);
+      const policyNames = (
+        fetchedPolicyNames.length > 0 ? fetchedPolicyNames : metadataPolicyNames
+      ).filter(Boolean);
+      const normalizedPolicyNames =
+        policyNames.length > 0 ? policyNames : ["unclassified"];
+
+      for (const policyName of normalizedPolicyNames) {
         const existing = groups.get(policyName);
         const node = {
           id: obs.id,
@@ -331,7 +397,7 @@ export function TraceGovernanceBanner() {
       if (b.count !== a.count) return b.count - a.count;
       return a.type.localeCompare(b.type);
     });
-  }, [policyViolationObservations]);
+  }, [policyViolationObservations, policyNamesByObservationId]);
 
   const activePolicyViolationGroup = useMemo(
     () =>
@@ -412,7 +478,9 @@ export function TraceGovernanceBanner() {
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
         <span>Policy violation node types:</span>
         {policyViolationCount === 0 ? (
-          <span>none</span>
+          <span className="font-bold text-foreground">none</span>
+        ) : isPolicyTypeLoading && policyViolationGroups.length === 0 ? (
+          <span>loading...</span>
         ) : (
           policyViolationGroups.map((group) => {
             const isActive = expandedPolicyViolationType === group.type;
