@@ -25,6 +25,15 @@ type ObservationMetadataById = Record<
 
 const SESSION_TURN_HIERARCHY_NODE_RE = /^session\.turn\.(?<turn>\d+)$/;
 const TRACE_START_NODE_NAME = "session.trace.start";
+const TOOL_NODE_WITH_INDEX_RE = /^(?<toolName>[^.]+)\.(?<index>\d+)$/;
+const PARSER_TOOL_RESULT_NODE_RE =
+  /^parser\.(?<toolName>[^.]+)\.(?<index>\d+)$/;
+const PARSER_TOOL_PRE_NODE_RE =
+  /^parser\.pre_(?<toolName>[^.]+)\.(?<index>\d+)$/;
+const PARSER_TURN_TOOL_NODE_RE =
+  /^parser\.turn_\d+\.tool_(?:result|call)\.(?<toolName>[^.]+)\.(?<index>\d+)$/;
+const PARSER_TURN_TOOL_PRE_NODE_RE =
+  /^parser\.turn_\d+\.pre_(?<toolName>[^.]+)\.(?<index>\d+)$/;
 
 export function transformLanggraphToGeneralized(
   data: AgentGraphDataResponse[],
@@ -754,7 +763,11 @@ export function buildHierarchyGraphFromStepData(params: {
   }));
 
   const nodeToObservationsMap = new Map<string, string[]>();
-  turnWindows.forEach((turn) => nodeToObservationsMap.set(turn.nodeName, []));
+  const nodeToObservationIdsSetMap = new Map<string, Set<string>>();
+  turnWindows.forEach((turn) => {
+    nodeToObservationsMap.set(turn.nodeName, []);
+    nodeToObservationIdsSetMap.set(turn.nodeName, new Set<string>());
+  });
 
   let currentTurnIndex = 0;
   for (const observation of chronologicalObservations) {
@@ -775,7 +788,20 @@ export function buildHierarchyGraphFromStepData(params: {
       continue;
     }
 
-    nodeToObservationsMap.get(activeTurn.nodeName)?.push(observation.id);
+    const observationIdsForTurn = nodeToObservationsMap.get(
+      activeTurn.nodeName,
+    );
+    const observationIdsSetForTurn = nodeToObservationIdsSetMap.get(
+      activeTurn.nodeName,
+    );
+    if (
+      observationIdsForTurn &&
+      observationIdsSetForTurn &&
+      !observationIdsSetForTurn.has(observation.id)
+    ) {
+      observationIdsSetForTurn.add(observation.id);
+      observationIdsForTurn.push(observation.id);
+    }
   }
 
   const nodes: GraphNodeData[] = [
@@ -939,11 +965,17 @@ export function buildHierarchyGraphFromStepData(params: {
     const toolObservationIds = observationIds.filter((id) => {
       const obs = observationsById.get(id);
       const metadata = getMetadata(id);
-      const toolName = obs?.toolName ?? getMetadataToolName(metadata);
-      return Boolean(
-        (obs?.observationType === "TOOL" && toolName) ||
-          (toolName && getMetadataNodeType(metadata) === "tool_result"),
-      );
+      const observationNodeName = obs?.node ?? obs?.name;
+      if (isParserObservationNodeName(observationNodeName)) {
+        return false;
+      }
+      const toolInvocation =
+        extractToolInvocationFromNodeName(observationNodeName);
+      const toolName =
+        obs?.toolName ??
+        getMetadataToolName(metadata) ??
+        toolInvocation?.toolName;
+      return Boolean(toolName && obs?.observationType === "TOOL");
     });
 
     if (toolCount > 0) {
@@ -1176,6 +1208,49 @@ function isSystemNodeName(nodeName: string | null | undefined): boolean {
   );
 }
 
+function isParserObservationNodeName(
+  nodeName: string | null | undefined,
+): boolean {
+  if (!nodeName) return false;
+  const normalizedNodeName =
+    normalizeParserNodeNameForGraph(nodeName) ?? nodeName;
+  return normalizedNodeName.startsWith("parser.");
+}
+
+function parseToolInvocationNodeName(
+  nodeName: string,
+): { toolName: string; invocationKey: string } | null {
+  const matchers = [
+    TOOL_NODE_WITH_INDEX_RE,
+    PARSER_TOOL_RESULT_NODE_RE,
+    PARSER_TOOL_PRE_NODE_RE,
+    PARSER_TURN_TOOL_NODE_RE,
+    PARSER_TURN_TOOL_PRE_NODE_RE,
+  ];
+  for (const matcher of matchers) {
+    const match = matcher.exec(nodeName);
+    if (!match?.groups?.toolName || !match.groups.index) continue;
+    return {
+      toolName: match.groups.toolName,
+      invocationKey: `${match.groups.toolName}.${match.groups.index}`,
+    };
+  }
+  return null;
+}
+
+function extractToolInvocationFromNodeName(
+  nodeName: string | null | undefined,
+): { toolName: string; invocationKey: string } | null {
+  if (!nodeName) return null;
+
+  const normalizedNodeName =
+    normalizeParserNodeNameForGraph(nodeName) ?? nodeName;
+  return (
+    parseToolInvocationNodeName(normalizedNodeName) ??
+    parseToolInvocationNodeName(nodeName)
+  );
+}
+
 function buildTurnMetadataSummary(params: {
   observationIds: string[];
   observationsById: Map<string, AgentGraphDataResponse>;
@@ -1202,6 +1277,7 @@ function buildTurnMetadataSummary(params: {
 
   const instructionTypeCounts = new Map<string, number>();
   const policyRuleEffectCounts: Record<string, number> = {};
+  const countedToolInvocationKeys = new Set<string>();
   let policyHasBlock = false;
   let policyAuthorityLabel: string | null = null;
   let policyConfidentiality: string | null = null;
@@ -1223,29 +1299,47 @@ function buildTurnMetadataSummary(params: {
     minStartMs = Math.min(minStartMs, startMs);
     maxEndMs = Math.max(maxEndMs, endMs);
 
-    if (
-      observation.observationType === "TOOL" ||
-      observation.toolName ||
+    const metadataToolName =
       getFirstStringValue({
         metadata,
         candidateKeys: [["tool_name"], ["toolName"]],
-      })
-    ) {
-      toolCount++;
-      const toolName =
-        observation.toolName ??
-        getFirstStringValue({
-          metadata,
-          candidateKeys: [["tool_name"], ["toolName"]],
-        }) ??
-        null;
+      }) ?? null;
+    const observationNodeName = observation.node ?? observation.name;
+    const isParserObservation =
+      isParserObservationNodeName(observationNodeName);
+    const toolInvocation =
+      extractToolInvocationFromNodeName(observationNodeName);
+    const toolName =
+      toolInvocation?.toolName ??
+      observation.toolName ??
+      metadataToolName ??
+      null;
+    const isToolObservation =
+      !isParserObservation &&
+      (observation.observationType === "TOOL" ||
+        toolInvocation !== null ||
+        toolName !== null);
+
+    if (isToolObservation) {
+      const invocationKey =
+        toolInvocation?.invocationKey ??
+        (toolName ? `${toolName}::${observation.id}` : `obs:${observation.id}`);
+      const isNewInvocation = !countedToolInvocationKeys.has(invocationKey);
+
+      if (isNewInvocation) {
+        countedToolInvocationKeys.add(invocationKey);
+        toolCount++;
+      }
+
       if (toolName) {
         const existing = toolMetaByName.get(toolName) ?? {
           count: 0,
           instructionTypes: new Set<string>(),
           hasBlock: false,
         };
-        existing.count += 1;
+        if (isNewInvocation) {
+          existing.count += 1;
+        }
         const toolIType =
           getFirstStringValue({
             metadata,

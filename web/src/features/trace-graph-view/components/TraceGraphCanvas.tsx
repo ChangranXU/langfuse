@@ -46,6 +46,20 @@ type TraceGraphCanvasProps = {
   whiteBackground?: boolean;
 };
 
+type ModeSearchState = {
+  isSearchOpen: boolean;
+  searchQuery: string;
+  activeSearchResultIndex: number;
+};
+
+function createInitialModeSearchState(): ModeSearchState {
+  return {
+    isSearchOpen: false,
+    searchQuery: "",
+    activeSearchResultIndex: 0,
+  };
+}
+
 export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   const {
     graph: graphData,
@@ -61,20 +75,88 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   } = props;
   const [isHovering, setIsHovering] = useState(false);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
+  const [searchStateByMode, setSearchStateByMode] = useState<
+    Record<TraceGraphMode, ModeSearchState>
+  >({
+    execution: createInitialModeSearchState(),
+    hierarchy: createInitialModeSearchState(),
+  });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
   const nodesDataSetRef = useRef<DataSet<any> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const onCanvasNodeNameChangeRef = useRef(onCanvasNodeNameChange);
+  const selectedNodeNameRef = useRef(selectedNodeName);
+  const lastAppliedSearchKeyRef = useRef<Record<TraceGraphMode, string | null>>(
+    {
+      execution: null,
+      hierarchy: null,
+    },
+  );
 
   // Keep ref up to date without triggering Network recreation
   useEffect(() => {
     onCanvasNodeNameChangeRef.current = onCanvasNodeNameChange;
   }, [onCanvasNodeNameChange]);
+
+  useEffect(() => {
+    selectedNodeNameRef.current = selectedNodeName;
+  }, [selectedNodeName]);
+
+  const updateCurrentModeSearchState = useCallback(
+    (updater: (previousState: ModeSearchState) => ModeSearchState) => {
+      setSearchStateByMode((previousStateByMode) => ({
+        ...previousStateByMode,
+        [graphMode]: updater(previousStateByMode[graphMode]),
+      }));
+    },
+    [graphMode],
+  );
+
+  const isSearchOpen = searchStateByMode[graphMode].isSearchOpen;
+  const searchQuery = searchStateByMode[graphMode].searchQuery;
+  const activeSearchResultIndex =
+    searchStateByMode[graphMode].activeSearchResultIndex;
+
+  const setIsSearchOpen = useCallback(
+    (value: React.SetStateAction<boolean>) => {
+      updateCurrentModeSearchState((previousState) => ({
+        ...previousState,
+        isSearchOpen:
+          typeof value === "function"
+            ? value(previousState.isSearchOpen)
+            : value,
+      }));
+    },
+    [updateCurrentModeSearchState],
+  );
+
+  const setSearchQuery = useCallback(
+    (value: React.SetStateAction<string>) => {
+      updateCurrentModeSearchState((previousState) => ({
+        ...previousState,
+        searchQuery:
+          typeof value === "function"
+            ? value(previousState.searchQuery)
+            : value,
+      }));
+    },
+    [updateCurrentModeSearchState],
+  );
+
+  const setActiveSearchResultIndex = useCallback(
+    (value: React.SetStateAction<number>) => {
+      updateCurrentModeSearchState((previousState) => ({
+        ...previousState,
+        activeSearchResultIndex:
+          typeof value === "function"
+            ? value(previousState.activeSearchResultIndex)
+            : value,
+      }));
+    },
+    [updateCurrentModeSearchState],
+  );
 
   const getNodeStyle = (params: {
     nodeType: string;
@@ -396,37 +478,123 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   };
 
   const searchResultNodeIds = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const normalizedQuery = normalizeSearchText(searchQuery);
     if (!normalizedQuery) {
       return [];
     }
+    const queryTokens = tokenizeSearchText(normalizedQuery);
 
-    return Array.from(
-      new Set(
-        graphData.nodes
-          .filter((node) =>
-            buildSearchableNodeText(node).includes(normalizedQuery),
-          )
-          .map((node) => node.id),
-      ),
-    );
-  }, [graphData.nodes, searchQuery]);
+    const scoredMatches = graphData.nodes
+      .map((node) => {
+        const searchableText = buildGraphNodeSearchText({
+          node,
+          graphMode,
+        });
+        const labelText = normalizeSearchText(node.label);
+        const idText = normalizeSearchText(node.id);
 
-  const focusNode = useCallback((nodeId: string) => {
-    const network = networkRef.current;
-    if (!network) return;
-    try {
-      network.focus(nodeId, {
-        scale: Math.max(network.getScale(), 0.9),
-        animation: {
-          duration: 250,
-          easingFunction: "easeInOutQuad",
-        },
+        if (!queryTokens.every((token) => searchableText.includes(token))) {
+          return null;
+        }
+
+        const score =
+          idText === normalizedQuery
+            ? 0
+            : idText.startsWith(normalizedQuery)
+              ? 1
+              : labelText === normalizedQuery
+                ? 2
+                : labelText.startsWith(normalizedQuery)
+                  ? 3
+                  : searchableText.includes(normalizedQuery)
+                    ? 4
+                    : 5;
+
+        return { id: node.id, score };
+      })
+      .filter((item): item is { id: string; score: number } => item !== null)
+      .sort((a, b) => {
+        if (a.score !== b.score) return a.score - b.score;
+        return a.id.localeCompare(b.id);
       });
-    } catch (error) {
-      console.error("Error focusing node:", nodeId, error);
+
+    const uniqueNodeIds: string[] = [];
+    const seen = new Set<string>();
+    for (const item of scoredMatches) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      uniqueNodeIds.push(item.id);
     }
-  }, []);
+    return uniqueNodeIds;
+  }, [graphData.nodes, graphMode, searchQuery]);
+
+  const graphNodeIds = useMemo(
+    () => new Set(graphData.nodes.map((node) => node.id)),
+    [graphData.nodes],
+  );
+
+  const focusNode = useCallback(
+    (nodeId: string): boolean => {
+      const network = networkRef.current;
+      if (!network) return false;
+      if (!graphNodeIds.has(nodeId)) return false;
+
+      try {
+        network.focus(nodeId, {
+          scale: Math.max(network.getScale(), 0.9),
+          animation: {
+            duration: 250,
+            easingFunction: "easeInOutQuad",
+          },
+        });
+        return true;
+      } catch (error) {
+        console.error("Error focusing node:", nodeId, error);
+        return false;
+      }
+    },
+    [graphNodeIds],
+  );
+
+  const findParentFallbackNodeId = useCallback(
+    (nodeId: string): string | null => {
+      const parentIds = Array.from(
+        new Set(
+          graphData.edges
+            .filter((edge) => edge.to === nodeId)
+            .map((edge) => edge.from)
+            .filter((parentId) => graphNodeIds.has(parentId)),
+        ),
+      );
+
+      for (const parentId of parentIds) {
+        const observationIds = nodeToObservationsMap[parentId] ?? [];
+        if (observationIds.length > 0 || isSystemNodeId(parentId)) {
+          return parentId;
+        }
+      }
+
+      return parentIds[0] ?? null;
+    },
+    [graphData.edges, graphNodeIds, nodeToObservationsMap],
+  );
+
+  const navigateToNode = useCallback(
+    (nodeId: string): boolean => {
+      const observationIds = nodeToObservationsMap[nodeId] ?? [];
+      const canSyncSelection =
+        observationIds.length > 0 || isSystemNodeId(nodeId);
+
+      if (canSyncSelection && selectedNodeNameRef.current !== nodeId) {
+        onCanvasNodeNameChangeRef.current(nodeId, {
+          shouldCycleObservation: false,
+        });
+      }
+
+      return focusNode(nodeId);
+    },
+    [focusNode, nodeToObservationsMap],
+  );
 
   useEffect(() => {
     if (!isSearchOpen) return;
@@ -447,8 +615,9 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   }, [searchResultNodeIds.length, activeSearchResultIndex]);
 
   useEffect(() => {
-    const normalizedQuery = searchQuery.trim();
+    const normalizedQuery = normalizeSearchText(searchQuery);
     if (!normalizedQuery || searchResultNodeIds.length === 0) {
+      lastAppliedSearchKeyRef.current[graphMode] = null;
       return;
     }
 
@@ -461,18 +630,33 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
       return;
     }
 
-    if (selectedNodeName !== matchedNodeId) {
-      onCanvasNodeNameChangeRef.current(matchedNodeId, {
-        shouldCycleObservation: false,
-      });
+    const appliedSearchKey = `${normalizedQuery}::${resultIndex}::${matchedNodeId}`;
+    if (lastAppliedSearchKeyRef.current[graphMode] === appliedSearchKey) {
+      return;
     }
-    focusNode(matchedNodeId);
+    lastAppliedSearchKeyRef.current[graphMode] = appliedSearchKey;
+
+    const matchedObservationIds = nodeToObservationsMap[matchedNodeId] ?? [];
+    let didNavigate = false;
+
+    if (matchedObservationIds.length > 0 || isSystemNodeId(matchedNodeId)) {
+      didNavigate = navigateToNode(matchedNodeId);
+    }
+
+    if (!didNavigate) {
+      const parentFallbackNodeId = findParentFallbackNodeId(matchedNodeId);
+      if (parentFallbackNodeId) {
+        didNavigate = navigateToNode(parentFallbackNodeId);
+      }
+    }
   }, [
     activeSearchResultIndex,
-    focusNode,
+    findParentFallbackNodeId,
+    graphMode,
+    navigateToNode,
+    nodeToObservationsMap,
     searchQuery,
     searchResultNodeIds,
-    selectedNodeName,
   ]);
 
   const moveSearchSelection = useCallback(
@@ -497,7 +681,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
       }
       return next;
     });
-  }, []);
+  }, [setActiveSearchResultIndex, setIsSearchOpen, setSearchQuery]);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -699,9 +883,9 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
         onMouseLeave={() => setIsHovering(false)}
       >
         {(isHovering || isSearchOpen) && (
-          <div className="absolute right-2 top-2 z-10 flex items-start gap-2">
+          <div className="absolute left-2 right-2 top-2 z-10 flex items-start justify-end gap-2">
             {isSearchOpen && (
-              <div className="flex min-w-64 items-center gap-1 rounded-md border bg-background/95 p-1 shadow-md dark:shadow-border">
+              <div className="flex w-[min(26rem,calc(100%-2.75rem))] min-w-0 items-center gap-1 rounded-md border bg-background/95 p-1 shadow-md dark:shadow-border sm:w-auto sm:min-w-64">
                 <Input
                   ref={searchInputRef}
                   value={searchQuery}
@@ -712,7 +896,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                     moveSearchSelection(event.shiftKey ? -1 : 1);
                   }}
                   placeholder="Search node..."
-                  className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0"
+                  className="h-8 min-w-0 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
                 />
                 <span className="min-w-12 text-center text-xs text-muted-foreground">
                   {searchQuery.trim().length === 0
@@ -849,8 +1033,57 @@ function truncateText(value: string, maxLength: number): string {
   return `${value.slice(0, maxLength - 1)}...`;
 }
 
-function buildSearchableNodeText(node: GraphNodeData): string {
-  return [node.id, node.label, node.type, node.title ?? "", node.level ?? ""]
-    .join(" ")
-    .toLowerCase();
+function normalizeSearchText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[_./:-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeSearchText(value: string): string[] {
+  return normalizeSearchText(value).split(" ").filter(Boolean);
+}
+
+export function buildGraphNodeSearchText(params: {
+  node: GraphNodeData;
+  graphMode: TraceGraphMode;
+}): string {
+  const { node, graphMode } = params;
+  const nodeId =
+    graphMode === "hierarchy" && node.id.includes("::")
+      ? ""
+      : normalizeSearchText(node.id);
+  const nodeLabel = normalizeSearchText(node.label);
+  const nodeType = normalizeSearchText(node.type);
+  const inputOutputText = extractInputOutputText(node.title);
+
+  // Search scope whitelist:
+  // - graph node id
+  // - graph node label/type (node info shown on graph)
+  // - input/output snippets from node title
+  // Metadata summaries are intentionally excluded.
+  return [nodeId, nodeLabel, nodeType, inputOutputText].join(" ").trim();
+}
+
+function extractInputOutputText(title: string | undefined): string {
+  if (!title) return "";
+
+  const titleLines = title
+    .split("\n")
+    .map((line) => normalizeSearchText(line))
+    .filter(Boolean);
+
+  const ioLines = titleLines.filter((line) => /\b(input|output)\b/.test(line));
+
+  return ioLines.join(" ");
+}
+
+function isSystemNodeId(nodeId: string): boolean {
+  return (
+    nodeId === LANGFUSE_START_NODE_NAME ||
+    nodeId === LANGFUSE_END_NODE_NAME ||
+    nodeId === LANGGRAPH_START_NODE_NAME ||
+    nodeId === LANGGRAPH_END_NODE_NAME
+  );
 }

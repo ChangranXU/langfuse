@@ -721,4 +721,157 @@ describe("buildHierarchyGraphFromStepData summaries", () => {
     expect(turnNode?.title).toContain("Warnings: 1");
     expect(turnNode?.title).toContain("Parser consistency issues: 1");
   });
+
+  it("deduplicates tool + parser.tool_result for same invocation", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "turn-1",
+        name: "session.turn.001",
+        node: "session.turn.001",
+        step: 1,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:10.000Z",
+        observationType: "CHAIN",
+      }),
+      createObservation({
+        id: "tool-1",
+        name: "web_fetch.3",
+        node: "web_fetch.3",
+        step: 2,
+        startTime: "2026-01-01T00:00:02.000Z",
+        endTime: "2026-01-01T00:00:03.000Z",
+        observationType: "TOOL",
+        toolName: "web_fetch",
+      }),
+      createObservation({
+        id: "parser-result-1",
+        name: "session.parser.turn_001.tool_result.web_fetch.3",
+        node: "session.parser.turn_001.tool_result.web_fetch.3",
+        step: 3,
+        startTime: "2026-01-01T00:00:03.500Z",
+        endTime: "2026-01-01T00:00:03.700Z",
+        observationType: "SPAN",
+      }),
+    ];
+
+    const { graph } = buildHierarchyGraphFromStepData({
+      data,
+      observationMetadataById: {
+        "parser-result-1": {
+          tool_name: "web_fetch",
+          node_type: "tool_result",
+        },
+      },
+    });
+
+    const turnNode = graph.nodes.find((n) => n.id === "session.turn.001");
+    expect(turnNode?.metadataSummary?.toolCount).toBe(1);
+    expect(turnNode?.metadataSummary?.toolBreakdown).toEqual([
+      {
+        toolName: "web_fetch",
+        count: 1,
+        instructionTypes: null,
+        hasBlock: null,
+      },
+    ]);
+
+    const toolsNode = graph.nodes.find(
+      (n) => n.id === "session.turn.001::tools",
+    );
+    expect(toolsNode?.label).toBe("Tools\n1");
+
+    const perToolNode = graph.nodes.find(
+      (n) => n.id === "session.turn.001::tool::web_fetch",
+    );
+    expect(perToolNode?.label).toContain("×1");
+  });
+
+  it("deduplicates repeated observation ids within the same turn window", () => {
+    const turnObservation = createObservation({
+      id: "turn-1",
+      name: "session.turn.001",
+      node: "session.turn.001",
+      step: 1,
+      startTime: "2026-01-01T00:00:00.000Z",
+      endTime: "2026-01-01T00:00:10.000Z",
+      observationType: "CHAIN",
+    });
+    const toolObservation = createObservation({
+      id: "tool-1",
+      name: "web_fetch.1",
+      node: "web_fetch.1",
+      step: 2,
+      startTime: "2026-01-01T00:00:02.000Z",
+      endTime: "2026-01-01T00:00:03.000Z",
+      observationType: "TOOL",
+      toolName: "web_fetch",
+    });
+    const data: AgentGraphDataResponse[] = [
+      turnObservation,
+      toolObservation,
+      { ...toolObservation }, // duplicated row from exported traces
+    ];
+
+    const { graph } = buildHierarchyGraphFromStepData({ data });
+    const turnNode = graph.nodes.find((n) => n.id === "session.turn.001");
+
+    expect(turnNode?.metadataSummary?.observationCount).toBe(2);
+    expect(turnNode?.metadataSummary?.toolCount).toBe(1);
+    expect(turnNode?.metadataSummary?.toolBreakdown).toEqual([
+      {
+        toolName: "web_fetch",
+        count: 1,
+        instructionTypes: null,
+        hasBlock: null,
+      },
+    ]);
+  });
+
+  it("does not count parser observations as tools", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "turn-1",
+        name: "session.turn.001",
+        node: "session.turn.001",
+        step: 1,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:10.000Z",
+        observationType: "CHAIN",
+      }),
+      createObservation({
+        id: "parser-pre",
+        name: "session.parser.turn_001.pre_web_fetch.1",
+        node: "session.parser.turn_001.pre_web_fetch.1",
+        step: 2,
+        startTime: "2026-01-01T00:00:02.000Z",
+        endTime: "2026-01-01T00:00:03.000Z",
+        observationType: "SPAN",
+      }),
+      createObservation({
+        id: "parser-result",
+        name: "session.parser.turn_001.tool_result.web_fetch.1",
+        node: "session.parser.turn_001.tool_result.web_fetch.1",
+        step: 3,
+        startTime: "2026-01-01T00:00:03.500Z",
+        endTime: "2026-01-01T00:00:03.700Z",
+        observationType: "SPAN",
+      }),
+    ];
+
+    const { graph } = buildHierarchyGraphFromStepData({
+      data,
+      observationMetadataById: {
+        "parser-result": {
+          tool_name: "web_fetch",
+          node_type: "tool_result",
+        },
+      },
+    });
+    const turnNode = graph.nodes.find((n) => n.id === "session.turn.001");
+    expect(turnNode?.metadataSummary?.toolCount).toBe(0);
+
+    expect(graph.nodes.some((n) => n.id === "session.turn.001::tools")).toBe(
+      false,
+    );
+  });
 });

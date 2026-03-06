@@ -495,25 +495,49 @@ export default function ObservationsEventsTable({
   );
 
   const errorTypeDropdownOptions = useMemo(() => {
-    // Use only currently loaded row types to avoid showing global options
-    // that are not present in the current result set.
-    const normalizedTypes = Object.values(errorTypeByObservationId)
-      .filter((value): value is string => value !== null && value.length > 0)
-      .sort((a, b) => a.localeCompare(b));
+    const optionsByValue = new Map<string, { value: string; label: string }>();
 
-    const uniqueOptions = Array.from(new Set(normalizedTypes)).map((value) => ({
-      value,
-      label: value,
-    }));
+    // Prefer globally available options from backend filter options so selecting
+    // one type does not collapse the dropdown to only the selected type.
+    filterOptions.errorType?.forEach((option) => {
+      const value = option.value?.trim();
+      if (!value) return;
+      optionsByValue.set(value, {
+        value,
+        label:
+          typeof option.displayValue === "string" &&
+          option.displayValue.length > 0
+            ? option.displayValue
+            : value,
+      });
+    });
 
-    if (
-      Object.values(errorTypeByObservationId).some((value) => value === null)
-    ) {
-      uniqueOptions.push({ value: "unclassified", label: "unclassified" });
+    // Add currently loaded row types as fallback while options are loading.
+    Object.values(errorTypeByObservationId).forEach((value) => {
+      if (!value || value.length === 0 || optionsByValue.has(value)) return;
+      optionsByValue.set(value, { value, label: value });
+    });
+
+    // Keep the selected option visible even if it is not in current option sets.
+    if (selectedErrorType && !optionsByValue.has(selectedErrorType)) {
+      optionsByValue.set(selectedErrorType, {
+        value: selectedErrorType,
+        label: selectedErrorType,
+      });
     }
 
-    return uniqueOptions;
-  }, [errorTypeByObservationId]);
+    if (
+      Object.values(errorTypeByObservationId).some((value) => value === null) &&
+      !optionsByValue.has("unclassified")
+    ) {
+      optionsByValue.set("unclassified", {
+        value: "unclassified",
+        label: "unclassified",
+      });
+    }
+
+    return Array.from(optionsByValue.values());
+  }, [errorTypeByObservationId, filterOptions.errorType, selectedErrorType]);
 
   const policyTypeDropdownOptions = useMemo(() => {
     const options = new Set<string>();
