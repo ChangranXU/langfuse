@@ -165,7 +165,7 @@ export const PolicyViolationTable = ({
       policyDescription: "No policy name found on this violation.",
       count: unclassifiedCount,
     },
-  ];
+  ].filter((row) => row.count > 0);
 
   const getPolicyAnalysisHref = (policyName: string) => {
     const params = new URLSearchParams({
