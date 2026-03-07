@@ -20,13 +20,21 @@ type PolicyStatsRow = {
 function formatRateWithCount(params: { count: number; total: number }) {
   const { count, total } = params;
   if (total <= 0) {
-    return "0%(0/0)";
+    return (
+      <>
+        <span className="font-semibold">0%</span>(0/0)
+      </>
+    );
   }
   const percentage = (count / total) * 100;
   const rounded = Number.isInteger(percentage)
     ? percentage.toFixed(0)
     : percentage.toFixed(1);
-  return `${rounded}%(${count}/${total})`;
+  return (
+    <>
+      <span className="font-semibold">{rounded}%</span>({count}/{total})
+    </>
+  );
 }
 
 function PolicyStatsTable(props: {
