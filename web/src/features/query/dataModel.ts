@@ -329,6 +329,13 @@ export const observationsView: ViewDeclarationType = {
       type: "string",
       description: "Identifier linking the observation to its parent trace.",
     },
+    policyConfirmationTurnIndex: {
+      sql: "nullIf(observations.metadata['turn_index'], '')",
+      alias: "policyConfirmationTurnIndex",
+      type: "string",
+      description:
+        "Turn index extracted from observation metadata for policy confirmation deduplication.",
+    },
     traceName: {
       sql: "traces.name",
       alias: "traceName",
@@ -992,6 +999,13 @@ export const eventsObservationsView: ViewDeclarationType = {
       type: "string",
       description: "Identifier linking the observation to its parent trace.",
       highCardinality: true,
+    },
+    policyConfirmationTurnIndex: {
+      sql: "nullIf(events_observations.metadata['turn_index'], '')",
+      alias: "policyConfirmationTurnIndex",
+      type: "string",
+      description:
+        "Turn index extracted from observation metadata for policy confirmation deduplication.",
     },
     environment: {
       sql: "nullIf(events_observations.environment, '')",

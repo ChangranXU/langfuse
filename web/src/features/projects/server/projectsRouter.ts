@@ -36,6 +36,12 @@ const ProjectAutoErrorAnalysisSettingsSchema = z.object({
   enabled: z.boolean(),
   model: AutoErrorAnalysisModelSchema,
   minNewErrorNodesForSummary: z.number().int().min(1).nullable().default(null),
+  policyRejectHighlightThresholdPct: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(70),
   summaryAppendMarkdownAbsolutePath: z
     .string()
     .trim()
@@ -53,6 +59,7 @@ const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: ProjectAutoErrorAnalysisSettings = {
   enabled: false,
   model: "gpt-5.2",
   minNewErrorNodesForSummary: null,
+  policyRejectHighlightThresholdPct: 70,
   summaryAppendMarkdownAbsolutePath: null,
   summaryMarkdownOutputMode: "prompt_pack_only",
 };
@@ -271,6 +278,13 @@ export const projectsRouter = createTRPCRouter({
           .nullable()
           .optional()
           .default(null),
+        policyRejectHighlightThresholdPct: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .default(70),
         summaryAppendMarkdownAbsolutePath: z
           .string()
           .trim()
@@ -337,6 +351,8 @@ export const projectsRouter = createTRPCRouter({
         enabled: input.enabled,
         model: input.model,
         minNewErrorNodesForSummary: input.minNewErrorNodesForSummary ?? null,
+        policyRejectHighlightThresholdPct:
+          input.policyRejectHighlightThresholdPct,
         summaryAppendMarkdownAbsolutePath:
           input.summaryAppendMarkdownAbsolutePath ?? null,
         summaryMarkdownOutputMode: input.summaryMarkdownOutputMode,

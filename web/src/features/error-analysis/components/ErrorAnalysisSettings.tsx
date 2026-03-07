@@ -39,6 +39,19 @@ function parseNullablePositiveInt(
   return parsed;
 }
 
+function parseNullablePercentageInt(
+  value: string,
+): number | null | "invalid_format" | "invalid_range" {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (!/^\d+$/.test(trimmed)) return "invalid_format";
+
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isSafeInteger(parsed)) return "invalid_format";
+  if (parsed < 1 || parsed > 100) return "invalid_range";
+  return parsed;
+}
+
 function normalizeOptionalPath(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -63,6 +76,10 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
   const [enabled, setEnabled] = useState(false);
   const [model, setModel] = useState<ErrorAnalysisModel>(models[0]!);
   const [minNewErrorNodesInput, setMinNewErrorNodesInput] = useState("");
+  const [
+    policyRejectHighlightThresholdInput,
+    setPolicyRejectHighlightThresholdInput,
+  ] = useState("");
   const [summaryMarkdownPathInput, setSummaryMarkdownPathInput] = useState("");
   const [summaryMarkdownOutputMode, setSummaryMarkdownOutputMode] =
     useState<ExperienceSummaryMarkdownOutputMode>("prompt_pack_only");
@@ -83,6 +100,9 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
         ? ""
         : String(settingsQuery.data.minNewErrorNodesForSummary),
     );
+    setPolicyRejectHighlightThresholdInput(
+      String(settingsQuery.data.policyRejectHighlightThresholdPct ?? 70),
+    );
     setSummaryMarkdownPathInput(
       settingsQuery.data.summaryAppendMarkdownAbsolutePath ?? "",
     );
@@ -97,6 +117,9 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
         saved.minNewErrorNodesForSummary == null
           ? ""
           : String(saved.minNewErrorNodesForSummary),
+      );
+      setPolicyRejectHighlightThresholdInput(
+        String(saved.policyRejectHighlightThresholdPct),
       );
       setSummaryMarkdownPathInput(
         saved.summaryAppendMarkdownAbsolutePath ?? "",
@@ -113,6 +136,9 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
   const parsedMinNewErrorNodes = parseNullablePositiveInt(
     minNewErrorNodesInput,
   );
+  const parsedPolicyRejectHighlightThreshold = parseNullablePercentageInt(
+    policyRejectHighlightThresholdInput,
+  );
   const normalizedSummaryMarkdownPath = normalizeOptionalPath(
     summaryMarkdownPathInput,
   );
@@ -127,14 +153,23 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
   const hasValidationErrors =
     parsedMinNewErrorNodes === "invalid_format" ||
     parsedMinNewErrorNodes === "invalid_range" ||
+    parsedPolicyRejectHighlightThreshold === "invalid_format" ||
+    parsedPolicyRejectHighlightThreshold === "invalid_range" ||
     summaryPathHasInvalidAbsoluteFormat ||
     summaryPathHasInvalidExtension;
   const hasInvalidMinNewErrorNodes =
     parsedMinNewErrorNodes === "invalid_format" ||
     parsedMinNewErrorNodes === "invalid_range";
+  const hasInvalidPolicyRejectHighlightThreshold =
+    parsedPolicyRejectHighlightThreshold === "invalid_format" ||
+    parsedPolicyRejectHighlightThreshold === "invalid_range";
   const minNewErrorNodesForSave: number | null = hasInvalidMinNewErrorNodes
     ? null
     : parsedMinNewErrorNodes;
+  const policyRejectHighlightThresholdForSave: number =
+    hasInvalidPolicyRejectHighlightThreshold
+      ? 70
+      : (parsedPolicyRejectHighlightThreshold ?? 70);
 
   const hasUnsavedChanges =
     settingsQuery.data != null &&
@@ -144,6 +179,10 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
         ? minNewErrorNodesInput.trim().length > 0
         : minNewErrorNodesForSave !==
           settingsQuery.data.minNewErrorNodesForSummary) ||
+      (hasInvalidPolicyRejectHighlightThreshold
+        ? policyRejectHighlightThresholdInput.trim().length > 0
+        : policyRejectHighlightThresholdForSave !==
+          settingsQuery.data.policyRejectHighlightThresholdPct) ||
       normalizedSummaryMarkdownPath !==
         settingsQuery.data.summaryAppendMarkdownAbsolutePath ||
       summaryMarkdownOutputMode !==
@@ -249,6 +288,38 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="policy-reject-highlight-threshold">
+                  Policy reject-rate highlight threshold (%)
+                </Label>
+                <Input
+                  id="policy-reject-highlight-threshold"
+                  inputMode="numeric"
+                  value={policyRejectHighlightThresholdInput}
+                  onChange={(e) =>
+                    setPolicyRejectHighlightThresholdInput(e.target.value)
+                  }
+                  placeholder="70 (default)"
+                  disabled={!hasAccess || saveMutation.isPending}
+                  className="max-w-[240px]"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Rows are highlighted on Home when reject rate is at or above
+                  this threshold. Leave empty to use 70.
+                </p>
+                {parsedPolicyRejectHighlightThreshold === "invalid_format" ? (
+                  <p className="text-xs text-destructive">
+                    Please enter a whole number from 1 to 100, or leave it
+                    empty.
+                  </p>
+                ) : null}
+                {parsedPolicyRejectHighlightThreshold === "invalid_range" ? (
+                  <p className="text-xs text-destructive">
+                    Threshold must be between 1 and 100.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="summary-markdown-mode">
                   Markdown summary output mode
                 </Label>
@@ -334,6 +405,15 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
                     );
                     return;
                   }
+                  if (
+                    parsedPolicyRejectHighlightThreshold === "invalid_format" ||
+                    parsedPolicyRejectHighlightThreshold === "invalid_range"
+                  ) {
+                    toast.error(
+                      "Invalid policy highlight threshold. Enter a whole number between 1 and 100, or leave empty.",
+                    );
+                    return;
+                  }
                   if (summaryPathHasInvalidAbsoluteFormat) {
                     toast.error("Summary markdown path must be absolute.");
                     return;
@@ -348,6 +428,8 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
                     enabled,
                     model,
                     minNewErrorNodesForSummary: minNewErrorNodesForSave,
+                    policyRejectHighlightThresholdPct:
+                      policyRejectHighlightThresholdForSave,
                     summaryAppendMarkdownAbsolutePath:
                       normalizedSummaryMarkdownPath,
                     summaryMarkdownOutputMode,

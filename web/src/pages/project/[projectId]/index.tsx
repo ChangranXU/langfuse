@@ -1,7 +1,7 @@
 import { useRouter } from "next/router";
 import { GenerationLatencyChart } from "@/src/features/dashboard/components/LatencyChart";
-import { TracesBarListChart } from "@/src/features/dashboard/components/TracesBarListChart";
 import { PolicyViolationTable } from "@/src/features/dashboard/components/PolicyViolationTable";
+import { PolicyConfirmationStatsCard } from "@/src/features/dashboard/components/PolicyConfirmationStatsCard";
 import { ModelUsageChart } from "@/src/features/dashboard/components/ModelUsageChart";
 import { TracesAndObservationsTimeSeriesChart } from "@/src/features/dashboard/components/TracesTimeSeriesChart";
 import { UserChart } from "@/src/features/dashboard/components/UserChart";
@@ -262,7 +262,7 @@ export default function Dashboard() {
         metricsVersion={metricsVersion}
       />
       <div className="grid w-full grid-cols-1 gap-3 overflow-hidden lg:grid-cols-2 xl:grid-cols-6">
-        <TracesBarListChart
+        <PolicyConfirmationStatsCard
           className="col-span-1 xl:col-span-3"
           projectId={projectId}
           globalFilterState={[...userFilterState, ...environmentFilter]}

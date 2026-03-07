@@ -159,6 +159,63 @@ function clickhouseHistogramToChartData(
   };
 }
 
+const PolicyConfirmationStateSchema = z.enum(["ask", "accepted", "rejected"]);
+
+async function getPolicyConfirmationCountsByState(params: {
+  projectId: string;
+  globalFilterState: FilterState;
+  fromTimestamp: Date;
+  toTimestamp: Date;
+  state: z.infer<typeof PolicyConfirmationStateSchema>;
+  version: z.infer<typeof viewVersions>;
+}): Promise<Map<string, number>> {
+  const query: QueryType = {
+    view: "observations",
+    dimensions: [
+      { field: "policyName" },
+      { field: "traceId" },
+      { field: "policyConfirmationTurnIndex" },
+    ],
+    metrics: [{ measure: "count", aggregation: "count" }],
+    filters: [
+      ...mapLegacyUiTableFilterToView("observations", params.globalFilterState),
+      {
+        column: "metadata",
+        key: "policy_confirmation_state",
+        operator: "=",
+        value: params.state,
+        type: "stringObject",
+      },
+    ],
+    timeDimension: null,
+    fromTimestamp: params.fromTimestamp.toISOString(),
+    toTimestamp: params.toTimestamp.toISOString(),
+    orderBy: [{ field: "count_count", direction: "desc" }],
+    chartConfig: { type: "table", row_limit: 1000 },
+  };
+
+  const rows = await executeQuery(
+    params.projectId,
+    query,
+    params.version,
+    params.version === "v2",
+  );
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const rawPolicyName =
+      typeof row.policyName === "string" ? row.policyName.trim() : "";
+    if (!rawPolicyName) {
+      continue;
+    }
+    // The same confirmation is logged on multiple observation nodes within one turn.
+    // Querying by policy + trace + turn collapses duplicates; each grouped row is one
+    // user-visible confirmation decision and should therefore count as 1.
+    counts.set(rawPolicyName, (counts.get(rawPolicyName) ?? 0) + 1);
+  }
+  return counts;
+}
+
 async function getScoreAggregateV2({
   projectId,
   filter,
@@ -463,6 +520,86 @@ export const dashboardRouter = createTRPCRouter({
         });
         throw error;
       }
+    }),
+  policyConfirmationStats: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        globalFilterState: z.array(singleFilter).default([]),
+        fromTimestamp: z.date(),
+        toTimestamp: z.date(),
+        version: viewVersions.optional().default("v1"),
+      }),
+    )
+    .query(async ({ input }) => {
+      if (input.fromTimestamp > input.toTimestamp) {
+        logger.warn(
+          "Invalid policy confirmation time range, returning empty.",
+          {
+            projectId: input.projectId,
+            fromTimestamp: input.fromTimestamp.toISOString(),
+            toTimestamp: input.toTimestamp.toISOString(),
+          },
+        );
+        return [];
+      }
+
+      // Only count confirmations where the user has explicitly accepted/rejected.
+      // Pending confirmation requests (state="ask") must not be included in the stats.
+      const [acceptedCounts, rejectedCounts] = await Promise.all([
+        getPolicyConfirmationCountsByState({
+          projectId: input.projectId,
+          globalFilterState: input.globalFilterState,
+          fromTimestamp: input.fromTimestamp,
+          toTimestamp: input.toTimestamp,
+          state: "accepted",
+          version: input.version,
+        }),
+        getPolicyConfirmationCountsByState({
+          projectId: input.projectId,
+          globalFilterState: input.globalFilterState,
+          fromTimestamp: input.fromTimestamp,
+          toTimestamp: input.toTimestamp,
+          state: "rejected",
+          version: input.version,
+        }),
+      ]);
+
+      const policyNames = new Set<string>([
+        ...acceptedCounts.keys(),
+        ...rejectedCounts.keys(),
+      ]);
+
+      return Array.from(policyNames)
+        .map((policyName) => {
+          const acceptedCount = acceptedCounts.get(policyName) ?? 0;
+          const rejectedCount = rejectedCounts.get(policyName) ?? 0;
+          const totalCount = acceptedCount + rejectedCount;
+          const acceptedRate = totalCount > 0 ? acceptedCount / totalCount : 0;
+          const rejectedRate = totalCount > 0 ? rejectedCount / totalCount : 0;
+
+          return {
+            policyName,
+            totalCount,
+            acceptedCount,
+            rejectedCount,
+            acceptedRate,
+            rejectedRate,
+          };
+        })
+        .filter((row) => row.totalCount > 0)
+        .sort((a, b) => {
+          if (b.rejectedRate !== a.rejectedRate) {
+            return b.rejectedRate - a.rejectedRate;
+          }
+          if (b.rejectedCount !== a.rejectedCount) {
+            return b.rejectedCount - a.rejectedCount;
+          }
+          if (b.totalCount !== a.totalCount) {
+            return b.totalCount - a.totalCount;
+          }
+          return a.policyName.localeCompare(b.policyName);
+        });
     }),
 
   allDashboards: protectedProjectProcedure
