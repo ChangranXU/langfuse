@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { type FilterState } from "@langfuse/shared";
 import { api } from "@/src/utils/api";
 import { DashboardCard } from "@/src/features/dashboard/components/cards/DashboardCard";
@@ -7,6 +7,7 @@ import { TotalMetric } from "@/src/features/dashboard/components/TotalMetric";
 import { compactNumberFormatter } from "@/src/utils/numbers";
 import { cn } from "@/src/utils/tailwind";
 import { type ViewVersion } from "@/src/features/query";
+import { PolicyConfirmationDetailsSheet } from "@/src/features/dashboard/components/PolicyConfirmationDetailsSheet";
 
 type PolicyStatsRow = {
   policyName: string;
@@ -17,8 +18,14 @@ type PolicyStatsRow = {
   rejectedRate: number;
 };
 
-function formatRateWithCount(params: { count: number; total: number }) {
-  const { count, total } = params;
+type PolicyConfirmationState = "accepted" | "rejected";
+
+function formatRateWithCount(params: {
+  count: number;
+  total: number;
+  onCountClick?: () => void;
+}) {
+  const { count, total, onCountClick } = params;
   if (total <= 0) {
     return (
       <>
@@ -32,7 +39,19 @@ function formatRateWithCount(params: { count: number; total: number }) {
     : percentage.toFixed(1);
   return (
     <>
-      <span className="font-semibold">{rounded}%</span>({count}/{total})
+      <span className="font-semibold">{rounded}%</span>(
+      {count > 0 && onCountClick ? (
+        <button
+          type="button"
+          onClick={onCountClick}
+          className="font-semibold underline underline-offset-2 hover:text-primary"
+        >
+          {count}
+        </button>
+      ) : (
+        <span className="font-semibold">{count}</span>
+      )}
+      /{total})
     </>
   );
 }
@@ -41,8 +60,12 @@ function PolicyStatsTable(props: {
   rows: PolicyStatsRow[];
   highlightThresholdPct: number;
   className?: string;
+  onCountClick: (params: {
+    policyName: string;
+    state: PolicyConfirmationState;
+  }) => void;
 }) {
-  const { rows, highlightThresholdPct, className } = props;
+  const { rows, highlightThresholdPct, className, onCountClick } = props;
 
   return (
     <div className={cn("max-h-80 min-h-0 flex-1 overflow-y-auto", className)}>
@@ -107,6 +130,11 @@ function PolicyStatsTable(props: {
                   {formatRateWithCount({
                     count: row.acceptedCount,
                     total: row.totalCount,
+                    onCountClick: () =>
+                      onCountClick({
+                        policyName: row.policyName,
+                        state: "accepted",
+                      }),
                   })}
                 </td>
                 <td
@@ -120,6 +148,11 @@ function PolicyStatsTable(props: {
                   {formatRateWithCount({
                     count: row.rejectedCount,
                     total: row.totalCount,
+                    onCountClick: () =>
+                      onCountClick({
+                        policyName: row.policyName,
+                        state: "rejected",
+                      }),
                   })}
                 </td>
               </tr>
@@ -178,6 +211,10 @@ export const PolicyConfirmationStatsCard = ({
     () => (statsQuery.data as PolicyStatsRow[] | undefined) ?? [],
     [statsQuery.data],
   );
+  const [selectedDetail, setSelectedDetail] = useState<{
+    policyName: string;
+    state: PolicyConfirmationState;
+  } | null>(null);
 
   const totalConfirmations = useMemo(
     () => rows.reduce((sum, row) => sum + row.totalCount, 0),
@@ -208,6 +245,7 @@ export const PolicyConfirmationStatsCard = ({
             <PolicyStatsTable
               rows={rows}
               highlightThresholdPct={highlightThresholdPct}
+              onCountClick={setSelectedDetail}
             />
           </div>
         </div>
@@ -217,6 +255,23 @@ export const PolicyConfirmationStatsCard = ({
           description="No policy confirmations found in the selected range."
         />
       )}
+      {selectedDetail ? (
+        <PolicyConfirmationDetailsSheet
+          open={!!selectedDetail}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedDetail(null);
+            }
+          }}
+          projectId={projectId}
+          policyName={selectedDetail.policyName}
+          state={selectedDetail.state}
+          globalFilterState={globalFilterState}
+          fromTimestamp={fromTimestamp}
+          toTimestamp={toTimestamp}
+          metricsVersion={metricsVersion}
+        />
+      ) : null}
     </DashboardCard>
   );
 };

@@ -216,6 +216,106 @@ async function getPolicyConfirmationCountsByState(params: {
   return counts;
 }
 
+async function getPolicyConfirmationDetailsByState(params: {
+  projectId: string;
+  globalFilterState: FilterState;
+  fromTimestamp: Date;
+  toTimestamp: Date;
+  policyName: string;
+  state: z.infer<typeof PolicyConfirmationStateSchema>;
+  version: z.infer<typeof viewVersions>;
+}): Promise<
+  Array<{
+    traceId: string;
+    traceName: string | null;
+    turnIndex: number | null;
+  }>
+> {
+  const query: QueryType = {
+    view: "observations",
+    dimensions: [
+      { field: "policyName" },
+      { field: "traceId" },
+      { field: "traceName" },
+      { field: "policyConfirmationTurnIndex" },
+    ],
+    metrics: [{ measure: "count", aggregation: "count" }],
+    filters: [
+      ...mapLegacyUiTableFilterToView("observations", params.globalFilterState),
+      {
+        column: "metadata",
+        key: "policy_confirmation_state",
+        operator: "=",
+        value: params.state,
+        type: "stringObject",
+      },
+    ],
+    timeDimension: null,
+    fromTimestamp: params.fromTimestamp.toISOString(),
+    toTimestamp: params.toTimestamp.toISOString(),
+    orderBy: null,
+    chartConfig: { type: "table", row_limit: 1000 },
+  };
+
+  const rows = await executeQuery(
+    params.projectId,
+    query,
+    params.version,
+    params.version === "v2",
+  );
+
+  const details = new Map<
+    string,
+    {
+      traceId: string;
+      traceName: string | null;
+      turnIndex: number | null;
+    }
+  >();
+
+  for (const row of rows) {
+    const rawPolicyName =
+      typeof row.policyName === "string" ? row.policyName.trim() : "";
+    if (rawPolicyName !== params.policyName) {
+      continue;
+    }
+
+    const traceId = typeof row.traceId === "string" ? row.traceId.trim() : "";
+    if (!traceId) {
+      continue;
+    }
+
+    const rawTurnIndex =
+      row.policyConfirmationTurnIndex == null
+        ? null
+        : Number(row.policyConfirmationTurnIndex);
+    const turnIndex =
+      rawTurnIndex != null && Number.isFinite(rawTurnIndex)
+        ? rawTurnIndex
+        : null;
+    const traceName =
+      typeof row.traceName === "string" && row.traceName.trim().length > 0
+        ? row.traceName.trim()
+        : null;
+
+    details.set(`${traceId}::${turnIndex ?? "null"}`, {
+      traceId,
+      traceName,
+      turnIndex,
+    });
+  }
+
+  return Array.from(details.values()).sort((a, b) => {
+    const aLabel = a.traceName ?? a.traceId;
+    const bLabel = b.traceName ?? b.traceId;
+    if (aLabel !== bLabel) {
+      return aLabel.localeCompare(bLabel);
+    }
+
+    return (b.turnIndex ?? -1) - (a.turnIndex ?? -1);
+  });
+}
+
 async function getScoreAggregateV2({
   projectId,
   filter,
@@ -600,6 +700,43 @@ export const dashboardRouter = createTRPCRouter({
           }
           return a.policyName.localeCompare(b.policyName);
         });
+    }),
+  policyConfirmationDetails: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        policyName: z.string(),
+        state: PolicyConfirmationStateSchema,
+        globalFilterState: z.array(singleFilter).default([]),
+        fromTimestamp: z.date(),
+        toTimestamp: z.date(),
+        version: viewVersions.optional().default("v1"),
+      }),
+    )
+    .query(async ({ input }) => {
+      if (input.fromTimestamp > input.toTimestamp) {
+        logger.warn(
+          "Invalid policy confirmation detail time range, returning empty.",
+          {
+            projectId: input.projectId,
+            policyName: input.policyName,
+            state: input.state,
+            fromTimestamp: input.fromTimestamp.toISOString(),
+            toTimestamp: input.toTimestamp.toISOString(),
+          },
+        );
+        return [];
+      }
+
+      return getPolicyConfirmationDetailsByState({
+        projectId: input.projectId,
+        policyName: input.policyName,
+        globalFilterState: input.globalFilterState,
+        fromTimestamp: input.fromTimestamp,
+        toTimestamp: input.toTimestamp,
+        state: input.state,
+        version: input.version,
+      });
     }),
 
   allDashboards: protectedProjectProcedure
