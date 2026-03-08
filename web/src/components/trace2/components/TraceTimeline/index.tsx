@@ -80,30 +80,20 @@ export function TraceTimeline() {
     overscan: 500, // Large overscan for smooth scrolling with complex items
   });
 
-  // Auto-scroll to selected node on initial load (URL-based navigation only)
-  const initialNodeIdRef = useRef(selectedNodeId);
-  const hasScrolledRef = useRef(false);
-
   useLayoutEffect(() => {
-    if (
-      selectedNodeId &&
-      !hasScrolledRef.current &&
-      selectedNodeId === initialNodeIdRef.current
-    ) {
-      const index = flattenedItems.findIndex(
-        (item) => item.node.id === selectedNodeId,
-      );
+    if (!selectedNodeId) {
+      return;
+    }
 
-      if (index !== -1) {
-        // Use behavior: "auto" for instant scroll on initial load to prevent
-        // visible scroll animation after page render. The synchronous scroll
-        // completes within useLayoutEffect, before browser paint.
-        rowVirtualizer.scrollToIndex(index, {
-          align: "center",
-          behavior: "auto",
-        });
-        hasScrolledRef.current = true;
-      }
+    const index = flattenedItems.findIndex(
+      (item) => item.node.id === selectedNodeId,
+    );
+
+    if (index !== -1) {
+      rowVirtualizer.scrollToIndex(index, {
+        align: "start",
+        behavior: "auto",
+      });
     }
   }, [selectedNodeId, flattenedItems, rowVirtualizer]);
 
