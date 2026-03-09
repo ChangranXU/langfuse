@@ -8,6 +8,16 @@ import { compactNumberFormatter } from "@/src/utils/numbers";
 import { cn } from "@/src/utils/tailwind";
 import { type ViewVersion } from "@/src/features/query";
 import { PolicyConfirmationDetailsSheet } from "@/src/features/dashboard/components/PolicyConfirmationDetailsSheet";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/src/components/ui/alert-dialog";
+import { Button } from "@/src/components/ui/button";
 
 type PolicyStatsRow = {
   policyName: string;
@@ -43,7 +53,10 @@ function formatRateWithCount(params: {
       {count > 0 && onCountClick ? (
         <button
           type="button"
-          onClick={onCountClick}
+          onClick={(event) => {
+            event.stopPropagation();
+            onCountClick();
+          }}
           className="font-semibold underline underline-offset-2 hover:text-primary"
         >
           {count}
@@ -64,8 +77,15 @@ function PolicyStatsTable(props: {
     policyName: string;
     state: PolicyConfirmationState;
   }) => void;
+  onHighlightedRowClick?: (policyName: string) => void;
 }) {
-  const { rows, highlightThresholdPct, className, onCountClick } = props;
+  const {
+    rows,
+    highlightThresholdPct,
+    className,
+    onCountClick,
+    onHighlightedRowClick,
+  } = props;
 
   return (
     <div className={cn("max-h-80 min-h-0 flex-1 overflow-y-auto", className)}>
@@ -108,12 +128,32 @@ function PolicyStatsTable(props: {
           {rows.map((row) => {
             const shouldHighlight =
               row.rejectedRate * 100 >= highlightThresholdPct;
+            const isClickable =
+              shouldHighlight && Boolean(onHighlightedRowClick);
             return (
               <tr
                 key={row.policyName}
                 className={cn(
                   shouldHighlight && "bg-destructive/10 dark:bg-destructive/20",
+                  isClickable &&
+                    "cursor-pointer hover:bg-destructive/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 dark:hover:bg-destructive/30",
                 )}
+                role={isClickable ? "button" : undefined}
+                tabIndex={isClickable ? 0 : undefined}
+                onClick={() => {
+                  if (isClickable) {
+                    onHighlightedRowClick?.(row.policyName);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    isClickable &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    event.preventDefault();
+                    onHighlightedRowClick?.(row.policyName);
+                  }
+                }}
               >
                 <td className="py-2 pl-3 pr-2 text-center align-top text-xs text-foreground sm:pl-0">
                   <span
@@ -215,6 +255,9 @@ export const PolicyConfirmationStatsCard = ({
     policyName: string;
     state: PolicyConfirmationState;
   } | null>(null);
+  const [selectedSuggestionPolicyName, setSelectedSuggestionPolicyName] =
+    useState<string | null>(null);
+  const suggestionMutation = api.policySuggestions.generate.useMutation();
 
   const totalConfirmations = useMemo(
     () => rows.reduce((sum, row) => sum + row.totalCount, 0),
@@ -246,6 +289,10 @@ export const PolicyConfirmationStatsCard = ({
               rows={rows}
               highlightThresholdPct={highlightThresholdPct}
               onCountClick={setSelectedDetail}
+              onHighlightedRowClick={(policyName) => {
+                suggestionMutation.reset();
+                setSelectedSuggestionPolicyName(policyName);
+              }}
             />
           </div>
         </div>
@@ -272,6 +319,99 @@ export const PolicyConfirmationStatsCard = ({
           metricsVersion={metricsVersion}
         />
       ) : null}
+      <AlertDialog
+        open={Boolean(selectedSuggestionPolicyName)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedSuggestionPolicyName(null);
+            suggestionMutation.reset();
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Policy refinement suggestion</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedSuggestionPolicyName
+                ? `User feedback indicates potential dissatisfaction with "${selectedSuggestionPolicyName}". Would you like to review and refine this policy with LLM-assisted suggestions?`
+                : "Generate a policy refinement suggestion from rejected-turn evidence."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {suggestionMutation.isPending ? (
+            <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              Generating suggestion from policy enforcement context...
+            </div>
+          ) : null}
+          {suggestionMutation.error ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {suggestionMutation.error.message}
+            </div>
+          ) : null}
+          {suggestionMutation.data ? (
+            <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Suggestion
+                </div>
+                <div className="mt-1 whitespace-pre-wrap text-sm text-foreground">
+                  {suggestionMutation.data.suggestion.suggestion}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Reason
+                </div>
+                <div className="mt-1 whitespace-pre-wrap text-sm text-foreground">
+                  {suggestionMutation.data.suggestion.reason}
+                </div>
+              </div>
+              {suggestionMutation.data.suggestion.supportingSignals.length >
+              0 ? (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Supporting signals
+                  </div>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                    {suggestionMutation.data.suggestion.supportingSignals.map(
+                      (signal, idx) => (
+                        <li key={`${signal}-${idx}`}>{signal}</li>
+                      ),
+                    )}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={suggestionMutation.isPending}>
+              {suggestionMutation.data ? "Close" : "No"}
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              disabled={
+                suggestionMutation.isPending || !selectedSuggestionPolicyName
+              }
+              onClick={() => {
+                if (!selectedSuggestionPolicyName) return;
+                suggestionMutation.mutate({
+                  projectId,
+                  policyName: selectedSuggestionPolicyName,
+                  globalFilterState,
+                  fromTimestamp,
+                  toTimestamp,
+                  version: metricsVersion,
+                });
+              }}
+            >
+              {suggestionMutation.isPending
+                ? "Generating..."
+                : suggestionMutation.data
+                  ? "Regenerate with latest context"
+                  : "Yes, generate suggestion"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardCard>
   );
 };
