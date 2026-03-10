@@ -6,6 +6,13 @@ await import("./src/env.mjs");
 import { withSentryConfig } from "@sentry/nextjs";
 import { env } from "./src/env.mjs";
 import bundleAnalyzer from "@next/bundle-analyzer";
+import os from "node:os";
+
+const isDockerBuild = process.env.DOCKER_BUILD === "1";
+const dockerBuildCpuLimit = Math.max(
+  1,
+  Math.min(2, os.availableParallelism?.() ?? os.cpus().length),
+);
 
 /**
  * CSP headers
@@ -77,6 +84,8 @@ const nextConfig = {
   },
   experimental: {
     browserDebugInfoInTerminal: true, // Logs browser logs to terminal
+    // Cap build parallelism in Docker to avoid OOM during static page generation.
+    ...(isDockerBuild ? { cpus: dockerBuildCpuLimit } : {}),
     // TODO: enable with new next version! 15.6
     // see: https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopackPersistentCaching
     // turbopackPersistentCaching: true,

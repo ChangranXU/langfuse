@@ -539,32 +539,6 @@ export default function ObservationsEventsTable({
     return Array.from(optionsByValue.values());
   }, [errorTypeByObservationId, filterOptions.errorType, selectedErrorType]);
 
-  const policyTypeDropdownOptions = useMemo(() => {
-    const options = new Set<string>();
-    (observations.rows ?? []).forEach((observation) => {
-      const policyNames = parsePolicyNamesFromMetadata(observation.metadata);
-      if (policyNames.length === 0) return;
-      policyNames.forEach((policyName) => options.add(policyName));
-    });
-    if (
-      selectedPolicyType &&
-      selectedPolicyType !== UNCLASSIFIED_POLICY_TYPE &&
-      !options.has(selectedPolicyType)
-    ) {
-      options.add(selectedPolicyType);
-    }
-    const sortedOptions = Array.from(options)
-      .sort((a, b) => a.localeCompare(b))
-      .map((value) => ({ value, label: value }));
-    if (!options.has(UNCLASSIFIED_POLICY_TYPE)) {
-      sortedOptions.push({
-        value: UNCLASSIFIED_POLICY_TYPE,
-        label: UNCLASSIFIED_POLICY_TYPE,
-      });
-    }
-    return sortedOptions;
-  }, [observations.rows, selectedPolicyType]);
-
   const serializeSidebarFilterState = useCallback((state: FilterState) => {
     return JSON.stringify(state, (_k, v) =>
       v instanceof Date ? v.toISOString() : v,
@@ -777,6 +751,32 @@ export default function ObservationsEventsTable({
     selectAll,
     setSelectedRows,
   });
+
+  const policyTypeDropdownOptions = useMemo(() => {
+    const options = new Set<string>();
+    (observations.rows ?? []).forEach((observation) => {
+      const policyNames = parsePolicyNamesFromMetadata(observation.metadata);
+      if (policyNames.length === 0) return;
+      policyNames.forEach((policyName) => options.add(policyName));
+    });
+    if (
+      selectedPolicyType &&
+      selectedPolicyType !== UNCLASSIFIED_POLICY_TYPE &&
+      !options.has(selectedPolicyType)
+    ) {
+      options.add(selectedPolicyType);
+    }
+    const sortedOptions = Array.from(options)
+      .sort((a, b) => a.localeCompare(b))
+      .map((value) => ({ value, label: value }));
+    if (!options.has(UNCLASSIFIED_POLICY_TYPE)) {
+      sortedOptions.push({
+        value: UNCLASSIFIED_POLICY_TYPE,
+        label: UNCLASSIFIED_POLICY_TYPE,
+      });
+    }
+    return sortedOptions;
+  }, [observations.rows, selectedPolicyType]);
 
   // Disabled for now because perhaps confusing
   // === Auto-switch to observation mode when trace view is empty ===

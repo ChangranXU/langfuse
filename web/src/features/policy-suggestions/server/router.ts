@@ -77,6 +77,9 @@ type SampledTurnContext = {
   }>;
 };
 
+type SampledTurnNode = SampledTurnContext["nodes"][number];
+type RelatedTurnContext = SampledTurnContext["relatedTurns"][number];
+
 const GeneratePolicySuggestionInputSchema = z.object({
   projectId: z.string(),
   policyName: z.string().trim().min(1),
@@ -301,7 +304,7 @@ function getPolicyProtectedFromObservation(
   return null;
 }
 
-function buildTurnNodes(observations: Observation[]) {
+function buildTurnNodes(observations: Observation[]): SampledTurnNode[] {
   return observations.map((observation) => {
     const metadata = getMetadataRecord(observation.metadata);
     return {
@@ -475,42 +478,38 @@ export function buildSampledTurnContext(params: {
         ? [detail.turnIndex]
         : [];
 
-  const relatedTurns = selectedTurnIndices
-    .map((turnIndex) => {
-      const turnObservations = observations
-        .filter((observation) => {
-          const metadata = getMetadataRecord(observation.metadata);
-          return parseTurnIndex(metadata.turn_index) === turnIndex;
-        })
-        .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
-        .slice(0, MAX_OBSERVATIONS_PER_TURN);
+  const relatedTurns: RelatedTurnContext[] = [];
+  for (const turnIndex of selectedTurnIndices) {
+    const turnObservations = observations
+      .filter((observation) => {
+        const metadata = getMetadataRecord(observation.metadata);
+        return parseTurnIndex(metadata.turn_index) === turnIndex;
+      })
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
+      .slice(0, MAX_OBSERVATIONS_PER_TURN);
 
-      if (turnObservations.length === 0) return null;
+    if (turnObservations.length === 0) continue;
 
-      let turnPolicyProtected: string | null = null;
-      let turnExamplePrompt: string | null = null;
-      for (const observation of turnObservations) {
-        if (!turnPolicyProtected) {
-          turnPolicyProtected = getPolicyProtectedFromObservation(observation);
-        }
-        if (!turnExamplePrompt) {
-          turnExamplePrompt =
-            getObservationDisplayInput(observation) ??
-            extractObservationPrompt(observation);
-        }
+    let turnPolicyProtected: string | null = null;
+    let turnExamplePrompt: string | null = null;
+    for (const observation of turnObservations) {
+      if (!turnPolicyProtected) {
+        turnPolicyProtected = getPolicyProtectedFromObservation(observation);
       }
+      if (!turnExamplePrompt) {
+        turnExamplePrompt =
+          getObservationDisplayInput(observation) ??
+          extractObservationPrompt(observation);
+      }
+    }
 
-      return {
-        turnIndex,
-        examplePrompt: turnExamplePrompt,
-        policyProtected: turnPolicyProtected,
-        nodes: buildTurnNodes(turnObservations),
-      };
-    })
-    .filter(
-      (turn): turn is NonNullable<SampledTurnContext["relatedTurns"][number]> =>
-        turn !== null,
-    );
+    relatedTurns.push({
+      turnIndex,
+      examplePrompt: turnExamplePrompt,
+      policyProtected: turnPolicyProtected,
+      nodes: buildTurnNodes(turnObservations),
+    });
+  }
 
   const nodes = relatedTurns.flatMap((turn) => turn.nodes);
   if (nodes.length === 0) return null;

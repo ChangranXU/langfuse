@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo } from "react";
 import { useRouter } from "next/router";
+import type { ParsedUrlQueryInput } from "node:querystring";
 import Page from "@/src/components/layouts/page";
 import { Tabs, TabsList, TabsTrigger } from "@/src/components/ui/tabs";
 import { api } from "@/src/utils/api";
@@ -68,13 +69,13 @@ export default function AnalysisPage() {
   const setTab = useCallback(
     async (next: string) => {
       const nextTab = parseTab(next);
-      const nextQuery = {
+      const nextQuery: ParsedUrlQueryInput = {
         ...router.query,
         analysisLevel: nextTab,
         // Reset pagination when switching analysis tabs
-        pageIndex: 0,
-        page: 1,
-      } as Record<string, unknown>;
+        pageIndex: "0",
+        page: "1",
+      };
       if (nextTab !== "policy_violation") {
         delete nextQuery.policyType;
       }
