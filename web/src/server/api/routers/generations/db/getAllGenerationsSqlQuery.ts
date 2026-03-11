@@ -8,9 +8,20 @@ import {
   getObservationsTableWithModelData,
   getObservationsWithModelDataFromEventsTable,
   getScoresForObservations,
+  logger,
   traceException,
 } from "@langfuse/shared/src/server";
 import { type GetAllGenerationsInput } from "../getAllQueries";
+
+export function shouldFallbackToLegacyObservationsTable(
+  error: unknown,
+): boolean {
+  if (!(error instanceof Error)) return false;
+
+  return /(?:unknown_table|unknown table(?: expression identifier)?|doesn't exist).*events_(?:core|full)|events_(?:core|full).*(?:unknown_table|unknown table|doesn't exist)/i.test(
+    error.message,
+  );
+}
 
 export async function getAllGenerations({
   input,
@@ -32,7 +43,27 @@ export async function getAllGenerations({
   const eventsEnabled =
     env.LANGFUSE_ENABLE_EVENTS_TABLE_OBSERVATIONS === "true";
   let generations = eventsEnabled
-    ? await getObservationsWithModelDataFromEventsTable(queryOpts)
+    ? await (async () => {
+        try {
+          return await getObservationsWithModelDataFromEventsTable(queryOpts);
+        } catch (error) {
+          if (!shouldFallbackToLegacyObservationsTable(error)) {
+            throw error;
+          }
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+
+          logger.warn(
+            "generations.all events-table lookup failed, falling back to legacy observations lookup",
+            {
+              projectId: input.projectId,
+              error: errorMessage,
+            },
+          );
+
+          return getObservationsTableWithModelData(queryOpts);
+        }
+      })()
     : await getObservationsTableWithModelData(queryOpts);
 
   // Compatibility fallback: some installations still ingest into the legacy observations table

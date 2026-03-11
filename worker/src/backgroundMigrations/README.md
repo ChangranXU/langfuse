@@ -7,6 +7,7 @@ that would take too long to run in a standard migration.
 A good threshold is something that takes more than 5 minutes to run or is not an atomic operation.
 
 You can execute a background migration locally using
+
 ```bash
 $ cd worker
 $ dotenv -e ../.env -- npx ts-node src/backgroundMigrations/<script-name>.ts
@@ -20,7 +21,7 @@ $ dotenv -e ../.env -- npx ts-node src/backgroundMigrations/addGenerationsCostBa
 - The background migration must be recoverable at all times, i.e. it can be interrupted and must be resumed at any stage of the operation.
   We can achieve this by making them either idempotent for cross-system migrations or by making each change atomic if it's in a single database.
 - Only one background migration can run at a time. This is not a technical limitation, but makes reasoning about them easier.
-- We must highlight in the changelog and potentially another page if the code relies on some background migration having finished. 
+- We must highlight in the changelog and potentially another page if the code relies on some background migration having finished.
   See GitLab's [upgrade stops](https://docs.gitlab.com/ee/update/upgrade_paths.html) for an example on how to communicate this.
 - The migration name must be sortable, as we run migrations in order. Preferably, we prefix with a date.
 - Background migrations must assume that the worker instance continues processing events while migrations run, i.e. they should avoid the application code.
@@ -38,3 +39,22 @@ If it completes, it marks the migration as done and proceeds with the next one u
 If the worker is killed for any reason, another worker will pick up the migration and continue where it left off after the lock expired.
 
 Ideally, background migrations can also be executed via the commandline, e.g. to run them locally or to test them in a staging environment.
+
+## Events Tables Rollout (20260311)
+
+When rolling out the events-table schema (`events`, `events_full`, `events_core`, and MVs),
+use the following order for existing installations:
+
+1. Deploy app containers so ClickHouse migrations run (`ch:up` path via startup).
+2. Ensure worker runs and picks up the `backfillEventsFullFromEvents` background migration.
+3. Wait for that background migration row to reach `finished_at` in `background_migrations`.
+4. Verify data quality:
+   - `events_full` row count catches up with `events`
+   - `events_core` is populated via `events_core_mv`
+   - events-table read paths return data for representative projects
+5. Only then rely on events-table feature flags in production traffic.
+
+Compatibility note:
+
+- Keep read-path fallbacks in place until this backfill has completed on the target installation.
+- If historical data is missing in source `events`, this migration will not reconstruct pre-events history by itself.

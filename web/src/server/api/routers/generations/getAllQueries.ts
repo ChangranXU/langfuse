@@ -2,10 +2,14 @@ import { type z } from "zod/v4";
 import { protectedProjectProcedure } from "@/src/server/api/trpc";
 import { paginationZod } from "@langfuse/shared";
 import { GenerationTableOptions } from "./utils/GenerationTableOptions";
-import { getAllGenerations } from "@/src/server/api/routers/generations/db/getAllGenerationsSqlQuery";
+import {
+  getAllGenerations,
+  shouldFallbackToLegacyObservationsTable,
+} from "@/src/server/api/routers/generations/db/getAllGenerationsSqlQuery";
 import {
   getObservationsCountFromEventsTable,
   getObservationsTableCount,
+  logger,
 } from "@langfuse/shared/src/server";
 import { env } from "@/src/env.mjs";
 import { applyCommentFilters } from "@langfuse/shared/src/server";
@@ -82,7 +86,27 @@ export const getAllQueries = {
       const eventsEnabled =
         env.LANGFUSE_ENABLE_EVENTS_TABLE_OBSERVATIONS === "true";
       let countQuery = eventsEnabled
-        ? await getObservationsCountFromEventsTable(queryOpts)
+        ? await (async () => {
+            try {
+              return await getObservationsCountFromEventsTable(queryOpts);
+            } catch (error) {
+              if (!shouldFallbackToLegacyObservationsTable(error)) {
+                throw error;
+              }
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
+
+              logger.warn(
+                "generations.countAll events-table count failed, falling back to legacy observations count",
+                {
+                  projectId: input.projectId,
+                  error: errorMessage,
+                },
+              );
+
+              return getObservationsTableCount(queryOpts);
+            }
+          })()
         : await getObservationsTableCount(queryOpts);
 
       // Compatibility fallback: if events-based observations are enabled but empty,
