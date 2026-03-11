@@ -29,6 +29,11 @@ import {
   isParserContainerNodeName,
   normalizeParserNodeNameForGraph,
 } from "@/src/features/trace-graph-view/nodeNameUtils";
+import {
+  getMetadataRecord,
+  getObservationTurnIndex,
+  parseStringArray,
+} from "@/src/features/governance/utils/policyMetadata";
 
 type TraceType = Omit<
   WithStringifiedMetadata<TraceDomain>,
@@ -41,6 +46,139 @@ type TraceType = Omit<
   rootObservationType?: string;
   rootObservationId?: string;
 };
+
+type ObservationWithOptionalMetadata = ObservationReturnType & {
+  metadata?: string | null;
+};
+
+const SESSION_TURN_NODE_RE = /^session\.turn\.(?<turn>\d+)$/;
+const SESSION_OUTPUT_TURN_NODE_PREFIX = "session.output.turn_";
+
+function parseSessionTurnIndex(
+  observationName: string | null | undefined,
+): number | null {
+  const match = SESSION_TURN_NODE_RE.exec(observationName ?? "");
+  if (!match?.groups?.turn) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(match.groups.turn, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getPolicyConfirmationState(
+  metadata: Record<string, unknown>,
+): "accepted" | "rejected" | null {
+  const rawState = metadata.policy_confirmation_state;
+  if (typeof rawState !== "string") {
+    return null;
+  }
+
+  const normalizedState = rawState.trim().toLowerCase();
+  if (normalizedState === "accepted" || normalizedState === "rejected") {
+    return normalizedState;
+  }
+
+  return null;
+}
+
+function normalizePolicyFallbackText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.replace(/\s+/g, " ").trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function isTracePolicyFallbackCandidateObservation(
+  observationName: string | null | undefined,
+) {
+  return (observationName ?? "").startsWith(SESSION_OUTPUT_TURN_NODE_PREFIX);
+}
+
+function getAlignedPolicyConfirmationMetadata(params: {
+  traceMetadata: unknown;
+  observation: ObservationWithOptionalMetadata;
+}): Record<string, unknown> {
+  const observationMetadata = getMetadataRecord(params.observation.metadata);
+  if (!isTracePolicyFallbackCandidateObservation(params.observation.name)) {
+    return observationMetadata;
+  }
+
+  const traceMetadata = getMetadataRecord(params.traceMetadata);
+  const tracePolicyNames = parseStringArray(traceMetadata.policy_names);
+  const traceState = getPolicyConfirmationState(traceMetadata);
+  if (!traceState || tracePolicyNames.length === 0) {
+    return observationMetadata;
+  }
+
+  const observationTurnIndex = getObservationTurnIndex({
+    metadata: observationMetadata,
+    observationName: params.observation.name,
+  });
+  const traceTurnIndex = getObservationTurnIndex({
+    metadata: traceMetadata,
+  });
+  const matchesTurn =
+    observationTurnIndex != null &&
+    traceTurnIndex != null &&
+    observationTurnIndex === traceTurnIndex;
+
+  const normalizedStatusMessage = normalizePolicyFallbackText(
+    params.observation.statusMessage,
+  );
+  const matchesText =
+    normalizedStatusMessage != null &&
+    [traceMetadata.raw_output_content, traceMetadata.policy_protected]
+      .map(normalizePolicyFallbackText)
+      .some(
+        (candidate): candidate is string =>
+          candidate === normalizedStatusMessage,
+      );
+
+  if (!matchesTurn && !matchesText) {
+    return observationMetadata;
+  }
+
+  return {
+    ...observationMetadata,
+    policy_confirmation_state: traceMetadata.policy_confirmation_state,
+    policy_names: traceMetadata.policy_names,
+  };
+}
+
+function collectPolicyConfirmationTurnIndexes(params: {
+  trace: TraceType;
+  observations: ObservationWithOptionalMetadata[];
+}): Set<number> {
+  const policyConfirmationTurnIndexes = new Set<number>();
+
+  for (const observation of params.observations) {
+    const alignedMetadata = getAlignedPolicyConfirmationMetadata({
+      traceMetadata: params.trace.metadata,
+      observation,
+    });
+    const state = getPolicyConfirmationState(alignedMetadata);
+    if (!state) {
+      continue;
+    }
+
+    if (parseStringArray(alignedMetadata.policy_names).length === 0) {
+      continue;
+    }
+
+    const turnIndex = getObservationTurnIndex({
+      metadata: alignedMetadata,
+      observationName: observation.name,
+    });
+    if (turnIndex != null) {
+      policyConfirmationTurnIndexes.add(turnIndex);
+    }
+  }
+
+  return policyConfirmationTurnIndexes;
+}
 
 /**
  * Processing node for iterative tree building.
@@ -78,10 +216,10 @@ function getObservationLevels(minLevel: ObservationLevelType | undefined) {
  * Returns flat array (nesting happens in buildDependencyGraph).
  */
 function filterAndPrepareObservations(
-  list: ObservationReturnType[],
+  list: ObservationWithOptionalMetadata[],
   minLevel?: ObservationLevelType,
 ): {
-  sortedObservations: ObservationReturnType[];
+  sortedObservations: ObservationWithOptionalMetadata[];
   hiddenObservationsCount: number;
 } {
   if (list.length === 0)
@@ -138,16 +276,15 @@ function filterAndPrepareObservations(
   const chronological = [...mutableList].sort(
     (a, b) => a.startTime.getTime() - b.startTime.getTime(),
   );
-  const SESSION_TURN_NODE_RE = /^session\.turn\.(?<turn>\d+)$/;
   const sessionTurns = chronological
     .map((obs) => {
-      const match = SESSION_TURN_NODE_RE.exec(obs.name ?? "");
-      if (!match?.groups?.turn) {
+      const turnIndex = parseSessionTurnIndex(obs.name);
+      if (turnIndex == null) {
         return null;
       }
       const start = obs.startTime.getTime();
       const end = obs.endTime ? obs.endTime.getTime() : null;
-      return { id: obs.id, start, end, turn: Number(match.groups.turn) };
+      return { id: obs.id, start, end, turn: turnIndex };
     })
     .filter((t) => t !== null)
     .sort((a, b) => a.start - b.start);
@@ -318,6 +455,7 @@ function buildTreeNodesBottomUp(
   leafIds: string[],
   nodeMap: Map<string, TreeNode>,
   traceStartTime: Date,
+  policyConfirmationTurnIndexes: Set<number>,
 ): string[] {
   // Queue starts with all leaf nodes (inDegree === 0)
   // Use index-based traversal instead of shift() for O(1) dequeue (shift is O(N))
@@ -389,6 +527,7 @@ function buildTreeNodesBottomUp(
 
     // Use pre-calculated depth from ProcessingNode
     const depth = currentNode.depth;
+    const sessionTurnIndex = parseSessionTurnIndex(obs.name);
 
     // Calculate childrenDepth (max depth of subtree rooted at this node)
     // Leaf nodes have childrenDepth = 0
@@ -406,6 +545,9 @@ function buildTreeNodesBottomUp(
       startTime: obs.startTime,
       endTime: obs.endTime,
       level: obs.level,
+      hasPolicyConfirmation:
+        sessionTurnIndex != null &&
+        policyConfirmationTurnIndexes.has(sessionTurnIndex),
       children: childTreeNodes,
       inputUsage: obs.inputUsage,
       outputUsage: obs.outputUsage,
@@ -455,13 +597,23 @@ function buildTreeNodesBottomUp(
  */
 function buildTraceTree(
   trace: TraceType,
-  observations: ObservationReturnType[],
+  observations: ObservationWithOptionalMetadata[],
   minLevel?: ObservationLevelType,
+  precomputedPolicyConfirmationTurnIndexes?: number[],
 ): {
   roots: TreeNode[];
   hiddenObservationsCount: number;
   nodeMap: Map<string, TreeNode>;
 } {
+  const policyConfirmationTurnIndexes =
+    precomputedPolicyConfirmationTurnIndexes &&
+    precomputedPolicyConfirmationTurnIndexes.length > 0
+      ? new Set(precomputedPolicyConfirmationTurnIndexes)
+      : collectPolicyConfirmationTurnIndexes({
+          trace,
+          observations,
+        });
+
   // Phase 1: Filter and prepare observations
   const { sortedObservations, hiddenObservationsCount } =
     filterAndPrepareObservations(observations, minLevel);
@@ -504,6 +656,7 @@ function buildTraceTree(
     leafIds,
     nodeMap,
     trace.timestamp,
+    policyConfirmationTurnIndexes,
   );
 
   // Phase 4: Build roots array
@@ -573,8 +726,9 @@ function buildTraceTree(
  */
 export function buildTraceUiData(
   trace: TraceType,
-  observations: ObservationReturnType[],
+  observations: ObservationWithOptionalMetadata[],
   minLevel?: ObservationLevelType,
+  policyConfirmationTurnIndexes?: number[],
 ): {
   roots: TreeNode[];
   hiddenObservationsCount: number;
@@ -585,6 +739,7 @@ export function buildTraceUiData(
     trace,
     observations,
     minLevel,
+    policyConfirmationTurnIndexes,
   );
 
   // Handle empty roots case

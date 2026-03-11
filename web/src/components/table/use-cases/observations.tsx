@@ -727,11 +727,10 @@ export default function ObservationsTable({
                   value: '"',
                 }
               : {
-                  column: "metadata",
-                  type: "stringObject",
-                  key: "policy_names",
-                  operator: "contains",
-                  value: selectedPolicyType,
+                  column: "policyName",
+                  type: "stringOptions",
+                  operator: "any of",
+                  value: [selectedPolicyType],
                 },
           ];
         }

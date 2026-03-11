@@ -3,25 +3,12 @@ import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { api } from "@/src/utils/api";
 import { ChevronDown, ChevronUp } from "lucide-react";
-
-function getMetadataRecord(metadata: unknown): Record<string, unknown> {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return metadata as Record<string, unknown>;
-  }
-
-  if (typeof metadata === "string") {
-    try {
-      const parsed = JSON.parse(metadata);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // ignore invalid metadata string
-    }
-  }
-
-  return {};
-}
+import {
+  getMetadataRecord,
+  mergeRelevantPolicyMetadata,
+  parseStringArray,
+  parseStringRecord,
+} from "@/src/features/governance/utils/policyMetadata";
 
 type PolicyAction = {
   tool: string;
@@ -51,60 +38,11 @@ function derivePolicyActions(policyReason: string | null): PolicyAction[] {
   return results;
 }
 
-function parseStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter(
-      (item): item is string => typeof item === "string" && !!item.trim(),
-    );
-  }
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (item): item is string => typeof item === "string" && !!item.trim(),
-        );
-      }
-    } catch {
-      // no-op
-    }
-    if (value.includes(",")) {
-      return value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-    const trimmed = value.trim();
-    return trimmed ? [trimmed] : [];
-  }
-  return [];
-}
-
-function parseStringRecord(value: unknown): Record<string, string> {
-  let input = value;
-  if (typeof input === "string") {
-    try {
-      input = JSON.parse(input);
-    } catch {
-      return {};
-    }
-  }
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return {};
-  }
-  const entries = Object.entries(input as Record<string, unknown>).flatMap(
-    ([key, val]) =>
-      typeof val === "string" && val.trim().length > 0
-        ? [[key, val] as const]
-        : [],
-  );
-  return Object.fromEntries(entries);
-}
-
 export function ObservationGovernanceAnalysisPanel(props: {
   projectId: string;
   traceId: string;
   observationId: string;
+  observationName?: string | null;
   level: string | null | undefined;
   statusMessage: string | null | undefined;
   metadata: unknown;
@@ -134,19 +72,20 @@ export function ObservationGovernanceAnalysisPanel(props: {
     () => getMetadataRecord(props.metadata),
     [props.metadata],
   );
-  const tracePolicyMetadata = useMemo(
-    () => getMetadataRecord(props.traceMetadata),
-    [props.traceMetadata],
-  );
   const policyMetadata = useMemo(
     () =>
-      isPolicyViolation
-        ? observationPolicyMetadata
-        : {
-            ...tracePolicyMetadata,
-            ...observationPolicyMetadata,
-          },
-    [isPolicyViolation, observationPolicyMetadata, tracePolicyMetadata],
+      mergeRelevantPolicyMetadata({
+        observationMetadata: observationPolicyMetadata,
+        traceMetadata: props.traceMetadata,
+        observationName: props.observationName,
+        statusMessage,
+      }),
+    [
+      observationPolicyMetadata,
+      props.traceMetadata,
+      props.observationName,
+      statusMessage,
+    ],
   );
   const policyProtectedReason = useMemo(() => {
     const value = policyMetadata.policy_protected;

@@ -142,6 +142,7 @@ export const TraceAnnotationProcessor: React.FC<
           scores={data.scores}
           corrections={data.corrections}
           projectId={data.projectId}
+          policyConfirmationTurnIndexes={data.policyConfirmationTurnIndexes}
           observations={data.observations}
           viewType="focused"
           isValidObservationId={isValidObservationId}

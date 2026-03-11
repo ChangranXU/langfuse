@@ -942,7 +942,9 @@ export function buildHierarchyGraphFromStepData(params: {
         type: "POLICY",
         level: policy.hasBlock ? "ERROR" : null,
         title: [
-          "Policy/security summary derived from instruction metadata.",
+          policy.inferredFromInstruction
+            ? "Security metadata was absent; this placeholder keeps instruction-level policy context visible."
+            : "Policy/security summary derived from instruction metadata.",
           policy.authorityLabel ? `Authority: ${policy.authorityLabel}` : null,
           policy.confidentiality
             ? `Confidentiality: ${policy.confidentiality}`
@@ -1591,8 +1593,22 @@ function buildTurnMetadataSummary(params: {
             Object.keys(policyRuleEffectCounts).length > 0
               ? policyRuleEffectCounts
               : null,
+          inferredFromInstruction: false,
         }
-      : null;
+      : instructionType || instructionCategory
+        ? {
+            authorityLabel: "UNKNOWN",
+            confidentiality: null,
+            integrity: null,
+            trustworthiness: null,
+            confidence: null,
+            reversible: null,
+            confidentialityLabel: null,
+            hasBlock: null,
+            ruleEffectCounts: null,
+            inferredFromInstruction: true,
+          }
+        : null;
 
   return {
     topic,

@@ -62,6 +62,8 @@ import {
   toDomainArrayWithStringifiedMetadata,
 } from "@/src/utils/clientSideDomainTypes";
 import partition from "lodash/partition";
+import { type QueryType } from "@/src/features/query/types";
+import { executeQuery } from "@/src/features/query/server/queryExecutor";
 
 const TraceFilterOptions = z.object({
   projectId: z.string(), // Required for protectedProjectProcedure
@@ -72,6 +74,71 @@ const TraceFilterOptions = z.object({
   ...paginationZod,
 });
 type TraceFilterOptions = z.infer<typeof TraceFilterOptions>;
+
+async function getPolicyConfirmationTurnIndexesForTrace(params: {
+  projectId: string;
+  traceId: string;
+  fromTimestamp: Date;
+  toTimestamp: Date;
+}): Promise<number[]> {
+  const states = ["accepted", "rejected"] as const;
+  const queryResults = await Promise.all(
+    states.map((state) => {
+      const query: QueryType = {
+        view: "observations",
+        dimensions: [
+          { field: "policyName" },
+          { field: "traceId" },
+          { field: "policyConfirmationTurnIndex" },
+        ],
+        metrics: [{ measure: "count", aggregation: "count" }],
+        filters: [
+          {
+            column: "traceId",
+            operator: "=",
+            value: params.traceId,
+            type: "string",
+          },
+          {
+            column: "policyConfirmationState",
+            operator: "=",
+            value: state,
+            type: "string",
+          },
+        ],
+        timeDimension: null,
+        fromTimestamp: params.fromTimestamp.toISOString(),
+        toTimestamp: params.toTimestamp.toISOString(),
+        orderBy: null,
+        chartConfig: { type: "table", row_limit: 1000 },
+      };
+
+      return executeQuery(params.projectId, query, "v1", false);
+    }),
+  );
+
+  const turnIndexes = new Set<number>();
+
+  for (const rows of queryResults) {
+    for (const row of rows) {
+      const rawPolicyName =
+        typeof row.policyName === "string" ? row.policyName.trim() : "";
+      if (!rawPolicyName) {
+        continue;
+      }
+
+      const rawTurnIndex =
+        row.policyConfirmationTurnIndex == null
+          ? null
+          : Number(row.policyConfirmationTurnIndex);
+      if (rawTurnIndex != null && Number.isFinite(rawTurnIndex)) {
+        turnIndexes.add(rawTurnIndex);
+      }
+    }
+  }
+
+  return Array.from(turnIndexes).sort((a, b) => a - b);
+}
 
 export type ObservationReturnTypeWithMetadata = Omit<
   Observation,
@@ -382,6 +449,23 @@ export const traceRouter = createTRPCRouter({
         .map((o) => o.endTime)
         .filter((t) => t)
         .sort((a, b) => (a as Date).getTime() - (b as Date).getTime());
+      const traceWindowFrom =
+        obsStartTimes.length > 0
+          ? obsStartTimes[0]!
+          : (input.timestamp ?? input.fromTimestamp ?? ctx.trace.timestamp);
+      const traceWindowTo =
+        obsEndTimes.length > 0
+          ? (obsEndTimes[obsEndTimes.length - 1] as Date)
+          : obsStartTimes.length > 0
+            ? obsStartTimes[obsStartTimes.length - 1]!
+            : (input.timestamp ?? input.fromTimestamp ?? ctx.trace.timestamp);
+      const policyConfirmationTurnIndexes =
+        await getPolicyConfirmationTurnIndexesForTrace({
+          projectId: input.projectId,
+          traceId: input.traceId,
+          fromTimestamp: traceWindowFrom,
+          toTimestamp: traceWindowTo,
+        });
       const latencyMs =
         obsStartTimes.length > 0
           ? obsEndTimes.length > 0
@@ -403,6 +487,7 @@ export const traceRouter = createTRPCRouter({
         scores: scoresDomain,
         corrections,
         latency: latencyMs !== undefined ? latencyMs / 1000 : undefined,
+        policyConfirmationTurnIndexes,
         observations: observations.map((o) => ({
           ...toDomainWithStringifiedMetadata(o),
           output: undefined,

@@ -621,11 +621,10 @@ export default function ObservationsEventsTable({
                   value: '"',
                 }
               : {
-                  column: "metadata",
-                  type: "stringObject",
-                  key: "policy_names",
-                  operator: "contains",
-                  value: selectedPolicyType,
+                  column: "policyName",
+                  type: "stringOptions",
+                  operator: "any of",
+                  value: [selectedPolicyType],
                 },
           ];
         }

@@ -34,6 +34,7 @@ interface SpanContentProps {
   parentTotalCost?: Decimal;
   parentTotalDuration?: number;
   commentCount?: number;
+  showPolicyConfirmationBadge?: boolean;
   onSelect?: () => void;
   onHover?: () => void;
   className?: string;
@@ -44,6 +45,7 @@ export function SpanContent({
   parentTotalCost,
   parentTotalDuration,
   commentCount,
+  showPolicyConfirmationBadge = false,
   onSelect,
   onHover,
   className,
@@ -136,6 +138,14 @@ export function SpanContent({
                   </span>
                 </div>
               )}
+
+            {showPolicyConfirmationBadge && node.hasPolicyConfirmation && (
+              <div className="flex">
+                <span className="rounded-sm bg-light-blue p-0.5 text-xs text-dark-blue">
+                  POLICY_CONFIRMATION
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

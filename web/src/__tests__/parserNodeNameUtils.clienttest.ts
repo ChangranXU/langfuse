@@ -874,4 +874,48 @@ describe("buildHierarchyGraphFromStepData summaries", () => {
       false,
     );
   });
+
+  it("keeps a policy summary node when instruction metadata exists without security metadata", () => {
+    const data: AgentGraphDataResponse[] = [
+      createObservation({
+        id: "turn-1",
+        name: "session.turn.001",
+        node: "session.turn.001",
+        step: 1,
+        startTime: "2026-01-01T00:00:00.000Z",
+        endTime: "2026-01-01T00:00:10.000Z",
+        observationType: "CHAIN",
+      }),
+      createObservation({
+        id: "kernel-1",
+        name: "Budget review - kernel.cognitive_core__respond",
+        node: "Budget review - kernel.cognitive_core__respond",
+        step: 2,
+        startTime: "2026-01-01T00:00:01.000Z",
+        endTime: "2026-01-01T00:00:03.000Z",
+        observationType: "AGENT",
+      }),
+    ];
+
+    const { graph } = buildHierarchyGraphFromStepData({
+      data,
+      observationMetadataById: {
+        "kernel-1": {
+          instruction_type: "RESPOND",
+          instruction_category: "EXECUTION.Human",
+        },
+      },
+    });
+
+    const turnNode = graph.nodes.find((n) => n.id === "session.turn.001");
+    const policyNode = graph.nodes.find(
+      (n) => n.id === "session.turn.001::policy",
+    );
+
+    expect(turnNode?.metadataSummary?.policy?.authorityLabel).toBe("UNKNOWN");
+    expect(turnNode?.metadataSummary?.policy?.inferredFromInstruction).toBe(
+      true,
+    );
+    expect(policyNode?.label).toBe("Policy\nUNKNOWN");
+  });
 });

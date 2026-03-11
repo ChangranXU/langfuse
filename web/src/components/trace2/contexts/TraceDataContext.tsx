@@ -59,6 +59,7 @@ export function useTraceData(): TraceDataContextValue {
 interface TraceDataProviderProps {
   trace: TraceType;
   observations: ObservationReturnTypeWithMetadata[];
+  policyConfirmationTurnIndexes?: number[];
   serverScores: WithStringifiedMetadata<ScoreDomain>[];
   corrections: ScoreDomain[];
   comments: Map<string, number>;
@@ -72,6 +73,7 @@ interface TraceDataProviderProps {
 export function TraceDataProvider({
   trace,
   observations,
+  policyConfirmationTurnIndexes,
   serverScores,
   corrections,
   comments,
@@ -80,8 +82,13 @@ export function TraceDataProvider({
   const { minObservationLevel } = useViewPreferences();
 
   const uiData = useMemo(() => {
-    return buildTraceUiData(trace, observations, minObservationLevel);
-  }, [trace, observations, minObservationLevel]);
+    return buildTraceUiData(
+      trace,
+      observations,
+      minObservationLevel,
+      policyConfirmationTurnIndexes,
+    );
+  }, [trace, observations, minObservationLevel, policyConfirmationTurnIndexes]);
 
   const observationIoSourceById = useMemo(
     () => buildKernelObservationIoSourceMap(observations),

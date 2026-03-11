@@ -9,10 +9,14 @@ import { type ObservationReturnType } from "@/src/server/api/routers/traces";
 import Decimal from "decimal.js";
 import { buildKernelObservationIoSourceMap } from "./observationIoSource";
 
+type ObservationWithOptionalMetadata = ObservationReturnType & {
+  metadata?: string | null;
+};
+
 // Helper to create mock observations
 const createMockObservation = (
-  overrides: Partial<ObservationReturnType> = {},
-): ObservationReturnType => ({
+  overrides: Partial<ObservationWithOptionalMetadata> = {},
+): ObservationWithOptionalMetadata => ({
   id: "mock-id",
   name: "Mock Observation",
   type: "SPAN",
@@ -1951,6 +1955,128 @@ describe("buildTraceUiData", () => {
         expect(result.nodeMap.get("nested-1")?.depth).toBe(2);
         expect(result.nodeMap.get("nested-2")?.depth).toBe(2);
       });
+    });
+
+    it("marks session.turn nodes for accepted or rejected policy confirmations", () => {
+      const trace = createMockTrace();
+      const observations: ObservationWithOptionalMetadata[] = [
+        createMockObservation({
+          id: "turn-1",
+          name: "session.turn.001",
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        createMockObservation({
+          id: "turn-2",
+          name: "session.turn.002",
+          startTime: new Date("2024-01-01T00:00:05.000Z"),
+        }),
+        createMockObservation({
+          id: "confirmation-accepted",
+          name: "session.output.turn_001",
+          startTime: new Date("2024-01-01T00:00:00.100Z"),
+          metadata: JSON.stringify({
+            turn_index: "1",
+            policy_confirmation_state: "accepted",
+            policy_names: ["P1"],
+          }),
+        }),
+        createMockObservation({
+          id: "confirmation-ask",
+          name: "session.output.turn_002",
+          startTime: new Date("2024-01-01T00:00:05.100Z"),
+          metadata: JSON.stringify({
+            turn_index: "2",
+            policy_confirmation_state: "ask",
+          }),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      expect(result.nodeMap.get("turn-1")?.hasPolicyConfirmation).toBe(true);
+      expect(result.nodeMap.get("turn-2")?.hasPolicyConfirmation).toBe(false);
+    });
+
+    it("marks session.turn nodes when confirmation state falls back from trace metadata", () => {
+      const trace = createMockTrace({
+        metadata: JSON.stringify({
+          turn_index: "2",
+          policy_confirmation_state: "rejected",
+          policy_names: ["P2"],
+          raw_output_content: "blocked by policy",
+        }),
+      });
+      const observations: ObservationWithOptionalMetadata[] = [
+        createMockObservation({
+          id: "turn-2",
+          name: "session.turn.002",
+          startTime: new Date("2024-01-01T00:00:05.000Z"),
+        }),
+        createMockObservation({
+          id: "confirmation-output",
+          name: "session.output.turn_002",
+          startTime: new Date("2024-01-01T00:00:05.100Z"),
+          statusMessage: "blocked by policy",
+          metadata: "{}",
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      expect(result.nodeMap.get("turn-2")?.hasPolicyConfirmation).toBe(true);
+    });
+
+    it("does not mark turns when accepted/rejected state has no policy_names", () => {
+      const trace = createMockTrace();
+      const observations: ObservationWithOptionalMetadata[] = [
+        createMockObservation({
+          id: "turn-1",
+          name: "session.turn.001",
+          startTime: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        createMockObservation({
+          id: "confirmation-no-policy",
+          name: "session.output.turn_001",
+          startTime: new Date("2024-01-01T00:00:00.100Z"),
+          metadata: JSON.stringify({
+            turn_index: "1",
+            policy_confirmation_state: "accepted",
+          }),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      expect(result.nodeMap.get("turn-1")?.hasPolicyConfirmation).toBe(false);
+    });
+
+    it("does not apply trace fallback metadata to non session.output turn nodes", () => {
+      const trace = createMockTrace({
+        metadata: JSON.stringify({
+          turn_index: "2",
+          policy_confirmation_state: "rejected",
+          policy_names: ["P2"],
+        }),
+      });
+      const observations: ObservationWithOptionalMetadata[] = [
+        createMockObservation({
+          id: "turn-2",
+          name: "session.turn.002",
+          startTime: new Date("2024-01-01T00:00:05.000Z"),
+        }),
+        createMockObservation({
+          id: "kernel-node",
+          name: "topic - kernel.execution_core__tool_call",
+          startTime: new Date("2024-01-01T00:00:05.100Z"),
+          metadata: JSON.stringify({
+            turn_index: "2",
+          }),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      expect(result.nodeMap.get("turn-2")?.hasPolicyConfirmation).toBe(false);
     });
   });
 });

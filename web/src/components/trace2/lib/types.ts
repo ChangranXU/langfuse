@@ -19,6 +19,7 @@ export type TreeNode = {
   startTime: Date;
   endTime?: Date | null;
   level?: string;
+  hasPolicyConfirmation?: boolean;
   children: TreeNode[];
   // Token usage
   inputUsage?: number | null;

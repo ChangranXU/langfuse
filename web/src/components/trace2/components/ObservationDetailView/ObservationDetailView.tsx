@@ -506,6 +506,7 @@ export function ObservationDetailView({
               projectId={projectId}
               traceId={traceId}
               observationId={governanceObservation.id}
+              observationName={governanceObservation.name}
               level={governanceObservation.level}
               statusMessage={governanceObservation.statusMessage}
               metadata={governanceObservation.metadata}

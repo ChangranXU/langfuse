@@ -26,6 +26,10 @@ export const PeekViewObservationDetail = ({
     "display",
     withDefault(StringParam, "details"),
   );
+  const policyConfirmationTurnIndexes =
+    trace.data && "policyConfirmationTurnIndexes" in trace.data
+      ? trace.data.policyConfirmationTurnIndexes
+      : undefined;
 
   if (!peekId || !trace.data) {
     return <Skeleton className="h-full w-full rounded-none" />;
@@ -38,6 +42,7 @@ export const PeekViewObservationDetail = ({
       scores={trace.data.scores}
       corrections={trace.data.corrections}
       projectId={trace.data.projectId}
+      policyConfirmationTurnIndexes={policyConfirmationTurnIndexes}
       observations={trace.data.observations}
       selectedTab={selectedTab}
       setSelectedTab={setSelectedTab}

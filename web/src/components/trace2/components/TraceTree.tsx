@@ -72,6 +72,7 @@ export function TraceTree() {
               parentTotalCost={rootTotalCost}
               parentTotalDuration={rootTotalDuration}
               commentCount={comments.get(typedNode.id)}
+              showPolicyConfirmationBadge
               onSelect={onSelect}
               onHover={() => handleHover(typedNode)}
             />

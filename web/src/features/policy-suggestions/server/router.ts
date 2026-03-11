@@ -26,12 +26,23 @@ import { type QueryType, viewVersions } from "@/src/features/query/types";
 import { mapLegacyUiTableFilterToView } from "@/src/features/query/dashboardUiTableToViewMapping";
 import { executeQuery } from "@/src/features/query/server/queryExecutor";
 import {
+  derivePolicyNamesFromMetadata,
+  getBooleanFlag,
+  getMetadataRecord,
+  getObservationTurnIndex,
+  mergeRelevantPolicyMetadata,
+  parseStringArray,
+  parseStringRecord,
+} from "@/src/features/governance/utils/policyMetadata";
+import {
   PolicySuggestionGenerateOutputSchema,
   PolicySuggestionModelSchema,
   PolicySuggestionResultSchema,
   PolicySuggestionStructuredOutputSchema,
 } from "@/src/features/policy-suggestions/types";
 import { resolveDemoOpenAIModel } from "@/src/features/error-analysis/types";
+
+export { getMetadataRecord, parseStringArray, parseStringRecord };
 
 const MAX_REJECTED_TURNS = 4;
 const MAX_OBSERVATIONS_PER_TURN = 6;
@@ -128,95 +139,10 @@ function getString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function getMetadataRecord(metadata: unknown): Record<string, unknown> {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return metadata as Record<string, unknown>;
-  }
-
-  if (typeof metadata === "string") {
-    try {
-      const parsed = JSON.parse(metadata);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // Ignore parse failures and fallback to empty object.
-    }
-  }
-
-  return {};
-}
-
-export function parseStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter(
-      (item): item is string =>
-        typeof item === "string" && item.trim().length > 0,
-    );
-  }
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (item): item is string =>
-            typeof item === "string" && item.trim().length > 0,
-        );
-      }
-    } catch {
-      // no-op
-    }
-
-    if (value.includes(",")) {
-      return value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-    const trimmed = value.trim();
-    return trimmed ? [trimmed] : [];
-  }
-  return [];
-}
-
-export function parseStringRecord(value: unknown): Record<string, string> {
-  let input = value;
-  if (typeof input === "string") {
-    try {
-      input = JSON.parse(input);
-    } catch {
-      return {};
-    }
-  }
-
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return {};
-  }
-
-  const entries = Object.entries(input as Record<string, unknown>).flatMap(
-    ([key, val]) =>
-      typeof val === "string" && val.trim().length > 0
-        ? [[key, val] as const]
-        : [],
-  );
-
-  return Object.fromEntries(entries);
-}
-
 function parseTurnIndex(value: unknown): number | null {
   if (value == null) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function getBooleanFlag(value: unknown): boolean {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value === 1;
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    return normalized === "true" || normalized === "1";
-  }
-  return false;
 }
 
 function extractObservationPrompt(observation: Observation): string | null {
@@ -227,28 +153,24 @@ function extractObservationPrompt(observation: Observation): string | null {
   return raw ? truncateString(raw, MAX_IO_CHARS) : null;
 }
 
-function extractPolicyNames(metadata: Record<string, unknown>): string[] {
-  const policyNames = new Set<string>([
-    ...parseStringArray(metadata.policy_names),
-    ...parseStringArray(metadata.policy_name),
-  ]);
-  Object.keys(parseStringRecord(metadata.policy_descriptions)).forEach((name) =>
-    policyNames.add(name),
-  );
-  Object.keys(parseStringRecord(metadata.policy_sources)).forEach((name) =>
-    policyNames.add(name),
-  );
-  return [...policyNames];
-}
-
 function isPolicyViolationObservation(params: {
   observation: Observation;
   policyName: string;
   confirmationTurnIndex: number | null;
+  traceMetadata?: unknown;
 }): boolean {
-  const { observation, policyName, confirmationTurnIndex } = params;
-  const metadata = getMetadataRecord(observation.metadata);
-  const observationTurnIndex = parseTurnIndex(metadata.turn_index);
+  const { observation, policyName, confirmationTurnIndex, traceMetadata } =
+    params;
+  const metadata = mergeRelevantPolicyMetadata({
+    observationMetadata: observation.metadata,
+    traceMetadata,
+    observationName: observation.name,
+    statusMessage: observation.statusMessage,
+  });
+  const observationTurnIndex = getObservationTurnIndex({
+    metadata: observation.metadata,
+    observationName: observation.name,
+  });
   if (
     confirmationTurnIndex != null &&
     observationTurnIndex != null &&
@@ -257,7 +179,7 @@ function isPolicyViolationObservation(params: {
     return false;
   }
 
-  const observationPolicyNames = extractPolicyNames(metadata);
+  const observationPolicyNames = derivePolicyNamesFromMetadata(metadata);
   const hasMatchingPolicyName =
     observationPolicyNames.length === 0 ||
     observationPolicyNames.includes(policyName);
@@ -290,8 +212,14 @@ function getObservationDisplayOutput(observation: Observation): string | null {
 
 function getPolicyProtectedFromObservation(
   observation: Observation,
+  traceMetadata?: unknown,
 ): string | null {
-  const metadata = getMetadataRecord(observation.metadata);
+  const metadata = mergeRelevantPolicyMetadata({
+    observationMetadata: observation.metadata,
+    traceMetadata,
+    observationName: observation.name,
+    statusMessage: observation.statusMessage,
+  });
   const protectedReason = getString(metadata.policy_protected);
   if (protectedReason) return protectedReason;
   const statusMessage = observation.statusMessage?.trim() ?? "";
@@ -304,16 +232,24 @@ function getPolicyProtectedFromObservation(
   return null;
 }
 
-function buildTurnNodes(observations: Observation[]): SampledTurnNode[] {
+function buildTurnNodes(
+  observations: Observation[],
+  traceMetadata?: unknown,
+): SampledTurnNode[] {
   return observations.map((observation) => {
-    const metadata = getMetadataRecord(observation.metadata);
+    const metadata = mergeRelevantPolicyMetadata({
+      observationMetadata: observation.metadata,
+      traceMetadata,
+      observationName: observation.name,
+      statusMessage: observation.statusMessage,
+    });
     return {
       name: observation.name || observation.id,
       level: observation.level ?? null,
       statusMessage: observation.statusMessage ?? null,
       input: getObservationDisplayInput(observation),
       output: getObservationDisplayOutput(observation),
-      policyNames: extractPolicyNames(metadata),
+      policyNames: derivePolicyNamesFromMetadata(metadata),
     };
   });
 }
@@ -394,11 +330,10 @@ async function getRejectedTurnDetails(params: {
     filters: [
       ...mapLegacyUiTableFilterToView("observations", params.globalFilterState),
       {
-        column: "metadata",
-        key: "policy_confirmation_state",
+        column: "policyConfirmationState",
         operator: "=",
         value: "rejected",
-        type: "stringObject",
+        type: "string",
       },
     ],
     timeDimension: null,
@@ -408,12 +343,7 @@ async function getRejectedTurnDetails(params: {
     chartConfig: { type: "table", row_limit: 500 },
   };
 
-  const rows = await executeQuery(
-    params.projectId,
-    query,
-    params.version,
-    params.version === "v2",
-  );
+  const rows = await executeQuery(params.projectId, query, "v1", false);
 
   const deduped = new Map<string, RejectedTurnDetail>();
   for (const row of rows) {
@@ -453,6 +383,8 @@ export function buildSampledTurnContext(params: {
 }): SampledTurnContext | null {
   const { policyName, detail, trace, observations } = params;
   if (!trace) return null;
+  const rawTrace = trace as unknown as Record<string, unknown>;
+  const traceMetadata = getMetadataRecord(rawTrace.metadata);
 
   const policyViolationTurnIndices = Array.from(
     new Set(
@@ -462,10 +394,14 @@ export function buildSampledTurnContext(params: {
             observation,
             policyName,
             confirmationTurnIndex: detail.turnIndex,
+            traceMetadata,
           }),
         )
         .map((observation) =>
-          parseTurnIndex(getMetadataRecord(observation.metadata).turn_index),
+          getObservationTurnIndex({
+            metadata: observation.metadata,
+            observationName: observation.name,
+          }),
         )
         .filter((turnIndex): turnIndex is number => turnIndex != null),
     ),
@@ -481,10 +417,13 @@ export function buildSampledTurnContext(params: {
   const relatedTurns: RelatedTurnContext[] = [];
   for (const turnIndex of selectedTurnIndices) {
     const turnObservations = observations
-      .filter((observation) => {
-        const metadata = getMetadataRecord(observation.metadata);
-        return parseTurnIndex(metadata.turn_index) === turnIndex;
-      })
+      .filter(
+        (observation) =>
+          getObservationTurnIndex({
+            metadata: observation.metadata,
+            observationName: observation.name,
+          }) === turnIndex,
+      )
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
       .slice(0, MAX_OBSERVATIONS_PER_TURN);
 
@@ -494,7 +433,10 @@ export function buildSampledTurnContext(params: {
     let turnExamplePrompt: string | null = null;
     for (const observation of turnObservations) {
       if (!turnPolicyProtected) {
-        turnPolicyProtected = getPolicyProtectedFromObservation(observation);
+        turnPolicyProtected = getPolicyProtectedFromObservation(
+          observation,
+          traceMetadata,
+        );
       }
       if (!turnExamplePrompt) {
         turnExamplePrompt =
@@ -507,7 +449,7 @@ export function buildSampledTurnContext(params: {
       turnIndex,
       examplePrompt: turnExamplePrompt,
       policyProtected: turnPolicyProtected,
-      nodes: buildTurnNodes(turnObservations),
+      nodes: buildTurnNodes(turnObservations, traceMetadata),
     });
   }
 
@@ -520,14 +462,22 @@ export function buildSampledTurnContext(params: {
   let examplePrompt: string | null = null;
 
   for (const observation of observations) {
-    const metadata = getMetadataRecord(observation.metadata);
+    const metadata = mergeRelevantPolicyMetadata({
+      observationMetadata: observation.metadata,
+      traceMetadata,
+      observationName: observation.name,
+      statusMessage: observation.statusMessage,
+    });
     if (
       !policyDescription ||
       !policySource ||
       !policyProtected ||
       !examplePrompt
     ) {
-      const turnIndex = parseTurnIndex(metadata.turn_index);
+      const turnIndex = getObservationTurnIndex({
+        metadata: observation.metadata,
+        observationName: observation.name,
+      });
       if (
         selectedTurnIndices.length > 0 &&
         turnIndex != null &&
@@ -538,7 +488,10 @@ export function buildSampledTurnContext(params: {
     }
 
     if (!policyProtected) {
-      policyProtected = getPolicyProtectedFromObservation(observation);
+      policyProtected = getPolicyProtectedFromObservation(
+        observation,
+        traceMetadata,
+      );
     }
 
     const descriptions = parseStringRecord(metadata.policy_descriptions);
@@ -558,7 +511,6 @@ export function buildSampledTurnContext(params: {
     }
   }
 
-  const rawTrace = trace as unknown as Record<string, unknown>;
   if (!examplePrompt) {
     const traceInput = rawTrace.input;
     if (traceInput != null) {

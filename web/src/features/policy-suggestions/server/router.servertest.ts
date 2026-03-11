@@ -102,4 +102,69 @@ describe("policy suggestion router helpers", () => {
     expect(result?.examplePrompt).toContain("report/week3.md");
     expect(result?.examplePrompt).not.toBe("no");
   });
+
+  it("falls back to trace policy metadata for output confirmations with empty observation metadata", () => {
+    const trace = {
+      timestamp: new Date("2025-01-01T00:00:00.000Z"),
+      input: "yes",
+      metadata: {
+        turn_index: "6",
+        raw_output_content:
+          "policy violation POLICY_BLOCK tool=read_file reason=path not in allow_prefixes",
+        policy_names: '["PathBudgetPolicy"]',
+        policy_descriptions:
+          '{"PathBudgetPolicy":"Blocks reads outside the configured allow prefixes"}',
+        policy_sources:
+          '{"PathBudgetPolicy":"policy/path_budget_policy.py#enforce"}',
+        policy_protected:
+          "POLICY_BLOCK tool=read_file reason=path not in allow_prefixes",
+      },
+    };
+
+    const outputObservation = {
+      id: "obs-output",
+      name: "session.output.turn_006",
+      startTime: new Date("2025-01-01T00:00:01.000Z"),
+      level: "POLICY_VIOLATION",
+      statusMessage:
+        "policy violation POLICY_BLOCK tool=read_file reason=path not in allow_prefixes",
+      input: null,
+      output: null,
+      metadata: {},
+    } as unknown as Observation;
+
+    const confirmationObservation = {
+      id: "obs-confirmation",
+      name: "session.output.turn_007",
+      startTime: new Date("2025-01-01T00:00:02.000Z"),
+      level: "DEFAULT",
+      statusMessage: null,
+      input: "yes",
+      output: null,
+      metadata: {
+        turn_index: "7",
+        policy_confirmation_state: "rejected",
+      },
+    } as unknown as Observation;
+
+    const result = buildSampledTurnContext({
+      policyName: "PathBudgetPolicy",
+      detail: {
+        traceId: "trace-2",
+        traceName: "trace-name",
+        turnIndex: 7,
+        nodeCount: 2,
+      },
+      trace,
+      observations: [outputObservation, confirmationObservation],
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.policyTurnIndices).toEqual([6]);
+    expect(result?.policyDescription).toBe(
+      "Blocks reads outside the configured allow prefixes",
+    );
+    expect(result?.policySource).toBe("policy/path_budget_policy.py#enforce");
+    expect(result?.policyProtected).toContain("allow_prefixes");
+  });
 });

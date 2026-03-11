@@ -31,6 +31,7 @@ export type GraphNodeMetadataSummary = {
     confidentialityLabel?: boolean | null;
     hasBlock?: boolean | null;
     ruleEffectCounts?: Record<string, number> | null;
+    inferredFromInstruction?: boolean | null;
   } | null;
 };
 

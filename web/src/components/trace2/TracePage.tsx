@@ -124,6 +124,10 @@ export function TracePage({
     );
 
   if (!trace.data) return <div className="p-3">Loading...</div>;
+  const policyConfirmationTurnIndexes =
+    "policyConfirmationTurnIndexes" in trace.data
+      ? trace.data.policyConfirmationTurnIndexes
+      : undefined;
 
   const isSharedTrace = trace.data.public;
   const showPublicIndicators = isSharedTrace && !hasProjectAccess;
@@ -239,6 +243,7 @@ export function TracePage({
           scores={trace.data.scores}
           corrections={trace.data.corrections}
           projectId={trace.data.projectId}
+          policyConfirmationTurnIndexes={policyConfirmationTurnIndexes}
           observations={trace.data.observations}
           selectedTab={selectedTab}
           setSelectedTab={setSelectedTab}

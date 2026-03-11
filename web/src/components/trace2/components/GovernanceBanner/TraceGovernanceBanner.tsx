@@ -3,132 +3,13 @@ import { api, directApi } from "@/src/utils/api";
 import { useIsAuthenticatedAndProjectMember } from "@/src/features/auth/hooks";
 import { useTraceData } from "@/src/components/trace2/contexts/TraceDataContext";
 import { useSelection } from "@/src/components/trace2/contexts/SelectionContext";
+import {
+  derivePolicyNamesFromMetadata,
+  getMetadataRecord,
+  mergeRelevantPolicyMetadata,
+} from "@/src/features/governance/utils/policyMetadata";
 
 const GOVERNANCE_REFRESH_INTERVAL_MS = 5_000;
-
-function getMetadataRecord(metadata: unknown): Record<string, unknown> {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return metadata as Record<string, unknown>;
-  }
-
-  if (typeof metadata === "string") {
-    try {
-      const parsed = JSON.parse(metadata);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // no-op
-    }
-  }
-
-  return {};
-}
-
-function parseStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter(
-      (item): item is string => typeof item === "string" && !!item.trim(),
-    );
-  }
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (item): item is string => typeof item === "string" && !!item.trim(),
-        );
-      }
-    } catch {
-      // no-op
-    }
-    if (value.includes(",")) {
-      return value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-    const trimmed = value.trim();
-    return trimmed ? [trimmed] : [];
-  }
-  return [];
-}
-
-function parseStringRecord(value: unknown): Record<string, string> {
-  let input = value;
-  if (typeof input === "string") {
-    try {
-      input = JSON.parse(input);
-    } catch {
-      return {};
-    }
-  }
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return {};
-  }
-  const entries = Object.entries(input as Record<string, unknown>).flatMap(
-    ([key, val]) =>
-      typeof val === "string" && val.trim().length > 0
-        ? [[key, val] as const]
-        : [],
-  );
-  return Object.fromEntries(entries);
-}
-
-function derivePolicyNamesFromMetadata(metadata: unknown): string[] {
-  const record = getMetadataRecord(metadata);
-  const policyNames = new Set<string>(parseStringArray(record.policy_names));
-  parseStringArray(record.policy_name).forEach((name) => policyNames.add(name));
-  Object.keys(parseStringRecord(record.policy_descriptions)).forEach((name) =>
-    policyNames.add(name),
-  );
-  Object.keys(parseStringRecord(record.policy_sources)).forEach((name) =>
-    policyNames.add(name),
-  );
-
-  if (policyNames.size > 0) {
-    return Array.from(policyNames);
-  }
-  return [];
-}
-
-function getPolicyViolationFlag(value: unknown): boolean {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value === 1;
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    return normalized === "true" || normalized === "1";
-  }
-  return false;
-}
-
-function isPolicyCheckNode(record: Record<string, unknown>): boolean {
-  const parserStage =
-    typeof record.parser_stage === "string"
-      ? record.parser_stage.trim()
-      : typeof record.parserStage === "string"
-        ? record.parserStage.trim()
-        : "";
-  const nodeType =
-    typeof record.node_type === "string"
-      ? record.node_type
-      : typeof record.nodeType === "string"
-        ? record.nodeType
-        : "";
-  return parserStage.startsWith("pre_") || nodeType === "output";
-}
-
-function isPolicyViolationObservation(params: {
-  level: string | null | undefined;
-  metadata: unknown;
-}): boolean {
-  const metadataRecord = getMetadataRecord(params.metadata);
-  const hasViolationSignal =
-    params.level === "POLICY_VIOLATION" ||
-    getPolicyViolationFlag(metadataRecord.policy_violation);
-  if (!hasViolationSignal) return false;
-  return isPolicyCheckNode(metadataRecord);
-}
 
 export function TraceGovernanceBanner() {
   const { trace, observations } = useTraceData();
@@ -158,14 +39,12 @@ export function TraceGovernanceBanner() {
       },
     );
 
+  const tracePolicyMetadata = useMemo(
+    () => getMetadataRecord(trace.metadata),
+    [trace.metadata],
+  );
+
   const policyViolationObservations = useMemo(() => {
-    const strict = observations.filter((obs) =>
-      isPolicyViolationObservation({
-        level: obs.level,
-        metadata: obs.metadata,
-      }),
-    );
-    if (strict.length > 0) return strict;
     return observations.filter((obs) => obs.level === "POLICY_VIOLATION");
   }, [observations]);
 
@@ -272,7 +151,14 @@ export function TraceGovernanceBanner() {
             });
             return {
               observationId: obs.id,
-              policyNames: derivePolicyNamesFromMetadata(result.metadata),
+              policyNames: derivePolicyNamesFromMetadata(
+                mergeRelevantPolicyMetadata({
+                  observationMetadata: result.metadata,
+                  traceMetadata: tracePolicyMetadata,
+                  observationName: obs.name,
+                  statusMessage: obs.statusMessage,
+                }),
+              ),
             };
           } catch {
             return {
@@ -303,6 +189,7 @@ export function TraceGovernanceBanner() {
     policyViolationObservations,
     trace.projectId,
     trace.id,
+    tracePolicyMetadata,
   ]);
 
   const errorGroups = useMemo(() => {
@@ -367,7 +254,14 @@ export function TraceGovernanceBanner() {
 
     policyViolationObservations.forEach((obs) => {
       const fetchedPolicyNames = policyNamesByObservationId[obs.id] ?? [];
-      const metadataPolicyNames = derivePolicyNamesFromMetadata(obs.metadata);
+      const metadataPolicyNames = derivePolicyNamesFromMetadata(
+        mergeRelevantPolicyMetadata({
+          observationMetadata: obs.metadata,
+          traceMetadata: tracePolicyMetadata,
+          observationName: obs.name,
+          statusMessage: obs.statusMessage,
+        }),
+      );
       const policyNames = (
         fetchedPolicyNames.length > 0 ? fetchedPolicyNames : metadataPolicyNames
       ).filter(Boolean);
@@ -397,7 +291,11 @@ export function TraceGovernanceBanner() {
       if (b.count !== a.count) return b.count - a.count;
       return a.type.localeCompare(b.type);
     });
-  }, [policyViolationObservations, policyNamesByObservationId]);
+  }, [
+    policyViolationObservations,
+    policyNamesByObservationId,
+    tracePolicyMetadata,
+  ]);
 
   const activePolicyViolationGroup = useMemo(
     () =>

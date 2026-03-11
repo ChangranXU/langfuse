@@ -180,11 +180,10 @@ async function getPolicyConfirmationCountsByState(params: {
     filters: [
       ...mapLegacyUiTableFilterToView("observations", params.globalFilterState),
       {
-        column: "metadata",
-        key: "policy_confirmation_state",
+        column: "policyConfirmationState",
         operator: "=",
         value: params.state,
-        type: "stringObject",
+        type: "string",
       },
     ],
     timeDimension: null,
@@ -194,12 +193,7 @@ async function getPolicyConfirmationCountsByState(params: {
     chartConfig: { type: "table", row_limit: 1000 },
   };
 
-  const rows = await executeQuery(
-    params.projectId,
-    query,
-    params.version,
-    params.version === "v2",
-  );
+  const rows = await executeQuery(params.projectId, query, "v1", false);
 
   const counts = new Map<string, number>();
   for (const row of rows) {
@@ -243,11 +237,10 @@ async function getPolicyConfirmationDetailsByState(params: {
     filters: [
       ...mapLegacyUiTableFilterToView("observations", params.globalFilterState),
       {
-        column: "metadata",
-        key: "policy_confirmation_state",
+        column: "policyConfirmationState",
         operator: "=",
         value: params.state,
-        type: "stringObject",
+        type: "string",
       },
     ],
     timeDimension: null,
@@ -257,12 +250,7 @@ async function getPolicyConfirmationDetailsByState(params: {
     chartConfig: { type: "table", row_limit: 1000 },
   };
 
-  const rows = await executeQuery(
-    params.projectId,
-    query,
-    params.version,
-    params.version === "v2",
-  );
+  const rows = await executeQuery(params.projectId, query, "v1", false);
 
   const details = new Map<
     string,

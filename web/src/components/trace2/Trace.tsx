@@ -33,6 +33,7 @@ export type TraceProps = {
   scores: WithStringifiedMetadata<ScoreDomain>[];
   corrections: ScoreDomain[];
   projectId: string;
+  policyConfirmationTurnIndexes?: number[];
   viewType?: "detailed" | "focused";
   context?: "peek" | "fullscreen";
   isValidObservationId?: boolean;
@@ -49,6 +50,7 @@ export function Trace({
   scores,
   corrections,
   projectId,
+  policyConfirmationTurnIndexes,
   context,
 }: TraceProps) {
   // Fetch comment counts using existing hook
@@ -71,6 +73,7 @@ export function Trace({
       <TraceDataProvider
         trace={trace}
         observations={observations}
+        policyConfirmationTurnIndexes={policyConfirmationTurnIndexes}
         serverScores={scores}
         corrections={corrections}
         comments={commentsMap}

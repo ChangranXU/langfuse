@@ -347,6 +347,11 @@ export function PolicyConfirmationDetailsSheet(props: {
                     scores={selectedTrace.data.scores}
                     corrections={selectedTrace.data.corrections}
                     projectId={selectedTrace.data.projectId}
+                    policyConfirmationTurnIndexes={
+                      "policyConfirmationTurnIndexes" in selectedTrace.data
+                        ? selectedTrace.data.policyConfirmationTurnIndexes
+                        : undefined
+                    }
                     observations={selectedTrace.data.observations}
                     context="peek"
                   />

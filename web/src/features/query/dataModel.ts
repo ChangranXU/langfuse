@@ -10,6 +10,20 @@ import { InvalidRequestError } from "@langfuse/shared";
 // The data model defines all available dimensions, measures, and the timeDimension for a given view.
 // Make sure to update ./dashboardUiTableToViewMapping.ts if you make changes
 
+const buildTurnIndexFromObservationNameSql = (observationAlias: string) =>
+  `nullIf(extract(${observationAlias}.name, 'turn[_\\\\.](\\\\d+)'), '')`;
+
+const buildTracePolicyFallbackMatchSql = (
+  observationAlias: string,
+  traceAlias: string,
+) => `
+startsWith(${observationAlias}.name, 'session.output.turn_')
+AND (
+  ${buildTurnIndexFromObservationNameSql(observationAlias)} = nullIf(${traceAlias}.metadata['turn_index'], '')
+  OR lowerUTF8(replaceRegexpAll(ifNull(${observationAlias}.status_message, ''), '\\\\s+', ' ')) = lowerUTF8(replaceRegexpAll(ifNull(${traceAlias}.metadata['raw_output_content'], ''), '\\\\s+', ' '))
+  OR lowerUTF8(replaceRegexpAll(ifNull(${observationAlias}.status_message, ''), '\\\\s+', ' ')) = lowerUTF8(replaceRegexpAll(ifNull(${traceAlias}.metadata['policy_protected'], ''), '\\\\s+', ' '))
+)`;
+
 export const traceView: ViewDeclarationType = {
   name: "traces",
   description:
@@ -330,11 +344,30 @@ export const observationsView: ViewDeclarationType = {
       description: "Identifier linking the observation to its parent trace.",
     },
     policyConfirmationTurnIndex: {
-      sql: "nullIf(observations.metadata['turn_index'], '')",
+      sql: `coalesce(
+        nullIf(observations.metadata['turn_index'], ''),
+        ${buildTurnIndexFromObservationNameSql("observations")}
+      )`,
       alias: "policyConfirmationTurnIndex",
       type: "string",
       description:
         "Turn index extracted from observation metadata for policy confirmation deduplication.",
+    },
+    policyConfirmationState: {
+      sql: `coalesce(
+        nullIf(observations.metadata['policy_confirmation_state'], ''),
+        if(
+          ${buildTracePolicyFallbackMatchSql("observations", "traces")}
+          AND notEmpty(ifNull(traces.metadata['policy_confirmation_state'], '')),
+          traces.metadata['policy_confirmation_state'],
+          CAST(NULL AS Nullable(String))
+        )
+      )`,
+      alias: "policyConfirmationState",
+      type: "string",
+      relationTable: "traces",
+      description:
+        "Policy confirmation state derived from observation metadata with trace-level fallback for confirmation output nodes.",
     },
     traceName: {
       sql: "traces.name",
@@ -455,17 +488,46 @@ export const observationsView: ViewDeclarationType = {
       explodeArray: true,
     },
     policyName: {
-      sql: "if(observations.metadata['policy_names'] = '', [], JSONExtract(observations.metadata['policy_names'], 'Array(String)'))",
+      sql: `if(
+        notEmpty(ifNull(observations.metadata['policy_names'], '')),
+        JSONExtract(observations.metadata['policy_names'], 'Array(String)'),
+        if(
+          ${buildTracePolicyFallbackMatchSql("observations", "traces")}
+          AND notEmpty(ifNull(traces.metadata['policy_names'], '')),
+          JSONExtract(traces.metadata['policy_names'], 'Array(String)'),
+          []
+        )
+      )`,
       alias: "policyName",
       type: "arrayString",
+      relationTable: "traces",
       description:
         "Names of policies attached to policy-violation observations.",
       explodeArray: true,
     },
     policyDescription: {
-      sql: "nullIf(JSONExtractString(nullIf(observations.metadata['policy_descriptions'], ''), policyName), '')",
+      sql: `nullIf(
+        JSONExtractString(
+          nullIf(
+            if(
+              notEmpty(ifNull(observations.metadata['policy_descriptions'], '')),
+              observations.metadata['policy_descriptions'],
+              if(
+                ${buildTracePolicyFallbackMatchSql("observations", "traces")}
+                AND notEmpty(ifNull(traces.metadata['policy_descriptions'], '')),
+                traces.metadata['policy_descriptions'],
+                ''
+              )
+            ),
+            ''
+          ),
+          policyName
+        ),
+        ''
+      )`,
       alias: "policyDescription",
       type: "string",
+      relationTable: "traces",
       description: "Description mapped to a specific policyName entry.",
     },
   },
