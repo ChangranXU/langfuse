@@ -929,40 +929,6 @@ export function buildHierarchyGraphFromStepData(params: {
       level,
     });
 
-    // Policy node (security/rules abstraction), if present
-    if (turnMetadataSummary.policy) {
-      const policyNodeId = `${turnWindow.nodeName}::policy`;
-      const policy = turnMetadataSummary.policy;
-      nodes.push({
-        id: policyNodeId,
-        label: `Policy\n${truncateLabel(
-          policy.authorityLabel ?? "unknown",
-          28,
-        )}`,
-        type: "POLICY",
-        level: policy.hasBlock ? "ERROR" : null,
-        title: [
-          policy.inferredFromInstruction
-            ? "Security metadata was absent; this placeholder keeps instruction-level policy context visible."
-            : "Policy/security summary derived from instruction metadata.",
-          policy.authorityLabel ? `Authority: ${policy.authorityLabel}` : null,
-          policy.confidentiality
-            ? `Confidentiality: ${policy.confidentiality}`
-            : null,
-          policy.integrity ? `Integrity: ${policy.integrity}` : null,
-          policy.trustworthiness
-            ? `Trustworthiness: ${policy.trustworthiness}`
-            : null,
-          policy.hasBlock ? "Rule: BLOCK present" : null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        metadataSummary: { policy },
-      });
-      edges.push({ from: turnWindow.nodeName, to: policyNodeId });
-      nodeToObservationsMap.set(policyNodeId, observationIds);
-    }
-
     // Tools summary + per-tool nodes
     const toolObservationIds = observationIds.filter((id) => {
       const obs = observationsById.get(id);
@@ -1597,7 +1563,7 @@ function buildTurnMetadataSummary(params: {
         }
       : instructionType || instructionCategory
         ? {
-            authorityLabel: "UNKNOWN",
+            authorityLabel: null,
             confidentiality: null,
             integrity: null,
             trustworthiness: null,
