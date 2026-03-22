@@ -9,6 +9,7 @@ const POLICY_METADATA_KEYS = [
   "policy_confirmation_state",
   "policy_confirmation_accepted",
   "policy_confirmation_rejected",
+  "inactivate_error_type",
   "policy_has_block",
   "policy_authority_label",
   "policy_confidentiality",

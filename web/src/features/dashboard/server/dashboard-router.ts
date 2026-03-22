@@ -161,6 +161,36 @@ function clickhouseHistogramToChartData(
 
 const PolicyConfirmationStateSchema = z.enum(["ask", "accepted", "rejected"]);
 
+function resolvePolicyConfirmationResetTimestamp(
+  metadata: unknown,
+): Date | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+
+  const policyGovernance = (metadata as Record<string, unknown>)
+    .policyGovernance;
+  if (
+    !policyGovernance ||
+    typeof policyGovernance !== "object" ||
+    Array.isArray(policyGovernance)
+  ) {
+    return null;
+  }
+
+  const rawLastUpdated = (policyGovernance as Record<string, unknown>)
+    .lastPolicyUpdatedAt;
+  if (
+    typeof rawLastUpdated !== "string" ||
+    rawLastUpdated.trim().length === 0
+  ) {
+    return null;
+  }
+
+  const parsed = new Date(rawLastUpdated);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
 async function getPolicyConfirmationCountsByState(params: {
   projectId: string;
   globalFilterState: FilterState;
@@ -619,7 +649,7 @@ export const dashboardRouter = createTRPCRouter({
         version: viewVersions.optional().default("v1"),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       if (input.fromTimestamp > input.toTimestamp) {
         logger.warn(
           "Invalid policy confirmation time range, returning empty.",
@@ -632,13 +662,40 @@ export const dashboardRouter = createTRPCRouter({
         return [];
       }
 
+      const project = await ctx.prisma.project.findUnique({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        select: {
+          metadata: true,
+        },
+      });
+      if (!project) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      const resetTimestamp = resolvePolicyConfirmationResetTimestamp(
+        project.metadata,
+      );
+      const effectiveFromTimestamp =
+        resetTimestamp && resetTimestamp > input.fromTimestamp
+          ? resetTimestamp
+          : input.fromTimestamp;
+      if (effectiveFromTimestamp > input.toTimestamp) {
+        return [];
+      }
+
       // Only count confirmations where the user has explicitly accepted/rejected.
       // Pending confirmation requests (state="ask") must not be included in the stats.
       const [acceptedCounts, rejectedCounts] = await Promise.all([
         getPolicyConfirmationCountsByState({
           projectId: input.projectId,
           globalFilterState: input.globalFilterState,
-          fromTimestamp: input.fromTimestamp,
+          fromTimestamp: effectiveFromTimestamp,
           toTimestamp: input.toTimestamp,
           state: "accepted",
           version: input.version,
@@ -646,7 +703,7 @@ export const dashboardRouter = createTRPCRouter({
         getPolicyConfirmationCountsByState({
           projectId: input.projectId,
           globalFilterState: input.globalFilterState,
-          fromTimestamp: input.fromTimestamp,
+          fromTimestamp: effectiveFromTimestamp,
           toTimestamp: input.toTimestamp,
           state: "rejected",
           version: input.version,
@@ -701,7 +758,7 @@ export const dashboardRouter = createTRPCRouter({
         version: viewVersions.optional().default("v1"),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       if (input.fromTimestamp > input.toTimestamp) {
         logger.warn(
           "Invalid policy confirmation detail time range, returning empty.",
@@ -716,11 +773,38 @@ export const dashboardRouter = createTRPCRouter({
         return [];
       }
 
+      const project = await ctx.prisma.project.findUnique({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        select: {
+          metadata: true,
+        },
+      });
+      if (!project) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      const resetTimestamp = resolvePolicyConfirmationResetTimestamp(
+        project.metadata,
+      );
+      const effectiveFromTimestamp =
+        resetTimestamp && resetTimestamp > input.fromTimestamp
+          ? resetTimestamp
+          : input.fromTimestamp;
+      if (effectiveFromTimestamp > input.toTimestamp) {
+        return [];
+      }
+
       return getPolicyConfirmationDetailsByState({
         projectId: input.projectId,
         policyName: input.policyName,
         globalFilterState: input.globalFilterState,
-        fromTimestamp: input.fromTimestamp,
+        fromTimestamp: effectiveFromTimestamp,
         toTimestamp: input.toTimestamp,
         state: input.state,
         version: input.version,

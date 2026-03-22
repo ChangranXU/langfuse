@@ -13,6 +13,7 @@ import {
   Search,
   Home,
   Clock,
+  Shield,
 } from "lucide-react";
 import { type ReactNode } from "react";
 import { type Entitlement } from "@/src/features/entitlements/constants/entitlements";
@@ -129,6 +130,13 @@ export const ROUTES: Route[] = [
     group: RouteGroup.Governance,
     section: RouteSection.Main,
     icon: BookOpen,
+  },
+  {
+    title: "Policy",
+    pathname: `/project/[projectId]/policy`,
+    group: RouteGroup.Governance,
+    section: RouteSection.Main,
+    icon: Shield,
   },
   {
     title: "Upgrade",

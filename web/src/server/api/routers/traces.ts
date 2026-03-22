@@ -81,6 +81,11 @@ async function getPolicyConfirmationTurnIndexesForTrace(params: {
   fromTimestamp: Date;
   toTimestamp: Date;
 }): Promise<number[]> {
+  const normalizedFromTimestamp = params.fromTimestamp;
+  const normalizedToTimestamp =
+    params.toTimestamp.getTime() > params.fromTimestamp.getTime()
+      ? params.toTimestamp
+      : new Date(params.fromTimestamp.getTime() + 1);
   const states = ["accepted", "rejected"] as const;
   const queryResults = await Promise.all(
     states.map((state) => {
@@ -107,8 +112,8 @@ async function getPolicyConfirmationTurnIndexesForTrace(params: {
           },
         ],
         timeDimension: null,
-        fromTimestamp: params.fromTimestamp.toISOString(),
-        toTimestamp: params.toTimestamp.toISOString(),
+        fromTimestamp: normalizedFromTimestamp.toISOString(),
+        toTimestamp: normalizedToTimestamp.toISOString(),
         orderBy: null,
         chartConfig: { type: "table", row_limit: 1000 },
       };

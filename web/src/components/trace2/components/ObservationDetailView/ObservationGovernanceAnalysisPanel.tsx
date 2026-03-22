@@ -114,16 +114,29 @@ export function ObservationGovernanceAnalysisPanel(props: {
     () => parseStringRecord(policyMetadata.policy_sources),
     [policyMetadata.policy_sources],
   );
+  const inactivateErrorType = useMemo(() => {
+    if (typeof policyMetadata.inactivate_error_type === "string") {
+      const trimmed = policyMetadata.inactivate_error_type.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+
+    const normalizedFromArray = parseStringArray(
+      policyMetadata.inactivate_error_type,
+    )
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    if (normalizedFromArray.length > 0) {
+      return normalizedFromArray.join("\n");
+    }
+
+    return null;
+  }, [policyMetadata.inactivate_error_type]);
   const policyNameList = useMemo(() => {
     const names = new Set(policyNames);
     Object.keys(policyDescriptions).forEach((name) => names.add(name));
     Object.keys(policySources).forEach((name) => names.add(name));
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }, [policyDescriptions, policyNames, policySources]);
-
-  if (!isGovernanceLevel) {
-    return null;
-  }
 
   const panelTitle = isPolicyViolation
     ? "Policy Enforcement"
@@ -177,6 +190,10 @@ export function ObservationGovernanceAnalysisPanel(props: {
     setIsOutputExpanded(false);
   }, [props.observationId]);
 
+  if (!isGovernanceLevel) {
+    return null;
+  }
+
   return (
     <div className="h-full min-h-0 min-w-0 p-2">
       <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden rounded-md border bg-muted/20 p-3">
@@ -199,6 +216,16 @@ export function ObservationGovernanceAnalysisPanel(props: {
         </div>
 
         <div className="space-y-3">
+          {inactivateErrorType ? (
+            <div>
+              <div className="mb-1 min-w-0 text-xs font-medium text-muted-foreground">
+                Inactive Policy Signal
+              </div>
+              <div className="min-w-0 whitespace-pre-wrap break-words rounded-md border bg-background p-2 font-mono text-xs text-muted-foreground">
+                {inactivateErrorType}
+              </div>
+            </div>
+          ) : null}
           {isPolicyViolation ? (
             <div>
               <div className="mb-1 min-w-0 text-xs font-medium text-muted-foreground">

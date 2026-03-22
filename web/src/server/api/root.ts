@@ -56,6 +56,7 @@ import { notificationPreferencesRouter } from "@/src/server/api/routers/notifica
 import { errorAnalysisRouter } from "@/src/features/error-analysis/server/router";
 import { experienceSummaryRouter } from "@/src/features/experience-summary/server/router";
 import { policySuggestionRouter } from "@/src/features/policy-suggestions/server/router";
+import { policyGovernanceRouter } from "@/src/features/policy-governance/server/router";
 
 /**
  * This is the primary router for your server.
@@ -71,6 +72,7 @@ export const appRouter = createTRPCRouter({
   errorAnalysis: errorAnalysisRouter,
   experienceSummary: experienceSummaryRouter,
   policySuggestions: policySuggestionRouter,
+  policyGovernance: policyGovernanceRouter,
   sessions: sessionRouter,
   generations: generationsRouter,
   events: eventsRouter,

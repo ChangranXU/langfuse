@@ -55,6 +55,14 @@ type ProjectAutoErrorAnalysisSettings = z.infer<
   typeof ProjectAutoErrorAnalysisSettingsSchema
 >;
 
+const ProjectPolicyGovernanceSettingsSchema = z.object({
+  kernelPolicyPathAbsolute: z.string().trim().min(1).nullable().default(null),
+  lastPolicyUpdatedAt: z.string().trim().min(1).nullable().default(null),
+});
+type ProjectPolicyGovernanceSettings = z.infer<
+  typeof ProjectPolicyGovernanceSettingsSchema
+>;
+
 const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: ProjectAutoErrorAnalysisSettings = {
   enabled: false,
   model: "gpt-5.2",
@@ -62,6 +70,11 @@ const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: ProjectAutoErrorAnalysisSettings = {
   policyRejectHighlightThresholdPct: 70,
   summaryAppendMarkdownAbsolutePath: null,
   summaryMarkdownOutputMode: "prompt_pack_only",
+};
+
+const DEFAULT_POLICY_GOVERNANCE_SETTINGS: ProjectPolicyGovernanceSettings = {
+  kernelPolicyPathAbsolute: null,
+  lastPolicyUpdatedAt: null,
 };
 
 function parseAutoErrorAnalysisSettings(
@@ -91,6 +104,36 @@ function mergeAutoErrorAnalysisSettingsIntoMetadata(params: {
   return {
     ...metadata,
     autoErrorAnalysis: params.settings,
+  };
+}
+
+function parsePolicyGovernanceSettings(
+  metadata: unknown,
+): ProjectPolicyGovernanceSettings {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return DEFAULT_POLICY_GOVERNANCE_SETTINGS;
+  }
+
+  const maybeConfig = (metadata as Record<string, unknown>).policyGovernance;
+  const parsed = ProjectPolicyGovernanceSettingsSchema.safeParse(maybeConfig);
+  if (!parsed.success) return DEFAULT_POLICY_GOVERNANCE_SETTINGS;
+  return parsed.data;
+}
+
+function mergePolicyGovernanceSettingsIntoMetadata(params: {
+  metadata: unknown;
+  settings: ProjectPolicyGovernanceSettings;
+}) {
+  const metadata =
+    params.metadata &&
+    typeof params.metadata === "object" &&
+    !Array.isArray(params.metadata)
+      ? (params.metadata as Record<string, unknown>)
+      : {};
+
+  return {
+    ...metadata,
+    policyGovernance: params.settings,
   };
 }
 
@@ -229,6 +272,122 @@ export const projectsRouter = createTRPCRouter({
         after: project,
       });
       return true;
+    }),
+
+  getPolicyGovernanceSettings: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+      }),
+    )
+    .output(ProjectPolicyGovernanceSettingsSchema)
+    .query(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:read",
+      });
+
+      const project = await ctx.prisma.project.findUnique({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        select: {
+          metadata: true,
+        },
+      });
+
+      if (!project) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      return parsePolicyGovernanceSettings(project.metadata);
+    }),
+
+  setPolicyGovernanceSettings: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        kernelPolicyPathAbsolute: z
+          .string()
+          .trim()
+          .min(1)
+          .nullable()
+          .optional()
+          .default(null),
+      }),
+    )
+    .output(ProjectPolicyGovernanceSettingsSchema)
+    .mutation(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:update",
+      });
+
+      const existingProject = await ctx.prisma.project.findUnique({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        select: {
+          metadata: true,
+        },
+      });
+
+      if (!existingProject) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      if (
+        input.kernelPolicyPathAbsolute !== null &&
+        !isAbsolute(input.kernelPolicyPathAbsolute)
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Kernel policy path must be an absolute path.",
+        });
+      }
+
+      const settings: ProjectPolicyGovernanceSettings = {
+        kernelPolicyPathAbsolute: input.kernelPolicyPathAbsolute ?? null,
+        lastPolicyUpdatedAt: parsePolicyGovernanceSettings(
+          existingProject.metadata,
+        ).lastPolicyUpdatedAt,
+      };
+      const mergedMetadata = mergePolicyGovernanceSettingsIntoMetadata({
+        metadata: existingProject.metadata,
+        settings,
+      });
+
+      await ctx.prisma.project.update({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        data: {
+          metadata: mergedMetadata as any,
+        },
+      });
+
+      await auditLog({
+        session: ctx.session,
+        resourceType: "project",
+        resourceId: input.projectId,
+        action: "update",
+        after: {
+          policyGovernance: settings,
+        },
+      });
+
+      return settings;
     }),
 
   getErrorAnalysisSettings: protectedProjectProcedure

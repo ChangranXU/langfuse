@@ -63,6 +63,7 @@ type SampledTurnContext = {
   policyTurnIndices: number[];
   examplePrompt: string | null;
   policyProtected: string | null;
+  inactivateErrorType: string | null;
   policyDescription: string | null;
   policySource: string | null;
   nodes: Array<{
@@ -72,6 +73,7 @@ type SampledTurnContext = {
     input: string | null;
     output: string | null;
     policyNames: string[];
+    inactivateErrorType: string | null;
   }>;
   relatedTurns: Array<{
     turnIndex: number | null;
@@ -84,6 +86,7 @@ type SampledTurnContext = {
       input: string | null;
       output: string | null;
       policyNames: string[];
+      inactivateErrorType: string | null;
     }>;
   }>;
 };
@@ -232,6 +235,30 @@ function getPolicyProtectedFromObservation(
   return null;
 }
 
+function getInactivateErrorTypeFromObservation(
+  observation: Observation,
+  traceMetadata?: unknown,
+): string | null {
+  const metadata = mergeRelevantPolicyMetadata({
+    observationMetadata: observation.metadata,
+    traceMetadata,
+    observationName: observation.name,
+    statusMessage: observation.statusMessage,
+  });
+
+  const direct = getString(metadata.inactivate_error_type);
+  if (direct) return direct;
+
+  const fromArray = parseStringArray(metadata.inactivate_error_type)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (fromArray.length > 0) {
+    return fromArray.join("\n");
+  }
+
+  return null;
+}
+
 function buildTurnNodes(
   observations: Observation[],
   traceMetadata?: unknown,
@@ -250,6 +277,10 @@ function buildTurnNodes(
       input: getObservationDisplayInput(observation),
       output: getObservationDisplayOutput(observation),
       policyNames: derivePolicyNamesFromMetadata(metadata),
+      inactivateErrorType: getInactivateErrorTypeFromObservation(
+        observation,
+        traceMetadata,
+      ),
     };
   });
 }
@@ -457,11 +488,19 @@ export function buildSampledTurnContext(params: {
   if (nodes.length === 0) return null;
 
   let policyProtected: string | null = null;
+  let inactivateErrorType: string | null = null;
   let policyDescription: string | null = null;
   let policySource: string | null = null;
   let examplePrompt: string | null = null;
 
   for (const observation of observations) {
+    if (!inactivateErrorType) {
+      inactivateErrorType = getInactivateErrorTypeFromObservation(
+        observation,
+        traceMetadata,
+      );
+    }
+
     const metadata = mergeRelevantPolicyMetadata({
       observationMetadata: observation.metadata,
       traceMetadata,
@@ -532,6 +571,7 @@ export function buildSampledTurnContext(params: {
     policyTurnIndices: selectedTurnIndices,
     examplePrompt,
     policyProtected,
+    inactivateErrorType,
     policyDescription,
     policySource,
     nodes,
@@ -680,17 +720,20 @@ export const policySuggestionRouter = createTRPCRouter({
             (sum, turn) => sum + turn.policyTurnIndices.length,
             0,
           ),
+          sampledInactivateSignals: cleanSampledTurns.filter(
+            (turn) => typeof turn.inactivateErrorType === "string",
+          ).length,
         },
         examples: cleanSampledTurns,
         instructions: {
           objective:
-            "Recommend a policy-level change that improves the policy itself while preserving core safety constraints. Focus on the rule, scope, matching logic, allowlist/denylist criteria, path/tool boundaries, thresholds, or policy wording.",
+            "Recommend a policy-level change that improves the policy itself while preserving core safety constraints. The primary goal is to better align the policy with the user's demonstrated preferences from past rejected confirmations and thereby reduce future reject rate for the same intent. Focus on the rule, scope, matching logic, allowlist/denylist criteria, path/tool boundaries, thresholds, or policy wording.",
           format:
-            "suggestion should be 1-2 lines; reason should be 2-3 lines and grounded in the provided examples.",
+            "suggestion should be 1-2 lines; reason should be 2-3 lines and grounded in the provided examples. When the evidence includes exact concrete values such as paths, tools, prefixes, thresholds, or schema names, keep those exact literals in the suggestion instead of paraphrasing them.",
           constraints:
-            "Do not propose bypassing policy/safety checks. Focus on policy text quality and actionable clarification.",
+            "Do not propose bypassing policy/safety checks. Reduce reject rate by better matching the user's confirmed preferences only when the evidence supports that the current policy is overly broad, ambiguous, or incorrectly scoped.",
           grounding:
-            "Prioritize evidence from policy-violation turns and explicit policy-block messages. Treat downstream non-policy execution failures such as 'File not found' as separate operational issues unless the policy-violation turns themselves show that the policy caused them.",
+            "Prioritize evidence from policy-violation turns, node inputs/outputs, and explicit policy-block messages. If present, treat inactivate_error_type as a secondary signal for over-triggering policy matches that were intentionally left non-blocking. Treat downstream non-policy execution failures such as 'File not found' as separate operational issues unless policy evidence clearly supports a policy-level cause. If an example contains a concrete blocked path or prefix, cite that exact value and suggest a concrete config edit such as adding it to allow_prefixes when appropriate.",
           exclusions:
             "Do not suggest changing the wording of the violation message, confirmation prompt, response phrasing, UI flow, or other communication/UX details unless the underlying policy text itself is part of the problem. The recommendation must be about modifying the policy itself.",
         },
@@ -708,7 +751,7 @@ export const policySuggestionRouter = createTRPCRouter({
           type: ChatMessageType.System,
           role: ChatMessageRole.System,
           content:
-            "You are a policy-quality assistant. Based on policy enforcement evidence and rejected-turn examples, propose a concise policy modification suggestion. Keep the recommendation safe and do not suggest bypassing policy constraints. Ground your answer primarily in policy-violation turns and explicit policy-block evidence; do not blame later tool execution errors unless the policy evidence clearly supports that conclusion. Recommend changes to the policy itself only: policy rule, scope, thresholds, allowlist/denylist logic, or policy wording. Do not recommend UI-copy, confirmation-prompt, or response-message changes unless the policy text itself must change. Return only JSON matching the schema.",
+            'You are a policy-quality assistant. Based on policy enforcement evidence and rejected-turn examples, propose a concise policy modification suggestion. The goal is to make the policy better match the user\'s demonstrated preferences from past rejected confirmations and reduce future reject rate for the same intent, while keeping the policy safe and not bypassing core constraints. Ground your answer primarily in policy-violation turns, node inputs/outputs, and explicit policy-block evidence; use inactivate_error_type as an auxiliary signal when present. Do not blame later tool execution errors unless the policy evidence clearly supports that conclusion. Recommend changes to the policy itself only: policy rule, scope, thresholds, allowlist/denylist logic, or policy wording. When the evidence includes exact concrete literals such as blocked file paths, prefixes, tool names, or thresholds, preserve those exact values in the suggestion and reason instead of paraphrasing them. Prefer direct configuration wording like add "/exact/path" to allow_prefixes when the evidence supports that edit. Do not recommend UI-copy, confirmation-prompt, or response-message changes unless the policy text itself must change. Return only JSON matching the schema.',
         },
         {
           type: ChatMessageType.User,
