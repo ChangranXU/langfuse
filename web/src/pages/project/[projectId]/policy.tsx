@@ -601,15 +601,16 @@ export default function PolicyGovernancePage() {
         return;
       }
 
+      const cancellationMessage =
+        "Route change aborted due to unsaved changes.";
       promptForUnsavedChanges({ type: "route_change", url });
-      const cancellationError = new Error(
-        "Route change aborted due to unsaved changes.",
-      ) as Error & { cancelled?: boolean };
-      cancellationError.cancelled = true;
-      router.events.emit("routeChangeError", cancellationError, url, {
+      router.events.emit("routeChangeError", cancellationMessage, url, {
         shallow: false,
       });
-      throw cancellationError;
+      // Throw a non-Error sentinel so Next.js cancels the route without
+      // surfacing the navigation abort as a runtime error in dev.
+      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      throw cancellationMessage;
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);

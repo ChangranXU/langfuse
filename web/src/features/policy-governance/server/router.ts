@@ -554,9 +554,8 @@ export const policyGovernanceRouter = createTRPCRouter({
         });
       }
 
-      const configuredPath = parsePolicyGovernanceSettings(
-        project.metadata,
-      ).kernelPolicyPathAbsolute;
+      const existingSettings = parsePolicyGovernanceSettings(project.metadata);
+      const configuredPath = existingSettings.kernelPolicyPathAbsolute;
       const selectedPath = input.pathOverride ?? configuredPath;
       if (!selectedPath) {
         throw new TRPCError({
