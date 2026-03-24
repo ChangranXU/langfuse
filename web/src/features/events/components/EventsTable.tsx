@@ -553,7 +553,12 @@ export default function ObservationsEventsTable({
 
       // Always clear policy-type specific filters first. We only re-apply them
       // when the policy-type mode is active.
-      next = next.filter((f) => normalizeColumn(f.column) !== "policytype");
+      next = next.filter((f) => {
+        const normalizedColumn = normalizeColumn(f.column);
+        return (
+          normalizedColumn !== "policytype" && normalizedColumn !== "policyname"
+        );
+      });
       next = next.filter(
         (f) =>
           !(
@@ -621,10 +626,11 @@ export default function ObservationsEventsTable({
                   value: '"',
                 }
               : {
-                  column: "policyName",
-                  type: "stringOptions",
-                  operator: "any of",
-                  value: [selectedPolicyType],
+                  column: "metadata",
+                  type: "stringObject",
+                  key: "policy_names",
+                  operator: "contains",
+                  value: JSON.stringify(selectedPolicyType),
                 },
           ];
         }

@@ -1063,11 +1063,30 @@ export const eventsObservationsView: ViewDeclarationType = {
       highCardinality: true,
     },
     policyConfirmationTurnIndex: {
-      sql: "nullIf(events_observations.metadata['turn_index'], '')",
+      sql: `coalesce(
+        nullIf(events_observations.metadata['turn_index'], ''),
+        ${buildTurnIndexFromObservationNameSql("events_observations")}
+      )`,
       alias: "policyConfirmationTurnIndex",
       type: "string",
       description:
         "Turn index extracted from observation metadata for policy confirmation deduplication.",
+    },
+    policyConfirmationState: {
+      sql: `coalesce(
+        nullIf(events_observations.metadata['policy_confirmation_state'], ''),
+        if(
+          ${buildTracePolicyFallbackMatchSql("events_observations", "events_traces")}
+          AND notEmpty(ifNull(events_traces.metadata['policy_confirmation_state'], '')),
+          events_traces.metadata['policy_confirmation_state'],
+          CAST(NULL AS Nullable(String))
+        )
+      )`,
+      alias: "policyConfirmationState",
+      type: "string",
+      relationTable: "events_traces",
+      description:
+        "Policy confirmation state derived from observation metadata with trace-level fallback for confirmation output nodes.",
     },
     environment: {
       sql: "nullIf(events_observations.environment, '')",
@@ -1195,17 +1214,46 @@ export const eventsObservationsView: ViewDeclarationType = {
       explodeArray: true,
     },
     policyName: {
-      sql: "if(events_observations.metadata['policy_names'] = '', [], JSONExtract(events_observations.metadata['policy_names'], 'Array(String)'))",
+      sql: `if(
+        notEmpty(ifNull(events_observations.metadata['policy_names'], '')),
+        JSONExtract(events_observations.metadata['policy_names'], 'Array(String)'),
+        if(
+          ${buildTracePolicyFallbackMatchSql("events_observations", "events_traces")}
+          AND notEmpty(ifNull(events_traces.metadata['policy_names'], '')),
+          JSONExtract(events_traces.metadata['policy_names'], 'Array(String)'),
+          []
+        )
+      )`,
       alias: "policyName",
       type: "arrayString",
+      relationTable: "events_traces",
       description:
         "Names of policies attached to policy-violation observations.",
       explodeArray: true,
     },
     policyDescription: {
-      sql: "nullIf(JSONExtractString(nullIf(events_observations.metadata['policy_descriptions'], ''), policyName), '')",
+      sql: `nullIf(
+        JSONExtractString(
+          nullIf(
+            if(
+              notEmpty(ifNull(events_observations.metadata['policy_descriptions'], '')),
+              events_observations.metadata['policy_descriptions'],
+              if(
+                ${buildTracePolicyFallbackMatchSql("events_observations", "events_traces")}
+                AND notEmpty(ifNull(events_traces.metadata['policy_descriptions'], '')),
+                events_traces.metadata['policy_descriptions'],
+                ''
+              )
+            ),
+            ''
+          ),
+          policyName
+        ),
+        ''
+      )`,
       alias: "policyDescription",
       type: "string",
+      relationTable: "events_traces",
       description: "Description mapped to a specific policyName entry.",
     },
     costType: {
@@ -1384,7 +1432,12 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
   },
   tableRelations: {
-    // No traces relation - userId, sessionId, tags are denormalized on events table
+    events_traces: {
+      name: "events_core",
+      joinConditionSql:
+        "ON events_observations.trace_id = events_traces.trace_id AND events_observations.project_id = events_traces.project_id AND events_traces.parent_span_id = ''",
+      timeDimension: "start_time",
+    },
     scores: {
       name: "scores",
       joinConditionSql:

@@ -199,16 +199,21 @@ async function getPolicyConfirmationCountsByState(params: {
   state: z.infer<typeof PolicyConfirmationStateSchema>;
   version: z.infer<typeof viewVersions>;
 }): Promise<Map<string, number>> {
-  const query: QueryType = {
+  const dimensions: QueryType["dimensions"] = [
+    { field: "policyName" },
+    { field: "traceId" },
+    { field: "policyConfirmationTurnIndex" },
+  ];
+  const baseFilters = mapLegacyUiTableFilterToView(
+    "observations",
+    params.globalFilterState,
+  );
+  const queryByDimension: QueryType = {
     view: "observations",
-    dimensions: [
-      { field: "policyName" },
-      { field: "traceId" },
-      { field: "policyConfirmationTurnIndex" },
-    ],
+    dimensions,
     metrics: [{ measure: "count", aggregation: "count" }],
     filters: [
-      ...mapLegacyUiTableFilterToView("observations", params.globalFilterState),
+      ...baseFilters,
       {
         column: "policyConfirmationState",
         operator: "=",
@@ -223,18 +228,49 @@ async function getPolicyConfirmationCountsByState(params: {
     chartConfig: { type: "table", row_limit: 1000 },
   };
 
-  const rows = await executeQuery(params.projectId, query, "v1", false);
+  const queryByMetadata: QueryType = {
+    ...queryByDimension,
+    filters: [
+      ...baseFilters,
+      {
+        column: "metadata",
+        key: "policy_confirmation_state",
+        operator: "=",
+        value: params.state,
+        type: "stringObject",
+      },
+    ],
+  };
+  const [rowsByDimension, rowsByMetadata] = await Promise.all([
+    executeQuery(params.projectId, queryByDimension, params.version, false),
+    executeQuery(params.projectId, queryByMetadata, params.version, false),
+  ]);
+  const rows = [...rowsByDimension, ...rowsByMetadata];
 
   const counts = new Map<string, number>();
+  const dedupe = new Set<string>();
   for (const row of rows) {
     const rawPolicyName =
       typeof row.policyName === "string" ? row.policyName.trim() : "";
     if (!rawPolicyName) {
       continue;
     }
-    // The same confirmation is logged on multiple observation nodes within one turn.
-    // Querying by policy + trace + turn collapses duplicates; each grouped row is one
-    // user-visible confirmation decision and should therefore count as 1.
+    const traceId = typeof row.traceId === "string" ? row.traceId.trim() : "";
+    const rawTurnIndex =
+      row.policyConfirmationTurnIndex == null
+        ? null
+        : Number(row.policyConfirmationTurnIndex);
+    const turnIndexKey =
+      rawTurnIndex != null && Number.isFinite(rawTurnIndex)
+        ? String(rawTurnIndex)
+        : "null";
+    const dedupeKey = `${rawPolicyName}::${traceId}::${turnIndexKey}`;
+    if (dedupe.has(dedupeKey)) {
+      continue;
+    }
+    dedupe.add(dedupeKey);
+    // The same confirmation can be logged on multiple observation nodes.
+    // We collapse to one user-visible decision per policy + trace + turn.
     counts.set(rawPolicyName, (counts.get(rawPolicyName) ?? 0) + 1);
   }
   return counts;
@@ -255,17 +291,22 @@ async function getPolicyConfirmationDetailsByState(params: {
     turnIndex: number | null;
   }>
 > {
-  const query: QueryType = {
+  const dimensions: QueryType["dimensions"] = [
+    { field: "policyName" },
+    { field: "traceId" },
+    { field: "traceName" },
+    { field: "policyConfirmationTurnIndex" },
+  ];
+  const baseFilters = mapLegacyUiTableFilterToView(
+    "observations",
+    params.globalFilterState,
+  );
+  const queryByDimension: QueryType = {
     view: "observations",
-    dimensions: [
-      { field: "policyName" },
-      { field: "traceId" },
-      { field: "traceName" },
-      { field: "policyConfirmationTurnIndex" },
-    ],
+    dimensions,
     metrics: [{ measure: "count", aggregation: "count" }],
     filters: [
-      ...mapLegacyUiTableFilterToView("observations", params.globalFilterState),
+      ...baseFilters,
       {
         column: "policyConfirmationState",
         operator: "=",
@@ -279,8 +320,24 @@ async function getPolicyConfirmationDetailsByState(params: {
     orderBy: null,
     chartConfig: { type: "table", row_limit: 1000 },
   };
-
-  const rows = await executeQuery(params.projectId, query, "v1", false);
+  const queryByMetadata: QueryType = {
+    ...queryByDimension,
+    filters: [
+      ...baseFilters,
+      {
+        column: "metadata",
+        key: "policy_confirmation_state",
+        operator: "=",
+        value: params.state,
+        type: "stringObject",
+      },
+    ],
+  };
+  const [rowsByDimension, rowsByMetadata] = await Promise.all([
+    executeQuery(params.projectId, queryByDimension, params.version, false),
+    executeQuery(params.projectId, queryByMetadata, params.version, false),
+  ]);
+  const rows = [...rowsByDimension, ...rowsByMetadata];
 
   const details = new Map<
     string,
@@ -710,15 +767,42 @@ export const dashboardRouter = createTRPCRouter({
         }),
       ]);
 
+      const hasCounts = acceptedCounts.size > 0 || rejectedCounts.size > 0;
+      const shouldRetryWithoutReset =
+        !hasCounts &&
+        resetTimestamp != null &&
+        resetTimestamp > input.fromTimestamp &&
+        effectiveFromTimestamp.getTime() !== input.fromTimestamp.getTime();
+      const [finalAcceptedCounts, finalRejectedCounts] = shouldRetryWithoutReset
+        ? await Promise.all([
+            getPolicyConfirmationCountsByState({
+              projectId: input.projectId,
+              globalFilterState: input.globalFilterState,
+              fromTimestamp: input.fromTimestamp,
+              toTimestamp: input.toTimestamp,
+              state: "accepted",
+              version: input.version,
+            }),
+            getPolicyConfirmationCountsByState({
+              projectId: input.projectId,
+              globalFilterState: input.globalFilterState,
+              fromTimestamp: input.fromTimestamp,
+              toTimestamp: input.toTimestamp,
+              state: "rejected",
+              version: input.version,
+            }),
+          ])
+        : [acceptedCounts, rejectedCounts];
+
       const policyNames = new Set<string>([
-        ...acceptedCounts.keys(),
-        ...rejectedCounts.keys(),
+        ...finalAcceptedCounts.keys(),
+        ...finalRejectedCounts.keys(),
       ]);
 
       return Array.from(policyNames)
         .map((policyName) => {
-          const acceptedCount = acceptedCounts.get(policyName) ?? 0;
-          const rejectedCount = rejectedCounts.get(policyName) ?? 0;
+          const acceptedCount = finalAcceptedCounts.get(policyName) ?? 0;
+          const rejectedCount = finalRejectedCounts.get(policyName) ?? 0;
           const totalCount = acceptedCount + rejectedCount;
           const acceptedRate = totalCount > 0 ? acceptedCount / totalCount : 0;
           const rejectedRate = totalCount > 0 ? rejectedCount / totalCount : 0;
@@ -800,7 +884,7 @@ export const dashboardRouter = createTRPCRouter({
         return [];
       }
 
-      return getPolicyConfirmationDetailsByState({
+      const details = await getPolicyConfirmationDetailsByState({
         projectId: input.projectId,
         policyName: input.policyName,
         globalFilterState: input.globalFilterState,
@@ -809,6 +893,23 @@ export const dashboardRouter = createTRPCRouter({
         state: input.state,
         version: input.version,
       });
+      const shouldRetryWithoutReset =
+        details.length === 0 &&
+        resetTimestamp != null &&
+        resetTimestamp > input.fromTimestamp &&
+        effectiveFromTimestamp.getTime() !== input.fromTimestamp.getTime();
+      if (shouldRetryWithoutReset) {
+        return getPolicyConfirmationDetailsByState({
+          projectId: input.projectId,
+          policyName: input.policyName,
+          globalFilterState: input.globalFilterState,
+          fromTimestamp: input.fromTimestamp,
+          toTimestamp: input.toTimestamp,
+          state: input.state,
+          version: input.version,
+        });
+      }
+      return details;
     }),
 
   allDashboards: protectedProjectProcedure

@@ -20,6 +20,7 @@ import { Textarea } from "@/src/components/ui/textarea";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { CodeMirrorEditor } from "@/src/components/editor/CodeMirrorEditor";
 import DiffViewer from "@/src/components/DiffViewer";
+import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -117,6 +118,8 @@ function buildPolicySectionPreview(params: {
 export default function PolicyGovernancePage() {
   const router = useRouter();
   const projectId = router.query.projectId as string | undefined;
+  const { isBetaEnabled } = useV4Beta();
+  const metricsVersion = isBetaEnabled ? "v2" : "v1";
   const utils = api.useUtils();
   const [pathInput, setPathInput] = useState("");
   const [isPathInputHydrated, setIsPathInputHydrated] = useState(false);
@@ -182,7 +185,7 @@ export default function PolicyGovernancePage() {
         globalFilterState: [] as FilterState,
         fromTimestamp: statsTimeRange.fromTimestamp,
         toTimestamp: statsTimeRange.toTimestamp,
-        version: "v1",
+        version: metricsVersion,
       },
       {
         enabled: Boolean(projectId),
@@ -441,7 +444,7 @@ export default function PolicyGovernancePage() {
         globalFilterState: [] as FilterState,
         fromTimestamp: from,
         toTimestamp: now,
-        version: "v1",
+        version: metricsVersion,
       });
       const proposal = await proposalMutation.mutateAsync({
         projectId,
