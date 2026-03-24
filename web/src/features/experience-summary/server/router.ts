@@ -28,6 +28,7 @@ import {
   ExperienceSummaryStructuredOutputSchema,
   type ExperienceSummaryJson,
 } from "../types";
+import { rewriteAbsolutePathFromPrefixMappings } from "@/src/features/file-paths/server/absolutePathPrefixMap";
 
 function safeStringify(value: unknown): string {
   try {
@@ -268,7 +269,7 @@ function resolveSummaryMarkdownConfig(
   }
 
   return {
-    absolutePath: pathFromSettings,
+    absolutePath: rewriteAbsolutePathFromPrefixMappings(pathFromSettings),
     outputMode,
   };
 }

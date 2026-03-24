@@ -28,6 +28,7 @@ import {
   removeProjectHintSectionFromMarkdown,
   upsertProjectHintSectionInMarkdown,
 } from "@langfuse/shared/src/utils/experienceSummaryHintMarkdown";
+import { rewriteAbsolutePathFromPrefixMappings } from "@/src/features/file-paths/server/absolutePathPrefixMap";
 import { randomUUID } from "crypto";
 import { dirname, isAbsolute } from "path";
 
@@ -58,6 +59,7 @@ type ProjectAutoErrorAnalysisSettings = z.infer<
 const ProjectPolicyGovernanceSettingsSchema = z.object({
   kernelPolicyPathAbsolute: z.string().trim().min(1).nullable().default(null),
   lastPolicyUpdatedAt: z.string().trim().min(1).nullable().default(null),
+  beginnerSummaries: z.record(z.string(), z.string()).default({}),
 });
 type ProjectPolicyGovernanceSettings = z.infer<
   typeof ProjectPolicyGovernanceSettingsSchema
@@ -75,6 +77,7 @@ const DEFAULT_AUTO_ERROR_ANALYSIS_SETTINGS: ProjectAutoErrorAnalysisSettings = {
 const DEFAULT_POLICY_GOVERNANCE_SETTINGS: ProjectPolicyGovernanceSettings = {
   kernelPolicyPathAbsolute: null,
   lastPolicyUpdatedAt: null,
+  beginnerSummaries: {},
 };
 
 function parseAutoErrorAnalysisSettings(
@@ -361,6 +364,9 @@ export const projectsRouter = createTRPCRouter({
         lastPolicyUpdatedAt: parsePolicyGovernanceSettings(
           existingProject.metadata,
         ).lastPolicyUpdatedAt,
+        beginnerSummaries: parsePolicyGovernanceSettings(
+          existingProject.metadata,
+        ).beginnerSummaries,
       };
       const mergedMetadata = mergePolicyGovernanceSettingsIntoMetadata({
         metadata: existingProject.metadata,
@@ -551,9 +557,11 @@ export const projectsRouter = createTRPCRouter({
       const pathChanged = maybePreviousPath !== maybeNextPath;
 
       const removeHintSectionInFile = async (absolutePath: string) => {
+        const resolvedAbsolutePath =
+          rewriteAbsolutePathFromPrefixMappings(absolutePath);
         let existingContent = "";
         try {
-          existingContent = await readFile(absolutePath, "utf8");
+          existingContent = await readFile(resolvedAbsolutePath, "utf8");
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code;
           if (code === "ENOENT") return;
@@ -566,9 +574,9 @@ export const projectsRouter = createTRPCRouter({
         });
         if (!removed.removed) return;
 
-        await mkdir(dirname(absolutePath), { recursive: true });
+        await mkdir(dirname(resolvedAbsolutePath), { recursive: true });
         await writeFile(
-          absolutePath,
+          resolvedAbsolutePath,
           `${removed.markdown.replace(/\s*$/, "")}\n`,
           "utf8",
         );
@@ -578,11 +586,14 @@ export const projectsRouter = createTRPCRouter({
         absolutePath: string;
         summary: z.infer<typeof ExperienceSummaryJsonSchema>;
       }) => {
-        await mkdir(dirname(params.absolutePath), { recursive: true });
+        const resolvedAbsolutePath = rewriteAbsolutePathFromPrefixMappings(
+          params.absolutePath,
+        );
+        await mkdir(dirname(resolvedAbsolutePath), { recursive: true });
 
         let existingContent = "";
         try {
-          existingContent = await readFile(params.absolutePath, "utf8");
+          existingContent = await readFile(resolvedAbsolutePath, "utf8");
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code;
           if (code !== "ENOENT") throw error;
@@ -600,7 +611,7 @@ export const projectsRouter = createTRPCRouter({
           defaultHeadingHashCount: 2,
         });
         await writeFile(
-          params.absolutePath,
+          resolvedAbsolutePath,
           `${updatedMarkdown.replace(/\s*$/, "")}\n`,
           "utf8",
         );

@@ -54,12 +54,28 @@ async function writePolicyPair(baseDir: string) {
 
 describe("policy-governance helpers", () => {
   let sandboxDir = "";
+  const originalPathPrefixMap = process.env.LANGFUSE_PATH_PREFIX_MAP;
+  const originalLegacyPolicyPathPrefixMap =
+    process.env.LANGFUSE_POLICY_PATH_PREFIX_MAP;
 
   beforeEach(async () => {
     sandboxDir = await mkdtemp(join(tmpdir(), "lf-policy-governance-"));
   });
 
   afterEach(async () => {
+    if (originalPathPrefixMap === undefined) {
+      delete process.env.LANGFUSE_PATH_PREFIX_MAP;
+    } else {
+      process.env.LANGFUSE_PATH_PREFIX_MAP = originalPathPrefixMap;
+    }
+
+    if (originalLegacyPolicyPathPrefixMap === undefined) {
+      delete process.env.LANGFUSE_POLICY_PATH_PREFIX_MAP;
+    } else {
+      process.env.LANGFUSE_POLICY_PATH_PREFIX_MAP =
+        originalLegacyPolicyPathPrefixMap;
+    }
+
     if (sandboxDir) {
       await rm(sandboxDir, { recursive: true, force: true });
     }
@@ -85,6 +101,29 @@ describe("policy-governance helpers", () => {
 
     const resolved = await resolvePolicyPaths(sandboxDir);
 
+    expect(resolved.policyJsonPath).toBe(policyJsonPath);
+    expect(resolved.policyRegistryPath).toBe(policyRegistryPath);
+  });
+
+  it("rewrites configured host prefixes to mounted container prefixes", async () => {
+    const hostWorkspaceRoot = join(sandboxDir, "host-workspace");
+    const mountedWorkspaceRoot = join(sandboxDir, "mounted-workspace");
+    const hostLangfuseDir = join(hostWorkspaceRoot, "langfuse");
+    const hostProjectRoot = join(hostWorkspaceRoot, "ArbiterOS-Kernel");
+    const mountedProjectRoot = join(mountedWorkspaceRoot, "ArbiterOS-Kernel");
+    const mountedKernelDir = join(mountedProjectRoot, "arbiteros_kernel");
+    await mkdir(hostLangfuseDir, { recursive: true });
+    await mkdir(mountedKernelDir, { recursive: true });
+    const { policyJsonPath, policyRegistryPath } =
+      await writePolicyPair(mountedKernelDir);
+
+    process.env.LANGFUSE_PATH_PREFIX_MAP = `${join(hostLangfuseDir, "..")}=${mountedWorkspaceRoot}`;
+
+    const resolved = await resolvePolicyPaths(
+      join(hostProjectRoot, "arbiteros_kernel"),
+    );
+
+    expect(resolved.resolvedPathInput).toBe(mountedKernelDir);
     expect(resolved.policyJsonPath).toBe(policyJsonPath);
     expect(resolved.policyRegistryPath).toBe(policyRegistryPath);
   });

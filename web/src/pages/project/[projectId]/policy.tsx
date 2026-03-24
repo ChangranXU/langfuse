@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
-import type { FilterState } from "@langfuse/shared";
+import { LLMAdapter, type FilterState } from "@langfuse/shared";
 import Page from "@/src/components/layouts/page";
-import Header from "@/src/components/layouts/header";
 import { api } from "@/src/utils/api";
 import { toast } from "sonner";
-import { cn } from "@/src/utils/tailwind";
 import { Input } from "@/src/components/ui/input";
 import { Label } from "@/src/components/ui/label";
 import { Button } from "@/src/components/ui/button";
@@ -15,10 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/src/components/ui/card";
-import { Switch } from "@/src/components/ui/switch";
-import { Textarea } from "@/src/components/ui/textarea";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
-import { CodeMirrorEditor } from "@/src/components/editor/CodeMirrorEditor";
 import DiffViewer from "@/src/components/DiffViewer";
 import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import {
@@ -30,6 +25,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/src/components/ui/alert-dialog";
+import { PolicyGuideCard } from "@/src/features/policy-governance/components/PolicyGuideCard";
+import { PeekViewObservationDetail } from "@/src/components/table/peek/peek-observation-detail";
+import {
+  TablePeekView,
+  type DataTablePeekViewProps,
+} from "@/src/components/table/peek";
+import { usePeekNavigation } from "@/src/components/table/peek/hooks/usePeekNavigation";
 
 type PolicyRegistryEntry = {
   name: string;
@@ -70,6 +72,22 @@ type PolicyStatsRow = {
   rejectedRate: number;
 };
 
+type PolicyGuideInsight = {
+  policyName: string;
+  recentViolationCount: number;
+  exampleBlockedAction: string | null;
+  examplePrompt: string | null;
+  similarCases: Array<{
+    traceId: string;
+    traceName: string | null;
+    traceTimestamp: string | null;
+    turnIndex: number | null;
+    targetObservationId: string | null;
+    blockedAction: string | null;
+    examplePrompt: string | null;
+  }>;
+};
+
 type PendingUnsavedAction = {
   type: "route_change";
   url: string;
@@ -80,6 +98,14 @@ const UNSAVED_CHANGES_CONFIRMATION_MESSAGE =
 
 function stableStringify(value: unknown) {
   return JSON.stringify(value, null, 2);
+}
+
+function getPathnameFromUrl(url: string) {
+  if (typeof window === "undefined") {
+    return url.split("?")[0] ?? url;
+  }
+
+  return new URL(url, window.location.origin).pathname;
 }
 
 function buildSectionDrafts(params: {
@@ -155,6 +181,10 @@ export default function PolicyGovernancePage() {
     projectId: projectId ?? "",
     scope: "project:update",
   });
+  const hasLLMConnectionAccess = useHasProjectAccess({
+    projectId: projectId ?? "",
+    scope: "llmApiKeys:read",
+  });
   const statsTimeRange = useMemo(() => {
     const toTimestamp = new Date();
     const fromTimestamp = new Date(
@@ -196,6 +226,13 @@ export default function PolicyGovernancePage() {
         },
       },
     );
+  const llmConnectionsQuery = api.llmApiKey.all.useQuery(
+    { projectId: projectId ?? "" },
+    {
+      enabled: Boolean(projectId) && hasLLMConnectionAccess,
+      refetchOnWindowFocus: false,
+    },
+  );
 
   useEffect(() => {
     if (!policySettingsQuery.data) return;
@@ -262,7 +299,6 @@ export default function PolicyGovernancePage() {
           }),
         );
         setSectionErrors({});
-        await utils.policyGovernance.loadPolicyFiles.invalidate();
         toast.success("Policy files saved");
       },
       onError: (error) => toast.error(error.message),
@@ -315,6 +351,70 @@ export default function PolicyGovernancePage() {
         ).map((row) => [row.policyName, row]),
       ),
     [policyConfirmationStatsQuery.data],
+  );
+  const policyGuideInsightsQuery =
+    api.policyGovernance.getPolicyGuideInsights.useQuery(
+      {
+        projectId: projectId ?? "",
+        policyNames: policyRegistryDraft.map((entry) => entry.name),
+        globalFilterState: [] as FilterState,
+        fromTimestamp: statsTimeRange.fromTimestamp,
+        toTimestamp: statsTimeRange.toTimestamp,
+        version: metricsVersion,
+      },
+      {
+        enabled: Boolean(projectId) && policyRegistryDraft.length > 0,
+        trpc: {
+          context: {
+            skipBatch: true,
+          },
+        },
+      },
+    );
+  const policyGuideInsightsMap = useMemo(
+    () =>
+      new Map(
+        (
+          ((policyGuideInsightsQuery.data as
+            | PolicyGuideInsight[]
+            | undefined) ?? []) as PolicyGuideInsight[]
+        ).map((row) => [row.policyName, row]),
+      ),
+    [policyGuideInsightsQuery.data],
+  );
+  const peekNavigationProps = usePeekNavigation({
+    queryParams: ["observation", "display", "timestamp", "traceId"],
+    paramsToMirrorPeekValue: ["observation"],
+    extractParamsValuesFromRow: (row: {
+      traceId: string;
+      timestamp?: string | null;
+    }) => ({
+      traceId: row.traceId,
+      ...(row.timestamp ? { timestamp: row.timestamp } : {}),
+    }),
+    expandConfig: {
+      basePath: `/project/${projectId ?? ""}/traces`,
+      pathParam: "traceId",
+    },
+  });
+  const peekConfig: DataTablePeekViewProps | undefined = useMemo(
+    () =>
+      projectId
+        ? {
+            itemType: "TRACE",
+            customTitlePrefix: "Observation ID:",
+            children: <PeekViewObservationDetail projectId={projectId} />,
+            ...peekNavigationProps,
+          }
+        : undefined,
+    [peekNavigationProps, projectId],
+  );
+  const activeOpenAiConnection = useMemo(
+    () =>
+      llmConnectionsQuery.data?.data.find(
+        (connection) => connection.adapter === LLMAdapter.OpenAI,
+      ) ?? null,
+    [llmConnectionsQuery.data],
   );
   const canSaveDraft =
     Boolean(loaded) &&
@@ -603,6 +703,9 @@ export default function PolicyGovernancePage() {
         allowNextRouteChangeRef.current = false;
         return;
       }
+      if (getPathnameFromUrl(url) === getPathnameFromUrl(router.asPath)) {
+        return;
+      }
 
       const cancellationMessage =
         "Route change aborted due to unsaved changes.";
@@ -625,6 +728,14 @@ export default function PolicyGovernancePage() {
     };
   }, [hasUnsavedChanges, promptForUnsavedChanges, router.events]);
 
+  const llmConnectionLabel = activeOpenAiConnection
+    ? activeOpenAiConnection.baseURL
+      ? `${activeOpenAiConnection.provider} via ${activeOpenAiConnection.baseURL}`
+      : `${activeOpenAiConnection.provider} via default endpoint`
+    : null;
+  const configuredModelLabel = errorAnalysisSettingsQuery.data?.model ?? null;
+  const beginnerSummaries = policySettingsQuery.data?.beginnerSummaries ?? {};
+
   return (
     <Page
       headerProps={{
@@ -635,9 +746,9 @@ export default function PolicyGovernancePage() {
       <div className="space-y-4 p-3">
         <Card>
           <CardHeader>
-            <CardTitle>Kernel Policy Path</CardTitle>
+            <CardTitle>Policy source and live context</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="kernel-policy-path">Path</Label>
               <Input
@@ -653,12 +764,51 @@ export default function PolicyGovernancePage() {
                 Hint: set the `arbiteros_kernel` folder path (or direct path to
                 `policy.json` / `policy_registry.json`).
               </p>
+              <p className="text-xs text-muted-foreground">
+                Production: the bundled Docker compose mounts your home
+                directory at the same absolute path, so local paths under home
+                usually work directly. Use `LANGFUSE_PATH_PREFIX_MAP` only for
+                custom mount layouts or paths outside your home directory.
+              </p>
               {policySettingsQuery.data?.kernelPolicyPathAbsolute ? (
                 <p className="text-xs text-muted-foreground">
                   Saved path detected. Policy files auto-load from this path on
                   page open.
                 </p>
               ) : null}
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  LLM connection
+                </div>
+                <div className="mt-1 text-sm text-foreground">
+                  {hasLLMConnectionAccess
+                    ? (llmConnectionLabel ??
+                      "No OpenAI-compatible connection configured.")
+                    : "Requires LLM connection read access."}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Error Analysis model
+                </div>
+                <div className="mt-1 text-sm text-foreground">
+                  {configuredModelLabel ?? "Not configured"}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Last policy update
+                </div>
+                <div className="mt-1 text-sm text-foreground">
+                  {policySettingsQuery.data?.lastPolicyUpdatedAt
+                    ? new Date(
+                        policySettingsQuery.data.lastPolicyUpdatedAt,
+                      ).toLocaleString()
+                    : "No saved update timestamp yet"}
+                </div>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -685,6 +835,16 @@ export default function PolicyGovernancePage() {
               >
                 {isLoadPolicyFilesPending ? "Loading..." : "Load Policy Files"}
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onSavePolicyFiles}
+                disabled={!canSaveDraft}
+              >
+                {savePolicyFilesMutation.isPending
+                  ? "Saving..."
+                  : "Save Policy Files"}
+              </Button>
             </div>
             {loaded ? (
               <div className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">
@@ -697,143 +857,89 @@ export default function PolicyGovernancePage() {
         </Card>
 
         {loaded ? (
+          <div className="space-y-4">
+            {policyRegistryDraft.map((entry) => {
+              const sections = sectionMap[entry.name] ?? [];
+              const settingsBySection = Object.fromEntries(
+                sections.map((section) => [
+                  section,
+                  policyJsonDraft[section] ?? null,
+                ]),
+              );
+
+              return (
+                <PolicyGuideCard
+                  key={entry.name}
+                  projectId={projectId ?? ""}
+                  entry={entry}
+                  initialBeginnerSummary={beginnerSummaries[entry.name] ?? null}
+                  sections={sections}
+                  settingsBySection={settingsBySection}
+                  highlightThresholdPct={highlightThresholdPct}
+                  confirmationStats={policyStatsMap.get(entry.name)}
+                  guideInsight={policyGuideInsightsMap.get(entry.name)}
+                  hasUpdateAccess={hasUpdateAccess}
+                  sectionDrafts={sectionDrafts[entry.name] ?? {}}
+                  sectionErrors={sectionErrors[entry.name] ?? {}}
+                  onOpenTracePeek={(policyCase) => {
+                    if (!policyCase.targetObservationId) return;
+                    peekNavigationProps.openPeek(
+                      policyCase.targetObservationId,
+                      {
+                        traceId: policyCase.traceId,
+                        timestamp: policyCase.traceTimestamp,
+                      },
+                    );
+                  }}
+                  onEnabledChange={(checked) =>
+                    updateRegistryEntry(entry.name, (prev) => ({
+                      ...prev,
+                      enabled: checked,
+                    }))
+                  }
+                  onDescriptionChange={(value) =>
+                    updateRegistryEntry(entry.name, (prev) => ({
+                      ...prev,
+                      description: value,
+                    }))
+                  }
+                  onSectionChange={(section, value) =>
+                    updateSectionDraft({
+                      policyName: entry.name,
+                      section,
+                      value,
+                    })
+                  }
+                  onGenerateProposal={() => void onGenerateProposal(entry.name)}
+                  isGeneratingProposal={
+                    proposalPolicyNameLoading === entry.name
+                  }
+                  hasSectionErrors={hasSectionErrors}
+                />
+              );
+            })}
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                onClick={onSavePolicyFiles}
+                disabled={!canSaveDraft}
+              >
+                {savePolicyFilesMutation.isPending
+                  ? "Saving..."
+                  : "Save Policy Files"}
+              </Button>
+            </div>
+          </div>
+        ) : (
           <Card>
-            <CardHeader>
-              <CardTitle>Policy Editor</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {policyRegistryDraft.map((entry) => {
-                const sections = sectionMap[entry.name] ?? [];
-                const stats = policyStatsMap.get(entry.name);
-                const shouldHighlightByStats =
-                  (stats?.rejectedRate ?? 0) * 100 >= highlightThresholdPct;
-                return (
-                  <div
-                    key={entry.name}
-                    className={cn(
-                      "space-y-3 rounded border p-3",
-                      shouldHighlightByStats &&
-                        "border-destructive/50 bg-destructive/5",
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <Header title={entry.name} />
-                      {shouldHighlightByStats ? (
-                        <div className="rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive">
-                          Highlighted by confirmation stats (
-                          {Math.round((stats?.rejectedRate ?? 0) * 100)}%
-                          rejected / threshold {highlightThresholdPct}%)
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center justify-between rounded border bg-muted/30 px-3 py-2">
-                      <div>
-                        <p className="text-sm font-medium">Enabled</p>
-                        <p className="text-xs text-muted-foreground">
-                          Toggle policy activation in `policy_registry.json`.
-                        </p>
-                      </div>
-                      <Switch
-                        checked={entry.enabled}
-                        disabled={!hasUpdateAccess}
-                        onCheckedChange={(checked) =>
-                          updateRegistryEntry(entry.name, (prev) => ({
-                            ...prev,
-                            enabled: checked,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Description</Label>
-                      <Textarea
-                        value={entry.description}
-                        disabled={!hasUpdateAccess}
-                        onChange={(e) =>
-                          updateRegistryEntry(entry.name, (prev) => ({
-                            ...prev,
-                            description: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    {sections.length > 0 ? (
-                      <div className="space-y-3">
-                        {sections.map((section) => {
-                          const value =
-                            sectionDrafts[entry.name]?.[section] ??
-                            stableStringify(policyJsonDraft[section] ?? null);
-                          const error =
-                            sectionErrors[entry.name]?.[section] ?? null;
-                          return (
-                            <div
-                              key={`${entry.name}-${section}`}
-                              className="space-y-2"
-                            >
-                              <Label>{section}</Label>
-                              <CodeMirrorEditor
-                                mode="json"
-                                value={value}
-                                editable={hasUpdateAccess}
-                                lineNumbers
-                                minHeight={120}
-                                maxHeight={360}
-                                onChange={(next) =>
-                                  updateSectionDraft({
-                                    policyName: entry.name,
-                                    section,
-                                    value: next,
-                                  })
-                                }
-                              />
-                              {error ? (
-                                <p className="text-xs text-destructive">
-                                  Invalid JSON: {error}
-                                </p>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        No dedicated runtime settings mapped for this policy.
-                      </p>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => void onGenerateProposal(entry.name)}
-                        disabled={
-                          !hasUpdateAccess ||
-                          proposalPolicyNameLoading === entry.name ||
-                          hasSectionErrors
-                        }
-                      >
-                        {proposalPolicyNameLoading === entry.name
-                          ? "Generating..."
-                          : "LLM Suggest Update"}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  onClick={onSavePolicyFiles}
-                  disabled={!canSaveDraft}
-                >
-                  {savePolicyFilesMutation.isPending
-                    ? "Saving..."
-                    : "Save Policy Files"}
-                </Button>
-              </div>
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              Save or load a kernel policy path above to render the policy
+              guide.
             </CardContent>
           </Card>
-        ) : null}
+        )}
       </div>
+      {peekConfig ? <TablePeekView peekView={peekConfig} /> : null}
 
       <AlertDialog
         open={Boolean(pendingProposal)}

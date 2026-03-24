@@ -99,6 +99,10 @@ services:
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    volumes:
+      # Mount the host home directory at the same absolute path inside the
+      # container so UI-configured local paths under $HOME resolve directly.
+      - ${HOME}:${HOME}
 
   clickhouse:
     image: docker.io/clickhouse/clickhouse-server

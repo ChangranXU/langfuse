@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -30,6 +30,9 @@ import { LLMAdapter } from "@langfuse/shared";
 
 describe("experienceSummary.generate RPC", () => {
   const projectId = "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a";
+  const originalPathPrefixMap = process.env.LANGFUSE_PATH_PREFIX_MAP;
+  const originalLegacyPolicyPathPrefixMap =
+    process.env.LANGFUSE_POLICY_PATH_PREFIX_MAP;
 
   const session: Session = {
     expires: "1",
@@ -71,9 +74,26 @@ describe("experienceSummary.generate RPC", () => {
 
   beforeEach(async () => {
     mockFetchLLMCompletion.mockReset();
+    delete process.env.LANGFUSE_PATH_PREFIX_MAP;
+    delete process.env.LANGFUSE_POLICY_PATH_PREFIX_MAP;
     await pruneDatabase();
     await prisma.errorAnalysis.deleteMany();
     await prisma.experienceSummary.deleteMany();
+  });
+
+  afterEach(() => {
+    if (originalPathPrefixMap === undefined) {
+      delete process.env.LANGFUSE_PATH_PREFIX_MAP;
+    } else {
+      process.env.LANGFUSE_PATH_PREFIX_MAP = originalPathPrefixMap;
+    }
+
+    if (originalLegacyPolicyPathPrefixMap === undefined) {
+      delete process.env.LANGFUSE_POLICY_PATH_PREFIX_MAP;
+    } else {
+      process.env.LANGFUSE_POLICY_PATH_PREFIX_MAP =
+        originalLegacyPolicyPathPrefixMap;
+    }
   });
 
   it("should reject when no OpenAI LLM connection exists", async () => {
@@ -820,6 +840,82 @@ describe("experienceSummary.generate RPC", () => {
     const summary = summaryRow?.summary as any;
     expect(Array.isArray(summary?.experiences)).toBe(true);
     expect(summary?.experiences?.length).toBeGreaterThan(0);
+  });
+
+  it("should write summary markdown through configured path prefix mappings", async () => {
+    await prisma.llmApiKeys.create({
+      data: {
+        projectId,
+        provider: "openai",
+        adapter: LLMAdapter.OpenAI,
+        displaySecretKey: "...test",
+        secretKey: "test-secret",
+        baseURL: null,
+        customModels: [],
+        withDefaultModels: true,
+        extraHeaders: null,
+        extraHeaderKeys: [],
+        config: null,
+      },
+    });
+
+    await prisma.errorAnalysis.create({
+      data: {
+        projectId,
+        traceId: "trace-mapped",
+        observationId: "obs-mapped",
+        model: "gpt-5.2",
+        rootCause: "mapped root cause",
+        resolveNow: ["mapped step"],
+        preventionNextCall: ["mapped prevention"],
+        relevantObservations: ["obs-mapped"],
+        contextSufficient: true,
+        confidence: 0.9,
+      },
+    });
+
+    const dir = await mkdtemp(join(tmpdir(), "langfuse-experience-summary-"));
+    const hostRoot = join(dir, "host");
+    const mountedRoot = join(dir, "mounted");
+    const hostSummaryPath = join(hostRoot, "summary.md");
+    const mountedSummaryPath = join(mountedRoot, "summary.md");
+    await mkdir(mountedRoot, { recursive: true });
+    process.env.LANGFUSE_PATH_PREFIX_MAP = `${hostRoot}=${mountedRoot}`;
+
+    await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        metadata: {
+          autoErrorAnalysis: {
+            enabled: true,
+            model: "gpt-5.2",
+            minNewErrorNodesForSummary: 1,
+            summaryAppendMarkdownAbsolutePath: hostSummaryPath,
+            summaryMarkdownOutputMode: "prompt_pack_only",
+          },
+        } as any,
+      },
+    });
+
+    mockFetchLLMCompletion.mockResolvedValueOnce({
+      schemaVersion: 1,
+      experiences: [],
+      promptPack: {
+        title: "Mapped prompt pack",
+        lines: ["Mapped guardrail"],
+      },
+    });
+
+    await caller.experienceSummary.generate({
+      projectId,
+      mode: "full",
+      model: "gpt-5.2",
+      maxItems: 50,
+    });
+
+    const markdown = await readFile(mountedSummaryPath, "utf8");
+    expect(markdown).toContain("Mapped prompt pack");
+    await expect(readFile(hostSummaryPath, "utf8")).rejects.toThrow();
   });
 
   it("should backfill prompt pack lines from experience prompt additions", async () => {

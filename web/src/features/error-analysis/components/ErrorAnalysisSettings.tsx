@@ -376,6 +376,12 @@ export function ErrorAnalysisSettings(props: { projectId: string }) {
                   section is replaced on each summary update with the latest
                   complete summary.
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  Production: the bundled Docker compose mounts your home
+                  directory at the same absolute path, so local paths under home
+                  usually work directly. Use `LANGFUSE_PATH_PREFIX_MAP` only for
+                  custom mount layouts or paths outside your home directory.
+                </p>
                 {summaryPathHasInvalidAbsoluteFormat ? (
                   <p className="text-xs text-destructive">
                     Path must be absolute.

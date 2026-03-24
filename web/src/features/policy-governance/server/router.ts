@@ -6,10 +6,14 @@ import {
   ChatMessageType,
   LLMAdapter,
   LLMApiKeySchema,
+  singleFilter,
   type ChatMessage,
+  type Observation,
 } from "@langfuse/shared";
 import {
   fetchLLMCompletion,
+  getObservationsForTrace,
+  getTraceById,
   isLLMCompletionError,
   logger,
 } from "@langfuse/shared/src/server";
@@ -17,9 +21,20 @@ import {
   createTRPCRouter,
   protectedProjectProcedure,
 } from "@/src/server/api/trpc";
+import {
+  rewriteAbsolutePathFromPrefixMappings,
+  trimTrailingPathSeparators,
+} from "@/src/features/file-paths/server/absolutePathPrefixMap";
 import { throwIfNoProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { projectRoleAccessRights } from "@/src/features/rbac/constants/projectAccessRights";
 import { resolveDemoOpenAIModel } from "@/src/features/error-analysis/types";
+import {
+  buildSampledTurnContext,
+  getRejectedTurnDetails,
+} from "@/src/features/policy-suggestions/server/router";
+import { type QueryType, viewVersions } from "@/src/features/query/types";
+import { mapLegacyUiTableFilterToView } from "@/src/features/query/dashboardUiTableToViewMapping";
+import { executeQuery } from "@/src/features/query/server/queryExecutor";
 import { readFile, stat, writeFile } from "fs/promises";
 import { basename, dirname, isAbsolute, join } from "path";
 
@@ -34,6 +49,7 @@ const JsonObjectSchema = z.record(z.string(), z.unknown());
 const PolicyGovernanceSettingsSchema = z.object({
   kernelPolicyPathAbsolute: z.string().trim().min(1).nullable().default(null),
   lastPolicyUpdatedAt: z.string().trim().min(1).nullable().default(null),
+  beginnerSummaries: z.record(z.string(), z.string()).default({}),
 });
 
 export const POLICY_SECTION_MAP: Record<string, string[]> = {
@@ -94,6 +110,57 @@ const GeneratePolicyUpdateProposalOutputSchema = z.object({
   proposedPolicyRegistryJson: PolicyRegistrySchema,
 });
 
+const PolicyGuideCaseSchema = z.object({
+  traceId: z.string(),
+  traceName: z.string().nullable(),
+  traceTimestamp: z.string().nullable(),
+  turnIndex: z.number().nullable(),
+  targetObservationId: z.string().nullable(),
+  blockedAction: z.string().nullable(),
+  examplePrompt: z.string().nullable(),
+});
+
+const PolicyGuideInsightSchema = z.object({
+  policyName: z.string(),
+  recentViolationCount: z.number().int().nonnegative(),
+  exampleBlockedAction: z.string().nullable(),
+  examplePrompt: z.string().nullable(),
+  similarCases: z.array(PolicyGuideCaseSchema),
+});
+
+const PolicyGuideInsightsInputSchema = z.object({
+  projectId: z.string(),
+  policyNames: z.array(z.string().trim().min(1)).default([]),
+  globalFilterState: z.array(singleFilter).default([]),
+  fromTimestamp: z.date(),
+  toTimestamp: z.date(),
+  version: viewVersions.optional().default("v1"),
+});
+
+const PolicyGuideInsightsOutputSchema = z.array(PolicyGuideInsightSchema);
+
+const PolicyConfirmationSummarySchema = z.object({
+  totalCount: z.number().int().nonnegative(),
+  acceptedCount: z.number().int().nonnegative(),
+  rejectedCount: z.number().int().nonnegative(),
+  rejectedRate: z.number().min(0).max(1),
+});
+
+const GeneratePolicyBeginnerSummaryInputSchema = z.object({
+  projectId: z.string(),
+  policyName: z.string().trim().min(1),
+  description: z.string().default(""),
+  enabled: z.boolean(),
+  settingSections: z.array(z.string()).default([]),
+  settingsBySection: z.record(z.string(), z.unknown()).default({}),
+  confirmationSummary: PolicyConfirmationSummarySchema.nullable().default(null),
+  guideInsight: PolicyGuideInsightSchema.nullable().default(null),
+});
+
+const GeneratePolicyBeginnerSummaryOutputSchema = z.object({
+  summary: z.string(),
+});
+
 const PolicyUpdateProposalResultSchema = z.object({
   summary: z.string().trim().min(1),
   proposedPolicyJson: JsonObjectSchema,
@@ -112,6 +179,14 @@ const PolicyUpdateProposalStructuredOutputSchema = zodV3.object({
     ),
 });
 const POLICY_UPDATE_PROPOSAL_MAX_TOKENS = 3200;
+
+const PolicyBeginnerSummaryStructuredOutputSchema = zodV3.object({
+  summary: zodV3
+    .string()
+    .describe(
+      "A beginner-friendly explanation of the policy in 3-6 short lines. Explain what it protects, what the current settings imply, and one practical interpretation tip.",
+    ),
+});
 
 function extractFirstJsonObject(text: string): string | null {
   const trimmed = text.trim();
@@ -229,6 +304,7 @@ function parsePolicyGovernanceSettings(metadata: unknown) {
     return {
       kernelPolicyPathAbsolute: null as string | null,
       lastPolicyUpdatedAt: null as string | null,
+      beginnerSummaries: {} as Record<string, string>,
     };
   }
 
@@ -238,6 +314,7 @@ function parsePolicyGovernanceSettings(metadata: unknown) {
     return {
       kernelPolicyPathAbsolute: null as string | null,
       lastPolicyUpdatedAt: null as string | null,
+      beginnerSummaries: {} as Record<string, string>,
     };
   return parsed.data;
 }
@@ -294,53 +371,65 @@ export async function resolvePolicyPaths(pathInput: string) {
     });
   }
 
-  const candidates: Array<{
-    policyJsonPath: string;
-    policyRegistryPath: string;
-  }> = [];
+  const candidateInputs = Array.from(
+    new Set([
+      trimTrailingPathSeparators(trimmed),
+      rewriteAbsolutePathFromPrefixMappings(trimmed),
+    ]),
+  );
 
-  const base = basename(trimmed);
-  if (base === "policy.json") {
-    candidates.push({
-      policyJsonPath: trimmed,
-      policyRegistryPath: join(dirname(trimmed), "policy_registry.json"),
-    });
-  } else if (base === "policy_registry.json") {
-    candidates.push({
-      policyJsonPath: join(dirname(trimmed), "policy.json"),
-      policyRegistryPath: trimmed,
-    });
-  } else if (await isDirectoryPath(trimmed)) {
-    candidates.push({
-      policyJsonPath: join(trimmed, "policy.json"),
-      policyRegistryPath: join(trimmed, "policy_registry.json"),
-    });
-    candidates.push({
-      policyJsonPath: join(trimmed, "arbiteros_kernel", "policy.json"),
-      policyRegistryPath: join(
-        trimmed,
-        "arbiteros_kernel",
-        "policy_registry.json",
-      ),
-    });
-  }
+  for (const candidateInput of candidateInputs) {
+    const candidates: Array<{
+      policyJsonPath: string;
+      policyRegistryPath: string;
+    }> = [];
 
-  for (const candidate of candidates) {
-    const hasPolicy = await pathExists(candidate.policyJsonPath);
-    const hasRegistry = await pathExists(candidate.policyRegistryPath);
-    if (hasPolicy && hasRegistry) {
-      return {
-        resolvedPathInput: trimmed,
-        policyJsonPath: candidate.policyJsonPath,
-        policyRegistryPath: candidate.policyRegistryPath,
-      };
+    const base = basename(candidateInput);
+    if (base === "policy.json") {
+      candidates.push({
+        policyJsonPath: candidateInput,
+        policyRegistryPath: join(
+          dirname(candidateInput),
+          "policy_registry.json",
+        ),
+      });
+    } else if (base === "policy_registry.json") {
+      candidates.push({
+        policyJsonPath: join(dirname(candidateInput), "policy.json"),
+        policyRegistryPath: candidateInput,
+      });
+    } else if (await isDirectoryPath(candidateInput)) {
+      candidates.push({
+        policyJsonPath: join(candidateInput, "policy.json"),
+        policyRegistryPath: join(candidateInput, "policy_registry.json"),
+      });
+      candidates.push({
+        policyJsonPath: join(candidateInput, "arbiteros_kernel", "policy.json"),
+        policyRegistryPath: join(
+          candidateInput,
+          "arbiteros_kernel",
+          "policy_registry.json",
+        ),
+      });
+    }
+
+    for (const candidate of candidates) {
+      const hasPolicy = await pathExists(candidate.policyJsonPath);
+      const hasRegistry = await pathExists(candidate.policyRegistryPath);
+      if (hasPolicy && hasRegistry) {
+        return {
+          resolvedPathInput: candidateInput,
+          policyJsonPath: candidate.policyJsonPath,
+          policyRegistryPath: candidate.policyRegistryPath,
+        };
+      }
     }
   }
 
   throw new TRPCError({
     code: "NOT_FOUND",
     message:
-      "Could not resolve policy.json and policy_registry.json from the provided path. Provide either the arbiteros_kernel folder or a direct path to one of the files.",
+      "Could not resolve policy.json and policy_registry.json from the provided path. Provide either the arbiteros_kernel folder or a direct path to one of the files. If Langfuse runs in Docker or production, mount the policy directory into the web container and configure LANGFUSE_PATH_PREFIX_MAP when the host path differs from the container path.",
   });
 }
 
@@ -478,6 +567,143 @@ export function parseProposalResult(rawResult: unknown) {
   });
 }
 
+function safeStringify(value: unknown): string {
+  try {
+    return typeof value === "string" ? value : JSON.stringify(value);
+  } catch {
+    return "[Unserializable value]";
+  }
+}
+
+async function getPolicyViolationCounts(params: {
+  projectId: string;
+  policyNames: string[];
+  globalFilterState: z.infer<
+    typeof PolicyGuideInsightsInputSchema
+  >["globalFilterState"];
+  fromTimestamp: Date;
+  toTimestamp: Date;
+  version: z.infer<typeof viewVersions>;
+}): Promise<Map<string, number>> {
+  if (params.policyNames.length === 0) {
+    return new Map();
+  }
+
+  const query: QueryType = {
+    view: "observations",
+    dimensions: [{ field: "policyName" }],
+    metrics: [{ measure: "count", aggregation: "count" }],
+    filters: [
+      ...mapLegacyUiTableFilterToView("observations", params.globalFilterState),
+      {
+        column: "level",
+        operator: "any of",
+        value: ["POLICY_VIOLATION"],
+        type: "stringOptions",
+      },
+    ],
+    timeDimension: null,
+    fromTimestamp: params.fromTimestamp.toISOString(),
+    toTimestamp: params.toTimestamp.toISOString(),
+    orderBy: [{ field: "count_count", direction: "desc" }],
+    chartConfig: { type: "table", row_limit: 500 },
+  };
+
+  const rows = await executeQuery(
+    params.projectId,
+    query,
+    params.version,
+    params.version === "v2",
+  );
+
+  const counts = new Map<string, number>();
+  const allowedPolicyNames = new Set(params.policyNames);
+  for (const row of rows) {
+    const policyName =
+      typeof row.policyName === "string" ? row.policyName.trim() : "";
+    if (!policyName || !allowedPolicyNames.has(policyName)) continue;
+    counts.set(policyName, Number(row.count_count ?? 0));
+  }
+
+  return counts;
+}
+
+function getTurnBlockedAction(
+  turn: ReturnType<typeof buildSampledTurnContext>,
+) {
+  if (!turn) return null;
+  return (
+    turn.policyProtected ??
+    turn.relatedTurns.find((relatedTurn) => relatedTurn.policyProtected)
+      ?.policyProtected ??
+    turn.nodes.find((node) => node.statusMessage)?.statusMessage ??
+    null
+  );
+}
+
+function getTurnExamplePrompt(
+  turn: ReturnType<typeof buildSampledTurnContext>,
+) {
+  if (!turn) return null;
+  return (
+    turn.examplePrompt ??
+    turn.relatedTurns.find((relatedTurn) => relatedTurn.examplePrompt)
+      ?.examplePrompt ??
+    null
+  );
+}
+
+function getTurnTargetObservationId(
+  turn: ReturnType<typeof buildSampledTurnContext>,
+  policyName: string,
+) {
+  if (!turn) return null;
+
+  const relatedTurnTarget = turn.relatedTurns
+    .flatMap((relatedTurn) => relatedTurn.nodes)
+    .find(
+      (node) =>
+        node.level === "POLICY_VIOLATION" ||
+        node.policyNames.includes(policyName),
+    );
+
+  if (relatedTurnTarget) {
+    return relatedTurnTarget.id;
+  }
+
+  return (
+    turn.nodes.find(
+      (node) =>
+        node.level === "POLICY_VIOLATION" ||
+        node.policyNames.includes(policyName),
+    )?.id ??
+    turn.nodes[0]?.id ??
+    null
+  );
+}
+
+function parsePolicyBeginnerSummaryResult(rawResult: unknown) {
+  const direct = GeneratePolicyBeginnerSummaryOutputSchema.safeParse(rawResult);
+  if (direct.success) return direct.data;
+
+  if (typeof rawResult === "string") {
+    try {
+      const parsed = parseJsonObjectFromCompletion(rawResult);
+      return GeneratePolicyBeginnerSummaryOutputSchema.parse(parsed);
+    } catch {
+      return {
+        summary: rawResult.trim(),
+      };
+    }
+  }
+
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message:
+      "LLM returned an invalid beginner summary payload (schema mismatch).",
+  });
+}
+
 export const policyGovernanceRouter = createTRPCRouter({
   loadPolicyFiles: protectedProjectProcedure
     .input(
@@ -612,6 +838,284 @@ export const policyGovernanceRouter = createTRPCRouter({
         policyCards,
         policySectionMap: POLICY_SECTION_MAP,
       };
+    }),
+
+  getPolicyGuideInsights: protectedProjectProcedure
+    .input(PolicyGuideInsightsInputSchema)
+    .output(PolicyGuideInsightsOutputSchema)
+    .query(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:read",
+      });
+
+      if (input.fromTimestamp > input.toTimestamp) {
+        return input.policyNames.map((policyName) => ({
+          policyName,
+          recentViolationCount: 0,
+          exampleBlockedAction: null,
+          examplePrompt: null,
+          similarCases: [],
+        }));
+      }
+
+      const recentViolationCounts = await getPolicyViolationCounts({
+        projectId: input.projectId,
+        policyNames: input.policyNames,
+        globalFilterState: input.globalFilterState,
+        fromTimestamp: input.fromTimestamp,
+        toTimestamp: input.toTimestamp,
+        version: input.version,
+      });
+
+      return Promise.all(
+        input.policyNames.map(async (policyName) => {
+          const rejectedTurnDetails = await getRejectedTurnDetails({
+            projectId: input.projectId,
+            policyName,
+            globalFilterState: input.globalFilterState,
+            fromTimestamp: input.fromTimestamp,
+            toTimestamp: input.toTimestamp,
+            version: input.version,
+          });
+
+          const sampledTurns = (
+            await Promise.all(
+              rejectedTurnDetails.slice(0, 3).map(async (detail) => {
+                const [trace, observations] = await Promise.all([
+                  getTraceById({
+                    traceId: detail.traceId,
+                    projectId: input.projectId,
+                  }),
+                  getObservationsForTrace({
+                    traceId: detail.traceId,
+                    projectId: input.projectId,
+                    includeIO: true,
+                  }),
+                ]);
+
+                return buildSampledTurnContext({
+                  policyName,
+                  detail,
+                  trace,
+                  observations: observations as Observation[],
+                });
+              }),
+            )
+          ).filter(
+            (
+              turn,
+            ): turn is NonNullable<
+              ReturnType<typeof buildSampledTurnContext>
+            > => turn !== null,
+          );
+
+          return {
+            policyName,
+            recentViolationCount: recentViolationCounts.get(policyName) ?? 0,
+            exampleBlockedAction: sampledTurns[0]
+              ? getTurnBlockedAction(sampledTurns[0])
+              : null,
+            examplePrompt: sampledTurns[0]
+              ? getTurnExamplePrompt(sampledTurns[0])
+              : null,
+            similarCases: sampledTurns.map((turn) => ({
+              traceId: turn.traceId,
+              traceName: turn.traceName,
+              traceTimestamp: turn.traceTimestamp,
+              turnIndex: turn.turnIndex,
+              targetObservationId: getTurnTargetObservationId(turn, policyName),
+              blockedAction: getTurnBlockedAction(turn),
+              examplePrompt: getTurnExamplePrompt(turn),
+            })),
+          };
+        }),
+      );
+    }),
+
+  generatePolicyBeginnerSummary: protectedProjectProcedure
+    .input(GeneratePolicyBeginnerSummaryInputSchema)
+    .output(GeneratePolicyBeginnerSummaryOutputSchema)
+    .mutation(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:read",
+      });
+
+      const user = ctx.session?.user;
+      if (!user) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Please sign in to generate beginner summaries.",
+        });
+      }
+
+      if (!user.admin) {
+        const projectRole = user.organizations
+          .flatMap((org) => org.projects)
+          .find((project) => project.id === input.projectId)?.role;
+        if (
+          !projectRole ||
+          !projectRoleAccessRights[projectRole].includes("llmApiKeys:read")
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "User does not have access to run LLM policy summaries.",
+          });
+        }
+      }
+
+      const project = await ctx.prisma.project.findUnique({
+        where: { id: input.projectId, orgId: ctx.session.orgId },
+        select: { metadata: true },
+      });
+      if (!project) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      const llmApiKey = await ctx.prisma.llmApiKeys.findFirst({
+        where: {
+          projectId: input.projectId,
+          adapter: LLMAdapter.OpenAI,
+        },
+      });
+      if (!llmApiKey) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "No OpenAI-adapter LLM connection configured. Please add one in Settings -> LLM Connections.",
+        });
+      }
+
+      const parsedKey = LLMApiKeySchema.safeParse(llmApiKey);
+      if (!parsedKey.success) {
+        logger.warn("Failed to parse LLM API key for policy beginner summary", {
+          projectId: input.projectId,
+          policyName: input.policyName,
+          error: parsedKey.error.message,
+        });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Could not parse LLM connection configuration.",
+        });
+      }
+
+      const configuredModel = resolveErrorAnalysisModelFromMetadata(
+        project.metadata,
+      );
+      const modelName =
+        parsedKey.data.baseURL &&
+        !parsedKey.data.baseURL.includes("api.openai.com") &&
+        configuredModel === "gpt-5.2"
+          ? "gpt-5.2"
+          : resolveDemoOpenAIModel(configuredModel);
+      const hasRecentPolicySignals =
+        (input.guideInsight?.recentViolationCount ?? 0) > 0 ||
+        (input.confirmationSummary?.rejectedCount ?? 0) > 0 ||
+        Boolean(input.guideInsight?.exampleBlockedAction) ||
+        (input.guideInsight?.similarCases.length ?? 0) > 0;
+
+      const payload = {
+        policyName: input.policyName,
+        enabled: input.enabled,
+        description: input.description,
+        settingSections: input.settingSections,
+        settingsBySection: input.settingsBySection,
+        confirmationSummary: input.confirmationSummary,
+        guideInsight: input.guideInsight,
+        hasRecentPolicySignals,
+        modelSource: {
+          llmConnectionProvider: parsedKey.data.provider,
+          llmConnectionBaseUrl: parsedKey.data.baseURL ?? null,
+          selectedModel: modelName,
+        },
+      };
+
+      const messages: ChatMessage[] = [
+        {
+          type: ChatMessageType.System,
+          role: ChatMessageRole.System,
+          content:
+            "You are writing a friendly policy guide for a developer who is not yet familiar with the policy system. Explain one policy in plain language. Keep it concrete and practical. Mention what the policy protects and what the current settings imply today. Only mention recent signals when `hasRecentPolicySignals` is true and the payload includes actual violations, rejected confirmations, blocked actions, or similar cases. When `hasRecentPolicySignals` is false, do not add a 'recent signals' sentence, do not mention zero counts, and do not speculate about what would happen if the policy started triggering in the future. Do not mention internal prompt engineering, tokens, schemas, or JSON structure unless the policy truly depends on them. Return ONLY valid JSON with a single `summary` string.",
+        },
+        {
+          type: ChatMessageType.User,
+          role: ChatMessageRole.User,
+          content: safeStringify(payload),
+        },
+      ];
+
+      let rawResult: unknown;
+      try {
+        rawResult = await fetchLLMCompletion({
+          llmConnection: parsedKey.data,
+          messages,
+          modelParams: {
+            provider: parsedKey.data.provider,
+            adapter: LLMAdapter.OpenAI,
+            model: modelName,
+            temperature: 0.2,
+            max_tokens: 500,
+          },
+          streaming: false,
+          structuredOutputSchema: PolicyBeginnerSummaryStructuredOutputSchema,
+        });
+      } catch (e) {
+        try {
+          rawResult = await fetchLLMCompletion({
+            llmConnection: parsedKey.data,
+            messages,
+            modelParams: {
+              provider: parsedKey.data.provider,
+              adapter: LLMAdapter.OpenAI,
+              model: modelName,
+              temperature: 0.2,
+              max_tokens: 500,
+            },
+            streaming: false,
+          });
+        } catch (fallbackError) {
+          const mappedFallback =
+            mapLLMCompletionErrorToTRPCError(fallbackError);
+          if (mappedFallback) throw mappedFallback;
+
+          const mappedOriginal = mapLLMCompletionErrorToTRPCError(e);
+          if (mappedOriginal) throw mappedOriginal;
+          throw fallbackError;
+        }
+      }
+
+      const parsedSummary = parsePolicyBeginnerSummaryResult(rawResult);
+      const existingSettings = parsePolicyGovernanceSettings(project.metadata);
+      const projectMetadata =
+        project.metadata &&
+        typeof project.metadata === "object" &&
+        !Array.isArray(project.metadata)
+          ? (project.metadata as Record<string, unknown>)
+          : {};
+
+      await ctx.prisma.project.update({
+        where: { id: input.projectId, orgId: ctx.session.orgId },
+        data: {
+          metadata: {
+            ...projectMetadata,
+            policyGovernance: {
+              ...existingSettings,
+              beginnerSummaries: {
+                ...existingSettings.beginnerSummaries,
+                [input.policyName]: parsedSummary.summary,
+              },
+            },
+          } as any,
+        },
+      });
+
+      return parsedSummary;
     }),
 
   generatePolicyUpdateProposal: protectedProjectProcedure

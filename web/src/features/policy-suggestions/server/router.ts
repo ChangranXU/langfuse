@@ -67,6 +67,7 @@ type SampledTurnContext = {
   policyDescription: string | null;
   policySource: string | null;
   nodes: Array<{
+    id: string;
     name: string;
     level: string | null;
     statusMessage: string | null;
@@ -80,6 +81,7 @@ type SampledTurnContext = {
     examplePrompt: string | null;
     policyProtected: string | null;
     nodes: Array<{
+      id: string;
       name: string;
       level: string | null;
       statusMessage: string | null;
@@ -271,6 +273,7 @@ function buildTurnNodes(
       statusMessage: observation.statusMessage,
     });
     return {
+      id: observation.id,
       name: observation.name || observation.id,
       level: observation.level ?? null,
       statusMessage: observation.statusMessage ?? null,
@@ -341,7 +344,7 @@ function mapLLMCompletionErrorToTRPCError(e: unknown): TRPCError | null {
   });
 }
 
-async function getRejectedTurnDetails(params: {
+export async function getRejectedTurnDetails(params: {
   projectId: string;
   policyName: string;
   globalFilterState: FilterState;
