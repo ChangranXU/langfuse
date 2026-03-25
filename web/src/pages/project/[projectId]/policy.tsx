@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Input } from "@/src/components/ui/input";
 import { Label } from "@/src/components/ui/label";
 import { Button } from "@/src/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/src/components/ui/alert";
 import {
   Card,
   CardContent,
@@ -44,6 +45,8 @@ type LoadedPolicyData = {
   resolvedPathInput: string;
   policyJsonPath: string;
   policyRegistryPath: string;
+  policySourceFingerprint: string;
+  sourceLastModifiedAt: string;
   policyJson: Record<string, unknown>;
   policyRegistryJson: PolicyRegistryEntry[];
   policyCards: Array<{
@@ -77,6 +80,14 @@ type PolicyGuideInsight = {
   recentViolationCount: number;
   exampleBlockedAction: string | null;
   examplePrompt: string | null;
+  exampleViolation: {
+    observationName: string | null;
+    statusMessage: string | null;
+    input: string | null;
+    output: string | null;
+    inactivateErrorType: string | null;
+    policyNames: string[];
+  } | null;
   similarCases: Array<{
     traceId: string;
     traceName: string | null;
@@ -85,6 +96,14 @@ type PolicyGuideInsight = {
     targetObservationId: string | null;
     blockedAction: string | null;
     examplePrompt: string | null;
+    violationExample: {
+      observationName: string | null;
+      statusMessage: string | null;
+      input: string | null;
+      output: string | null;
+      inactivateErrorType: string | null;
+      policyNames: string[];
+    } | null;
   }>;
 };
 
@@ -95,6 +114,7 @@ type PendingUnsavedAction = {
 
 const UNSAVED_CHANGES_CONFIRMATION_MESSAGE =
   "You have unsaved changes. Leave without saving?";
+const AUTO_REFRESH_INTERVAL_MS = 5000;
 
 function stableStringify(value: unknown) {
   return JSON.stringify(value, null, 2);
@@ -175,6 +195,8 @@ export default function PolicyGovernancePage() {
     useState<PendingUnsavedAction | null>(null);
   const [isUnsavedPromptOpen, setIsUnsavedPromptOpen] = useState(false);
   const [isUnsavedPromptBusy, setIsUnsavedPromptBusy] = useState(false);
+  const [sourceChangedWhileEditing, setSourceChangedWhileEditing] =
+    useState(false);
   const allowNextRouteChangeRef = useRef(false);
   const autoLoadedPathRef = useRef<string | null>(null);
   const hasUpdateAccess = useHasProjectAccess({
@@ -263,21 +285,25 @@ export default function PolicyGovernancePage() {
       onError: (error) => toast.error(error.message),
     });
 
+  const applyLoadedPolicyData = useCallback((data: LoadedPolicyData) => {
+    setLoaded(data);
+    setPolicyJsonDraft(data.policyJson);
+    setPolicyRegistryDraft(data.policyRegistryJson);
+    setSectionDrafts(
+      buildSectionDrafts({
+        policyRegistryJson: data.policyRegistryJson,
+        policyJson: data.policyJson,
+        policySectionMap: data.policySectionMap,
+      }),
+    );
+    setSectionErrors({});
+    setSourceChangedWhileEditing(false);
+  }, []);
+
   const loadPolicyFilesMutation =
     api.policyGovernance.loadPolicyFiles.useMutation({
       onSuccess: (data) => {
-        const nextLoaded = data as LoadedPolicyData;
-        setLoaded(nextLoaded);
-        setPolicyJsonDraft(nextLoaded.policyJson);
-        setPolicyRegistryDraft(nextLoaded.policyRegistryJson);
-        setSectionDrafts(
-          buildSectionDrafts({
-            policyRegistryJson: nextLoaded.policyRegistryJson,
-            policyJson: nextLoaded.policyJson,
-            policySectionMap: nextLoaded.policySectionMap,
-          }),
-        );
-        setSectionErrors({});
+        applyLoadedPolicyData(data as LoadedPolicyData);
       },
       onError: (error) => toast.error(error.message),
     });
@@ -287,18 +313,7 @@ export default function PolicyGovernancePage() {
   const savePolicyFilesMutation =
     api.policyGovernance.savePolicyFiles.useMutation({
       onSuccess: async (data) => {
-        const nextLoaded = data as LoadedPolicyData;
-        setLoaded(nextLoaded);
-        setPolicyJsonDraft(nextLoaded.policyJson);
-        setPolicyRegistryDraft(nextLoaded.policyRegistryJson);
-        setSectionDrafts(
-          buildSectionDrafts({
-            policyRegistryJson: nextLoaded.policyRegistryJson,
-            policyJson: nextLoaded.policyJson,
-            policySectionMap: nextLoaded.policySectionMap,
-          }),
-        );
-        setSectionErrors({});
+        applyLoadedPolicyData(data as LoadedPolicyData);
         toast.success("Policy files saved");
       },
       onError: (error) => toast.error(error.message),
@@ -325,6 +340,14 @@ export default function PolicyGovernancePage() {
     policySettingsQuery.data?.kernelPolicyPathAbsolute,
     projectId,
   ]);
+
+  const reloadLoadedPolicyFiles = useCallback(() => {
+    if (!projectId || !loaded) return;
+    loadPolicyFilesMutation.mutate({
+      projectId,
+      pathOverride: loaded.resolvedPathInput,
+    });
+  }, [loadPolicyFilesMutation, loaded, projectId]);
 
   const suggestionMutation = api.policySuggestions.generate.useMutation();
   const proposalMutation =
@@ -382,6 +405,24 @@ export default function PolicyGovernancePage() {
       ),
     [policyGuideInsightsQuery.data],
   );
+  const policyFilesStatusQuery =
+    api.policyGovernance.getPolicyFilesStatus.useQuery(
+      {
+        projectId: projectId ?? "",
+        pathOverride: loaded?.resolvedPathInput,
+      },
+      {
+        enabled: Boolean(projectId) && Boolean(loaded),
+        refetchInterval: AUTO_REFRESH_INTERVAL_MS,
+        refetchOnWindowFocus: false,
+        trpc: {
+          context: {
+            skipBatch: true,
+          },
+        },
+      },
+    );
+
   const peekNavigationProps = usePeekNavigation({
     queryParams: ["observation", "display", "timestamp", "traceId"],
     paramsToMirrorPeekValue: ["observation"],
@@ -434,6 +475,40 @@ export default function PolicyGovernancePage() {
     pathInput.trim() !==
       (policySettingsQuery.data?.kernelPolicyPathAbsolute ?? "").trim();
   const hasUnsavedChanges = hasUnsavedDraftChanges || hasUnsavedPathChanges;
+
+  useEffect(() => {
+    if (!loaded || !policyFilesStatusQuery.data) return;
+
+    if (
+      policyFilesStatusQuery.data.policySourceFingerprint ===
+      loaded.policySourceFingerprint
+    ) {
+      setSourceChangedWhileEditing(false);
+      return;
+    }
+
+    if (
+      loadPolicyFilesMutation.isPending ||
+      savePolicyFilesMutation.isPending
+    ) {
+      return;
+    }
+
+    if (hasUnsavedChanges) {
+      setSourceChangedWhileEditing(true);
+      return;
+    }
+
+    setSourceChangedWhileEditing(false);
+    reloadLoadedPolicyFiles();
+  }, [
+    hasUnsavedChanges,
+    loadPolicyFilesMutation.isPending,
+    loaded,
+    policyFilesStatusQuery.data,
+    reloadLoadedPolicyFiles,
+    savePolicyFilesMutation.isPending,
+  ]);
 
   const loadPathHint =
     "/absolute/path/to/ArbiterOS-Kernel/arbiteros_kernel (or direct /policy.json)";
@@ -735,6 +810,10 @@ export default function PolicyGovernancePage() {
     : null;
   const configuredModelLabel = errorAnalysisSettingsQuery.data?.model ?? null;
   const beginnerSummaries = policySettingsQuery.data?.beginnerSummaries ?? {};
+  const sourceLastModifiedLabel =
+    policyFilesStatusQuery.data?.sourceLastModifiedAt ??
+    loaded?.sourceLastModifiedAt ??
+    null;
 
   return (
     <Page
@@ -776,8 +855,15 @@ export default function PolicyGovernancePage() {
                   page open.
                 </p>
               ) : null}
+              {loaded ? (
+                <p className="text-xs text-muted-foreground">
+                  This page checks the kernel policy files every 5 seconds and
+                  refreshes automatically when the source changes, unless you
+                  have unsaved edits open.
+                </p>
+              ) : null}
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-4">
               <div className="rounded-lg border bg-muted/20 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   LLM connection
@@ -807,6 +893,16 @@ export default function PolicyGovernancePage() {
                         policySettingsQuery.data.lastPolicyUpdatedAt,
                       ).toLocaleString()
                     : "No saved update timestamp yet"}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Kernel source updated
+                </div>
+                <div className="mt-1 text-sm text-foreground">
+                  {sourceLastModifiedLabel
+                    ? new Date(sourceLastModifiedLabel).toLocaleString()
+                    : "Load policy files to inspect"}
                 </div>
               </div>
             </div>
@@ -858,6 +954,34 @@ export default function PolicyGovernancePage() {
 
         {loaded ? (
           <div className="space-y-4">
+            {sourceChangedWhileEditing ? (
+              <Alert>
+                <AlertTitle>Kernel policy files changed</AlertTitle>
+                <AlertDescription className="space-y-3">
+                  <p>
+                    The source files in `ArbiterOS-Kernel` changed after this
+                    page was loaded. Reload to pull in the latest policy from
+                    disk.
+                  </p>
+                  <p>
+                    Reloading will replace your current unsaved draft on this
+                    page.
+                  </p>
+                  <div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={reloadLoadedPolicyFiles}
+                      disabled={isLoadPolicyFilesPending}
+                    >
+                      {isLoadPolicyFilesPending
+                        ? "Reloading..."
+                        : "Reload from Kernel"}
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {policyRegistryDraft.map((entry) => {
               const sections = sectionMap[entry.name] ?? [];
               const settingsBySection = Object.fromEntries(

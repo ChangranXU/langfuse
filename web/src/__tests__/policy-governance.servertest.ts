@@ -5,6 +5,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import {
   buildPolicyCards,
+  getPolicySourceMetadata,
   parseProposalResult,
   resolvePolicyPaths,
 } from "@/src/features/policy-governance/server/router";
@@ -163,6 +164,51 @@ describe("policy-governance helpers", () => {
       },
     });
     expect(cards[1]?.settingSections).toEqual(["allow", "deny"]);
+  });
+
+  it("updates the source fingerprint when a policy file changes", async () => {
+    const kernelDir = join(sandboxDir, "arbiteros_kernel");
+    await mkdir(kernelDir, { recursive: true });
+    const { policyJsonPath, policyRegistryPath } =
+      await writePolicyPair(kernelDir);
+
+    const firstMetadata = await getPolicySourceMetadata({
+      policyJsonPath,
+      policyRegistryPath,
+    });
+
+    await writeFile(
+      policyJsonPath,
+      JSON.stringify(
+        {
+          rate_limit: {
+            max_consecutive_same_tool: 25,
+            window_seconds: 10,
+            max_calls_per_window: 30,
+          },
+          allow: { tools: ["read"] },
+          deny: { tools: [] },
+          delete_policy: { require_confirmation: true },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const secondMetadata = await getPolicySourceMetadata({
+      policyJsonPath,
+      policyRegistryPath,
+    });
+
+    expect(secondMetadata.policySourceFingerprint).not.toBe(
+      firstMetadata.policySourceFingerprint,
+    );
+    expect(
+      new Date(secondMetadata.sourceLastModifiedAt).getTime(),
+    ).toBeGreaterThanOrEqual(
+      new Date(firstMetadata.sourceLastModifiedAt).getTime(),
+    );
   });
 
   it("rejects non-absolute path input", async () => {

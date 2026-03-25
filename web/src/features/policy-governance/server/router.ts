@@ -77,10 +77,21 @@ const LoadPolicyFilesOutputSchema = z.object({
   resolvedPathInput: z.string(),
   policyJsonPath: z.string(),
   policyRegistryPath: z.string(),
+  policySourceFingerprint: z.string(),
+  sourceLastModifiedAt: z.string(),
   policyJson: JsonObjectSchema,
   policyRegistryJson: PolicyRegistrySchema,
   policyCards: z.array(PolicyCardSchema),
   policySectionMap: z.record(z.string(), z.array(z.string())),
+});
+
+const PolicyFilesStatusOutputSchema = z.object({
+  configuredPath: z.string().nullable(),
+  resolvedPathInput: z.string(),
+  policyJsonPath: z.string(),
+  policyRegistryPath: z.string(),
+  policySourceFingerprint: z.string(),
+  sourceLastModifiedAt: z.string(),
 });
 
 const SavePolicyFilesInputSchema = z.object({
@@ -110,6 +121,15 @@ const GeneratePolicyUpdateProposalOutputSchema = z.object({
   proposedPolicyRegistryJson: PolicyRegistrySchema,
 });
 
+const PolicyGuideViolationExampleSchema = z.object({
+  observationName: z.string().nullable(),
+  statusMessage: z.string().nullable(),
+  input: z.string().nullable(),
+  output: z.string().nullable(),
+  inactivateErrorType: z.string().nullable(),
+  policyNames: z.array(z.string()),
+});
+
 const PolicyGuideCaseSchema = z.object({
   traceId: z.string(),
   traceName: z.string().nullable(),
@@ -118,6 +138,7 @@ const PolicyGuideCaseSchema = z.object({
   targetObservationId: z.string().nullable(),
   blockedAction: z.string().nullable(),
   examplePrompt: z.string().nullable(),
+  violationExample: PolicyGuideViolationExampleSchema.nullable(),
 });
 
 const PolicyGuideInsightSchema = z.object({
@@ -125,6 +146,7 @@ const PolicyGuideInsightSchema = z.object({
   recentViolationCount: z.number().int().nonnegative(),
   exampleBlockedAction: z.string().nullable(),
   examplePrompt: z.string().nullable(),
+  exampleViolation: PolicyGuideViolationExampleSchema.nullable(),
   similarCases: z.array(PolicyGuideCaseSchema),
 });
 
@@ -153,6 +175,8 @@ const GeneratePolicyBeginnerSummaryInputSchema = z.object({
   enabled: z.boolean(),
   settingSections: z.array(z.string()).default([]),
   settingsBySection: z.record(z.string(), z.unknown()).default({}),
+  highlightThresholdPct: z.number().min(0).max(100).default(70),
+  suggestPolicyUpdate: z.boolean().default(false),
   confirmationSummary: PolicyConfirmationSummarySchema.nullable().default(null),
   guideInsight: PolicyGuideInsightSchema.nullable().default(null),
 });
@@ -184,7 +208,7 @@ const PolicyBeginnerSummaryStructuredOutputSchema = zodV3.object({
   summary: zodV3
     .string()
     .describe(
-      "A beginner-friendly explanation of the policy in 3-6 short lines. Explain what it protects, what the current settings imply, and one practical interpretation tip.",
+      "A plain-language explanation of the policy in 4-8 short lines for someone without a programming background. Explain what it protects, what the current settings mean in everyday terms, and when available include concrete recent blocked or rejected examples with simple explanations.",
     ),
 });
 
@@ -483,6 +507,32 @@ async function readPolicyDocuments(paths: {
   };
 }
 
+export async function getPolicySourceMetadata(paths: {
+  policyJsonPath: string;
+  policyRegistryPath: string;
+}) {
+  try {
+    const [policyStat, registryStat] = await Promise.all([
+      stat(paths.policyJsonPath),
+      stat(paths.policyRegistryPath),
+    ]);
+    const newestMtimeMs = Math.max(policyStat.mtimeMs, registryStat.mtimeMs);
+
+    return {
+      policySourceFingerprint: [
+        `${policyStat.mtimeMs}:${policyStat.size}`,
+        `${registryStat.mtimeMs}:${registryStat.size}`,
+      ].join("|"),
+      sourceLastModifiedAt: new Date(newestMtimeMs).toISOString(),
+    };
+  } catch (error) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `Failed to inspect policy files: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
 function resolveErrorAnalysisModelFromMetadata(metadata: unknown) {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return "gpt-5.2" as const;
@@ -504,6 +554,20 @@ function mapLLMCompletionErrorToTRPCError(e: unknown): TRPCError | null {
   if (!isLLMCompletionError(e)) return null;
   const status = e.responseStatusCode ?? 500;
   const baseMessage = `LLM request failed (HTTP ${status}). ${e.message}`;
+  const normalizedMessage = e.message.toLowerCase();
+
+  if (
+    normalizedMessage.includes("unexpected token '<'") ||
+    normalizedMessage.includes("<!doctype") ||
+    normalizedMessage.includes("<html")
+  ) {
+    return new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        `LLM request failed (HTTP ${status}). The configured OpenAI-compatible endpoint returned HTML instead of JSON.` +
+        " Check Settings -> LLM Connections and verify the base URL points to the API endpoint (for example `https://api.openai.com/v1`) rather than a web page, login page, or proxy root.",
+    });
+  }
 
   if (status === 401 || status === 403) {
     return new TRPCError({
@@ -653,6 +717,34 @@ function getTurnExamplePrompt(
   );
 }
 
+function getTurnViolationExample(
+  turn: ReturnType<typeof buildSampledTurnContext>,
+  policyName: string,
+) {
+  if (!turn) return null;
+
+  const relevantNode = turn.nodes.find((node) => {
+    const statusMessage = node.statusMessage ?? "";
+    return (
+      node.level === "POLICY_VIOLATION" ||
+      node.policyNames.includes(policyName) ||
+      statusMessage.includes("POLICY_BLOCK") ||
+      statusMessage.includes("blocked by policy")
+    );
+  });
+
+  if (!relevantNode) return null;
+
+  return {
+    observationName: relevantNode.name ?? null,
+    statusMessage: relevantNode.statusMessage,
+    input: relevantNode.input,
+    output: relevantNode.output,
+    inactivateErrorType: relevantNode.inactivateErrorType,
+    policyNames: relevantNode.policyNames,
+  };
+}
+
 function getTurnTargetObservationId(
   turn: ReturnType<typeof buildSampledTurnContext>,
   policyName: string,
@@ -744,6 +836,7 @@ export const policyGovernanceRouter = createTRPCRouter({
 
       const resolved = await resolvePolicyPaths(selectedPath);
       const docs = await readPolicyDocuments(resolved);
+      const sourceMetadata = await getPolicySourceMetadata(resolved);
       const policyCards = buildPolicyCards({
         policyRegistryJson: docs.policyRegistryJson,
         policyJson: docs.policyJson,
@@ -752,10 +845,58 @@ export const policyGovernanceRouter = createTRPCRouter({
       return {
         configuredPath,
         ...resolved,
+        ...sourceMetadata,
         policyJson: docs.policyJson,
         policyRegistryJson: docs.policyRegistryJson,
         policyCards,
         policySectionMap: POLICY_SECTION_MAP,
+      };
+    }),
+
+  getPolicyFilesStatus: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        pathOverride: z.string().trim().min(1).optional(),
+      }),
+    )
+    .output(PolicyFilesStatusOutputSchema)
+    .query(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:read",
+      });
+
+      const project = await ctx.prisma.project.findUnique({
+        where: { id: input.projectId, orgId: ctx.session.orgId },
+        select: { metadata: true },
+      });
+      if (!project) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      const existingSettings = parsePolicyGovernanceSettings(project.metadata);
+      const configuredPath = existingSettings.kernelPolicyPathAbsolute;
+      const selectedPath = input.pathOverride ?? configuredPath;
+      if (!selectedPath) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "No policy path configured. Set a kernel policy path first in this page.",
+        });
+      }
+
+      const resolved = await resolvePolicyPaths(selectedPath);
+      const sourceMetadata = await getPolicySourceMetadata(resolved);
+
+      return {
+        configuredPath,
+        ...resolved,
+        ...sourceMetadata,
       };
     }),
 
@@ -825,6 +966,7 @@ export const policyGovernanceRouter = createTRPCRouter({
         },
       });
 
+      const sourceMetadata = await getPolicySourceMetadata(resolved);
       const policyCards = buildPolicyCards({
         policyRegistryJson: input.policyRegistryJson,
         policyJson: input.policyJson,
@@ -833,6 +975,7 @@ export const policyGovernanceRouter = createTRPCRouter({
       return {
         configuredPath,
         ...resolved,
+        ...sourceMetadata,
         policyJson: input.policyJson,
         policyRegistryJson: input.policyRegistryJson,
         policyCards,
@@ -856,6 +999,7 @@ export const policyGovernanceRouter = createTRPCRouter({
           recentViolationCount: 0,
           exampleBlockedAction: null,
           examplePrompt: null,
+          exampleViolation: null,
           similarCases: [],
         }));
       }
@@ -920,6 +1064,9 @@ export const policyGovernanceRouter = createTRPCRouter({
             examplePrompt: sampledTurns[0]
               ? getTurnExamplePrompt(sampledTurns[0])
               : null,
+            exampleViolation: sampledTurns[0]
+              ? getTurnViolationExample(sampledTurns[0], policyName)
+              : null,
             similarCases: sampledTurns.map((turn) => ({
               traceId: turn.traceId,
               traceName: turn.traceName,
@@ -928,6 +1075,7 @@ export const policyGovernanceRouter = createTRPCRouter({
               targetObservationId: getTurnTargetObservationId(turn, policyName),
               blockedAction: getTurnBlockedAction(turn),
               examplePrompt: getTurnExamplePrompt(turn),
+              violationExample: getTurnViolationExample(turn, policyName),
             })),
           };
         }),
@@ -1026,6 +1174,8 @@ export const policyGovernanceRouter = createTRPCRouter({
         description: input.description,
         settingSections: input.settingSections,
         settingsBySection: input.settingsBySection,
+        highlightThresholdPct: input.highlightThresholdPct,
+        suggestPolicyUpdate: input.suggestPolicyUpdate,
         confirmationSummary: input.confirmationSummary,
         guideInsight: input.guideInsight,
         hasRecentPolicySignals,
@@ -1041,7 +1191,7 @@ export const policyGovernanceRouter = createTRPCRouter({
           type: ChatMessageType.System,
           role: ChatMessageRole.System,
           content:
-            "You are writing a friendly policy guide for a developer who is not yet familiar with the policy system. Explain one policy in plain language. Keep it concrete and practical. Mention what the policy protects and what the current settings imply today. Only mention recent signals when `hasRecentPolicySignals` is true and the payload includes actual violations, rejected confirmations, blocked actions, or similar cases. When `hasRecentPolicySignals` is false, do not add a 'recent signals' sentence, do not mention zero counts, and do not speculate about what would happen if the policy started triggering in the future. Do not mention internal prompt engineering, tokens, schemas, or JSON structure unless the policy truly depends on them. Return ONLY valid JSON with a single `summary` string.",
+            "You are writing a friendly policy guide for a beginner with no programming background. Explain one policy in plain, everyday language that a non-technical person can understand. Avoid code terms, product jargon, and policy-system jargon when possible. If you must use a technical term from the payload, immediately explain it in simple words. Keep the tone concrete and practical. Mention what the policy is trying to protect, what the current settings mean today, and the practical effect in everyday use. Prefer short sentences and simple wording such as 'this rule helps prevent...', 'right now the system will...', or 'a user may need to...'. Avoid template lead-ins such as 'For a normal user, this means', 'What this means for a normal user', or similar phrasing; write direct statements instead.\n\nWhen `hasRecentPolicySignals` is true, do not rely on counts alone. Prefer 1-2 concrete recent examples from `guideInsight.exampleViolation` or `guideInsight.similarCases[].violationExample`. These raw violation examples are the best evidence because they may include the actual observation message, input, output, error type, and `policyNames`. If a violation example contains a file path, command, or request, quote that exact detail and explain in simple terms why it was rejected or blocked. For example, explain it like 'Reading `/path/to/file` was rejected because...' instead of only saying there were 2 blocked attempts. Use `guideInsight.exampleBlockedAction` or `guideInsight.examplePrompt` only as backup context when the violation example is missing details. Counts and reject rates may be mentioned as supporting context, but never as the main point when concrete examples exist.\n\nImportant: do not assume the currently selected `policyName` caused every recent example. If a concrete recent example's `policyNames` points more directly to another policy, explicitly say that the example appears to be enforced by that other policy and name it. In that case, tell the user to review that policy instead of implying they should change the current one. For example, if the example is really about workflow permissioning, say to review `EfsmGatePolicy`; if it is really about allow/deny rules, say to review `AllowDenyPolicy`. Only recommend changing the current policy when the evidence actually matches it.\n\nDo not invent examples, reasons, paths, settings, or policy names that are not present in the payload. If the payload does not contain the exact reason, say that the example was blocked under the current rule set and explain the likely reason only by referring back to the current settings shown in the payload. Do not tell the user to reply, ask a follow-up question, share more text, or continue the conversation. In particular, avoid assistant-style advice such as 'share only the specific text you need help with.' This summary is informational only.\n\nOnly mention recent signals when `hasRecentPolicySignals` is true and the payload includes actual violations, rejected confirmations, blocked actions, or similar cases. When `hasRecentPolicySignals` is false, do not add a 'recent signals' sentence, do not mention zero counts, and do not speculate about what would happen if the policy started triggering in the future.\n\nOnly if `suggestPolicyUpdate` is true, and the recent evidence suggests the policy may be too strict or mismatched to user intent, you may add one short final sentence recommending `LLM Suggest Update` in the advanced editor. If you do, explicitly remind the user to double-check carefully because policy changes are high-risk. Do not mention `LLM Suggest Update` when `suggestPolicyUpdate` is false.\n\nDo not mention internal prompt engineering, tokens, schemas, JSON structure, or implementation details unless the policy truly depends on them. Return ONLY valid JSON with a single `summary` string.",
         },
         {
           type: ChatMessageType.User,

@@ -38,6 +38,14 @@ type PolicyGuideCase = {
   targetObservationId: string | null;
   blockedAction: string | null;
   examplePrompt: string | null;
+  violationExample: {
+    observationName: string | null;
+    statusMessage: string | null;
+    input: string | null;
+    output: string | null;
+    inactivateErrorType: string | null;
+    policyNames: string[];
+  } | null;
 };
 
 type PolicyGuideInsight = {
@@ -45,6 +53,14 @@ type PolicyGuideInsight = {
   recentViolationCount: number;
   exampleBlockedAction: string | null;
   examplePrompt: string | null;
+  exampleViolation: {
+    observationName: string | null;
+    statusMessage: string | null;
+    input: string | null;
+    output: string | null;
+    inactivateErrorType: string | null;
+    policyNames: string[];
+  } | null;
   similarCases: PolicyGuideCase[];
 };
 
@@ -445,6 +461,8 @@ export function PolicyGuideCard(props: {
                     enabled: entry.enabled,
                     settingSections: sections,
                     settingsBySection,
+                    highlightThresholdPct,
+                    suggestPolicyUpdate: shouldHighlightByStats,
                     confirmationSummary: confirmationStats
                       ? {
                           totalCount: confirmationStats.totalCount,

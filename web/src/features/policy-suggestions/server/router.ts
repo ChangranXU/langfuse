@@ -312,6 +312,20 @@ function mapLLMCompletionErrorToTRPCError(e: unknown): TRPCError | null {
   if (!isLLMCompletionError(e)) return null;
   const status = e.responseStatusCode ?? 500;
   const baseMessage = `LLM request failed (HTTP ${status}). ${e.message}`;
+  const normalizedMessage = e.message.toLowerCase();
+
+  if (
+    normalizedMessage.includes("unexpected token '<'") ||
+    normalizedMessage.includes("<!doctype") ||
+    normalizedMessage.includes("<html")
+  ) {
+    return new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        `LLM request failed (HTTP ${status}). The configured OpenAI-compatible endpoint returned HTML instead of JSON.` +
+        " Check Settings -> LLM Connections and verify the base URL points to the API endpoint (for example `https://api.openai.com/v1`) rather than a web page, login page, or proxy root.",
+    });
+  }
 
   if (status === 401 || status === 403) {
     return new TRPCError({
