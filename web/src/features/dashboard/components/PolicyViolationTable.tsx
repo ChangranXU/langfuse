@@ -12,6 +12,7 @@ import {
   type ViewVersion,
   mapLegacyUiTableFilterToView,
 } from "@/src/features/query";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 export const PolicyViolationTable = ({
   className,
@@ -30,6 +31,7 @@ export const PolicyViolationTable = ({
   isLoading?: boolean;
   metricsVersion?: ViewVersion;
 }) => {
+  const { t } = useLanguage();
   const basePolicyViolationFilters = [
     ...mapLegacyUiTableFilterToView("observations", globalFilterState),
     {
@@ -161,8 +163,8 @@ export const PolicyViolationTable = ({
   const rows = [
     ...classifiedRows,
     {
-      policyName: "unclassified",
-      policyDescription: "No policy name found on this violation.",
+      policyName: t("dashboard.policyViolation.unclassified"),
+      policyDescription: t("dashboard.policyViolation.unclassifiedDescription"),
       count: unclassifiedCount,
     },
   ].filter((row) => row.count > 0);
@@ -185,10 +187,10 @@ export const PolicyViolationTable = ({
             href={`/project/${projectId}/analysis?analysisLevel=policy_violation`}
             className="hover:underline"
           >
-            Policy violations
+            {t("dashboard.policyViolation.title")}
           </Link>
           <span className="text-xs font-normal text-muted-foreground">
-            (Click to view details)
+            {t("dashboard.policyViolation.clickToViewDetails")}
           </span>
         </div>
       }
@@ -215,20 +217,20 @@ export const PolicyViolationTable = ({
                     scope="col"
                     className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
                   >
-                    Policy name
+                    {t("dashboard.policyViolation.policyName")}
                   </th>
                   <th
                     scope="col"
                     className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
                   >
-                    Description
+                    {t("dashboard.policyViolation.description")}
                   </th>
                   <th
                     scope="col"
                     className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
                   >
                     <RightAlignedCell className="text-center">
-                      Triggered
+                      {t("dashboard.policyViolation.count")}
                     </RightAlignedCell>
                   </th>
                 </tr>
@@ -284,6 +286,7 @@ export const PolicyViolationTable = ({
 };
 
 const ExpandableDescriptionCell = ({ text }: { text: string }) => {
+  const { t } = useLanguage();
   const [isExpanded, setExpanded] = useState(false);
   const [isOverflowing, setOverflowing] = useState(false);
   const textRef = useRef<HTMLDivElement | null>(null);
@@ -330,7 +333,9 @@ const ExpandableDescriptionCell = ({ text }: { text: string }) => {
           className="mt-1 text-xs font-medium text-primary hover:underline"
           onClick={() => setExpanded((prev) => !prev)}
         >
-          {isExpanded ? "Collapse" : "Expand"}
+          {isExpanded
+            ? t("dashboard.policyViolation.collapse")
+            : t("dashboard.policyViolation.expand")}
         </button>
       ) : null}
     </div>

@@ -25,6 +25,10 @@ import {
   setEventErrorTypeTag,
 } from "@langfuse/shared/src/server";
 import {
+  applyLanguageInstructionToMessages,
+  getLanguageFromCookieHeader,
+} from "@/src/features/i18n/server";
+import {
   ErrorAnalysisAnalyzeInputSchema,
   ErrorAnalysisAnalyzeOutputSchema,
   ErrorAnalysisLLMResultSchema,
@@ -1040,6 +1044,7 @@ export const errorAnalysisRouter = createTRPCRouter({
     .input(ErrorAnalysisAnalyzeInputSchema)
     .output(ErrorAnalysisAnalyzeOutputSchema)
     .mutation(async ({ input, ctx }) => {
+      const language = getLanguageFromCookieHeader(ctx.headers.cookie);
       // RBAC: require project membership + LLM key read scope (public traces are not sufficient).
       const user = ctx.session?.user;
       if (!user) {
@@ -1155,7 +1160,11 @@ export const errorAnalysisRouter = createTRPCRouter({
           try {
             return await fetchLLMCompletion({
               llmConnection: parsedKey.data,
-              messages,
+              messages: applyLanguageInstructionToMessages({
+                messages,
+                language,
+                mode: "structured",
+              }),
               modelParams: {
                 provider: parsedKey.data.provider,
                 adapter: LLMAdapter.OpenAI,
@@ -1176,7 +1185,11 @@ export const errorAnalysisRouter = createTRPCRouter({
               return parseJsonObjectFromCompletion(
                 await fetchLLMCompletion({
                   llmConnection: parsedKey.data,
-                  messages,
+                  messages: applyLanguageInstructionToMessages({
+                    messages,
+                    language,
+                    mode: "structured",
+                  }),
                   modelParams: {
                     provider: parsedKey.data.provider,
                     adapter: LLMAdapter.OpenAI,
@@ -1359,7 +1372,11 @@ export const errorAnalysisRouter = createTRPCRouter({
         try {
           rawClassification = await fetchLLMCompletion({
             llmConnection: parsedKey.data,
-            messages: classificationMessages,
+            messages: applyLanguageInstructionToMessages({
+              messages: classificationMessages,
+              language,
+              mode: "structured",
+            }),
             modelParams: {
               provider: parsedKey.data.provider,
               adapter: LLMAdapter.OpenAI,
@@ -1384,7 +1401,11 @@ export const errorAnalysisRouter = createTRPCRouter({
           );
           const fallback = await fetchLLMCompletion({
             llmConnection: parsedKey.data,
-            messages: classificationMessages,
+            messages: applyLanguageInstructionToMessages({
+              messages: classificationMessages,
+              language,
+              mode: "structured",
+            }),
             modelParams: {
               provider: parsedKey.data.provider,
               adapter: LLMAdapter.OpenAI,
@@ -1432,7 +1453,11 @@ export const errorAnalysisRouter = createTRPCRouter({
           ];
           const repairCompletion = await fetchLLMCompletion({
             llmConnection: parsedKey.data,
-            messages: repairMessages,
+            messages: applyLanguageInstructionToMessages({
+              messages: repairMessages,
+              language,
+              mode: "structured",
+            }),
             modelParams: {
               provider: parsedKey.data.provider,
               adapter: LLMAdapter.OpenAI,

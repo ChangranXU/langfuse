@@ -22,6 +22,8 @@ import { useCallback } from "react";
 import { TraceSettingsDropdown } from "../TraceSettingsDropdown";
 import { downloadTraceAsJson } from "../../lib/download-trace";
 import { TracePanelNavigationButton } from "./TracePanelNavigationButton";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 interface TracePanelNavigationHeaderProps {
   isPanelCollapsed: boolean;
@@ -61,6 +63,7 @@ function TracePanelNavigationHeaderExpanded({
 }: TracePanelNavigationHeaderProps) {
   const { searchInputValue, setSearchInputValue, setSearchQueryImmediate } =
     useSearch();
+  const { language } = useLanguage();
   const { expandAll, collapseAll, collapsedNodes } = useSelection();
   const { roots, trace, observations } = useTraceData();
   const { isGraphViewAvailable } = useTraceGraphData();
@@ -119,7 +122,7 @@ function TracePanelNavigationHeaderExpanded({
         <div className="relative flex-1">
           <CommandInput
             showBorder={false}
-            placeholder="Search"
+            placeholder={localize(language, "Search", "搜索")}
             className="h-7 min-w-20 border-0 pr-0 focus:ring-0"
             value={searchInputValue}
             onValueChange={setSearchInputValue}
@@ -132,7 +135,11 @@ function TracePanelNavigationHeaderExpanded({
             onClick={handleToggleTreeNodes}
             variant="ghost"
             size="icon"
-            title={isEverythingCollapsed ? "Expand all" : "Collapse all"}
+            title={
+              isEverythingCollapsed
+                ? localize(language, "Expand all", "展开全部")
+                : localize(language, "Collapse all", "折叠全部")
+            }
             className="h-7 w-7"
           >
             {isEverythingCollapsed ? (
@@ -150,7 +157,11 @@ function TracePanelNavigationHeaderExpanded({
             variant="ghost"
             size="icon"
             onClick={handleDownload}
-            title="Download trace as JSON"
+            title={localize(
+              language,
+              "Download trace as JSON",
+              "下载 Trace JSON",
+            )}
             className="h-7 w-7"
           >
             <Download className="h-3.5 w-3.5" />
@@ -166,7 +177,9 @@ function TracePanelNavigationHeaderExpanded({
               isTimelineView && "bg-primary text-primary-foreground",
             )}
           >
-            <span className="text-xs">Timeline</span>
+            <span className="text-xs">
+              {localize(language, "Timeline", "时间线")}
+            </span>
           </Button>
         </div>
       </div>

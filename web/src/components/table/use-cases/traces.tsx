@@ -82,6 +82,8 @@ import {
   type RefreshInterval,
   REFRESH_INTERVALS,
 } from "@/src/components/table/data-table-refresh-button";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export type TracesTableRow = {
   // Shown by default
@@ -138,6 +140,7 @@ export default function TracesTable({
   externalDateRange,
   limitRows,
 }: TracesTableProps) {
+  const { language } = useLanguage();
   const deriveTopicFromTraceName = useCallback((rawName: string | null) => {
     if (!rawName?.trim()) return "";
     const name = rawName.trim();
@@ -443,9 +446,12 @@ export default function TracesTable({
   const traceDeleteMutation = api.traces.deleteMany.useMutation({
     onSuccess: () => {
       showSuccessToast({
-        title: "Traces deleted",
-        description:
+        title: localize(language, "Traces deleted", "Traces 已删除"),
+        description: localize(
+          language,
           "Selected traces will be deleted. Traces are removed asynchronously and may continue to be visible for up to 15 minutes.",
+          "选中的 traces 将被删除。删除是异步进行的，因此最多 15 分钟内仍可能可见。",
+        ),
       });
     },
     onSettled: () => {
@@ -456,11 +462,19 @@ export default function TracesTable({
   const addToQueueMutation = api.annotationQueueItems.createMany.useMutation({
     onSuccess: (data) => {
       showSuccessToast({
-        title: "Traces added to queue",
-        description: `Selected traces will be added to queue "${data.queueName}". This may take a minute.`,
+        title: localize(language, "Traces added to queue", "Traces 已加入队列"),
+        description: localize(
+          language,
+          `Selected traces will be added to queue "${data.queueName}". This may take a minute.`,
+          `选中的 traces 将被加入队列 "${data.queueName}"。这可能需要一分钟。`,
+        ),
         link: {
           href: `/project/${projectId}/annotation-queues/${data.queueId}`,
-          text: `View queue "${data.queueName}"`,
+          text: localize(
+            language,
+            `View queue "${data.queueName}"`,
+            `查看队列 "${data.queueName}"`,
+          ),
         },
       });
     },
@@ -524,8 +538,12 @@ export default function TracesTable({
           {
             id: ActionId.TraceDelete,
             type: BatchActionType.Delete,
-            label: "Delete Traces",
-            description: `This action permanently deletes ${displayCount} traces and cannot be undone. Trace deletion happens asynchronously and may take up to 24 hours.`,
+            label: localize(language, "Delete Traces", "删除 Traces"),
+            description: localize(
+              language,
+              `This action permanently deletes ${displayCount} traces and cannot be undone. Trace deletion happens asynchronously and may take up to 24 hours.`,
+              `此操作会永久删除 ${displayCount} 个 traces，且无法撤销。Trace 删除是异步进行的，最多可能需要 24 小时。`,
+            ),
             accessCheck: {
               scope: "traces:delete",
               entitlement: "trace-deletion",
@@ -537,9 +555,13 @@ export default function TracesTable({
     {
       id: ActionId.TraceAddToAnnotationQueue,
       type: BatchActionType.Create,
-      label: "Add to Annotation Queue",
-      description: "Add selected traces to an annotation queue.",
-      targetLabel: "Annotation Queue",
+      label: localize(language, "Add to Annotation Queue", "加入标注队列"),
+      description: localize(
+        language,
+        "Add selected traces to an annotation queue.",
+        "将选中的 traces 加入标注队列。",
+      ),
+      targetLabel: localize(language, "Annotation Queue", "标注队列"),
       execute: handleAddToAnnotationQueue,
       accessCheck: {
         scope: "annotationQueues:CUD",
@@ -580,7 +602,7 @@ export default function TracesTable({
         ]),
     {
       accessorKey: "timestamp",
-      header: "Timestamp",
+      header: localize(language, "Timestamp", "时间戳"),
       id: "timestamp",
       size: 150,
       enableHiding: true,
@@ -592,7 +614,7 @@ export default function TracesTable({
     },
     {
       accessorKey: "name",
-      header: "Topic",
+      header: localize(language, "Topic", "主题"),
       id: "name",
       size: 150,
       enableHiding: true,
@@ -605,7 +627,7 @@ export default function TracesTable({
     {
       accessorKey: "levelCounts",
       id: "levelCounts",
-      header: "Observation Levels",
+      header: localize(language, "Observation Levels", "Observation 级别"),
       size: 150,
       cell: ({ row }) => {
         const value: TracesTableRow["levelCounts"] =
@@ -627,7 +649,7 @@ export default function TracesTable({
     {
       accessorKey: "latency",
       id: "latency",
-      header: "Latency",
+      header: localize(language, "Latency", "延迟"),
       size: 100,
       // add seconds to the end of the latency
       cell: ({ row }) => {
@@ -643,7 +665,7 @@ export default function TracesTable({
 
     {
       accessorKey: "tokens",
-      header: "Tokens",
+      header: localize(language, "Tokens", "词元"),
       id: "tokens",
       size: 180,
       cell: ({ row }) => {
@@ -673,7 +695,7 @@ export default function TracesTable({
     {
       accessorKey: "totalCost",
       id: "totalCost",
-      header: "Total Cost",
+      header: localize(language, "Total Cost", "总成本"),
       size: 130,
       cell: ({ row }) => {
         const cost: TracesTableRow["totalCost"] = row.getValue("totalCost");
@@ -950,7 +972,7 @@ export default function TracesTable({
         {
           accessorKey: "inputTokens",
           id: "inputTokens",
-          header: "Input Tokens",
+          header: localize(language, "Input Tokens", "输入词元"),
           size: 110,
           cell: ({ row }: { row: Row<TracesTableRow> }) => {
             const value: TracesTableRow["usage"] = row.getValue("usage");
@@ -964,7 +986,7 @@ export default function TracesTable({
         {
           accessorKey: "outputTokens",
           id: "outputTokens",
-          header: "Output Tokens",
+          header: localize(language, "Output Tokens", "输出词元"),
           size: 110,
           cell: ({ row }: { row: Row<TracesTableRow> }) => {
             const value: TracesTableRow["usage"] = row.getValue("usage");
@@ -978,7 +1000,7 @@ export default function TracesTable({
         {
           accessorKey: "totalTokens",
           id: "totalTokens",
-          header: "Total Tokens",
+          header: localize(language, "Total Tokens", "总词元"),
           size: 110,
           cell: ({ row }: { row: Row<TracesTableRow> }) => {
             const value: TracesTableRow["usage"] = row.getValue("usage");
@@ -996,7 +1018,7 @@ export default function TracesTable({
       : [
           {
             accessorKey: "action",
-            header: "Action",
+            header: localize(language, "Action", "操作"),
             size: 70,
             isFixedPosition: true,
             cell: ({ row }: { row: Row<TracesTableRow> }) => {
@@ -1150,7 +1172,11 @@ export default function TracesTable({
               controllers: viewControllers,
             }}
             searchConfig={{
-              metadataSearchFields: ["ID", "Trace Name", "User ID"],
+              metadataSearchFields: [
+                localize(language, "ID", "ID"),
+                localize(language, "Trace Name", "Trace 名称"),
+                localize(language, "User ID", "用户 ID"),
+              ],
               updateQuery: setSearchQuery,
               currentQuery: searchQuery ?? undefined,
               tableAllowsFullTextSearch: true,

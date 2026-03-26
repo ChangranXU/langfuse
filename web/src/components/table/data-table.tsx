@@ -44,6 +44,8 @@ import { type DataTablePeekViewProps } from "@/src/components/table/peek";
 import isEqual from "lodash/isEqual";
 import { useRouter } from "next/router";
 import { useColumnSizing } from "@/src/components/table/hooks/useColumnSizing";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 interface DataTableProps<TData, TValue> {
   columns: LangfuseColumnDef<TData, TValue>[];
@@ -529,6 +531,7 @@ function TableBodyComponent<TData>({
   getRowClassName,
 }: TableBodyComponentProps<TData>) {
   const visibleColumnCount = Math.max(1, table.getVisibleLeafColumns().length);
+  const { language } = useLanguage();
 
   return (
     <TableBody>
@@ -538,7 +541,7 @@ function TableBodyComponent<TData>({
             colSpan={visibleColumnCount}
             className="content-start border-b text-center"
           >
-            Loading...
+            {localize(language, "Loading...", "加载中...")}
           </TableCell>
         </TableRow>
       ) : table.getRowModel().rows.length ? (
@@ -604,7 +607,7 @@ function TableBodyComponent<TData>({
             <div className="flex h-full w-full items-center justify-center text-center">
               {noResultsMessage ?? (
                 <>
-                  No results.{" "}
+                  {localize(language, "No results.", "没有结果。")}{" "}
                   {help && (
                     <DocPopup description={help.description} href={help.href} />
                   )}

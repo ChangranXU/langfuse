@@ -3,12 +3,18 @@
 
 import Head from "next/head";
 import { OnboardingSurvey } from "@/src/features/onboarding/components/OnboardingSurvey";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export default function OnboardingPage() {
+  const { language } = useLanguage();
+
   return (
     <>
       <Head>
-        <title>Onboarding | Langfuse</title>
+        <title>
+          {localize(language, "Onboarding | Langfuse", "引导设置 | Langfuse")}
+        </title>
       </Head>
       <OnboardingSurvey />
     </>

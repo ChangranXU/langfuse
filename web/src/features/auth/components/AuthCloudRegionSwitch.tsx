@@ -17,6 +17,7 @@ import {
   DialogTrigger,
 } from "@/src/components/ui/dialog";
 import { useLangfuseCloudRegion } from "@/src/features/organizations/hooks";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 const regions =
   env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION === "STAGING"
@@ -60,6 +61,7 @@ export function CloudRegionSwitch({
 }) {
   const capture = usePostHogClientCapture();
   const { isLangfuseCloud, region: cloudRegion } = useLangfuseCloudRegion();
+  const { t } = useLanguage();
 
   if (!isLangfuseCloud) return null;
 
@@ -70,12 +72,12 @@ export function CloudRegionSwitch({
       <div className="flex w-full flex-col gap-2">
         <div>
           <span className="text-sm font-medium leading-none">
-            Data Region
+            {t("auth.cloudRegion.dataRegion")}
             <DataRegionInfo />
           </span>
           {isSignUpPage && cloudRegion === "HIPAA" ? (
             <p className="text-xs text-muted-foreground">
-              Demo project is not available in the HIPAA data region.
+              {t("auth.cloudRegion.demoUnavailableHipaa")}
             </p>
           ) : null}
         </div>
@@ -114,15 +116,14 @@ export function CloudRegionSwitch({
         {cloudRegion === "HIPAA" && (
           <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
             <p>
-              The Business Associate Agreement (BAA) is only effective on the
-              Cloud Pro and Teams plans.{" "}
+              {t("auth.cloudRegion.hipaaNotice")}{" "}
               <a
                 href="https://langfuse.com/security/hipaa"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary-accent underline hover:text-hover-primary-accent"
               >
-                Learn more about HIPAA compliance →
+                HIPAA →
               </a>
             </p>
           </div>
@@ -141,42 +142,46 @@ const DataRegionInfo = () => (
         title="What is this?"
         tabIndex={-1}
       >
-        (what is this?)
+        <DataRegionInfoLabel />
       </a>
     </DialogTrigger>
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Data Regions</DialogTitle>
+        <DialogTitle>
+          <DataRegionInfoTitle />
+        </DialogTitle>
       </DialogHeader>
       <DialogBody>
         <DialogDescription className="flex flex-col gap-2">
-          <p>Langfuse Cloud is available in three data regions:</p>
+          <p>
+            <DataRegionInfoIntro />
+          </p>
           <ul className="list-disc pl-5">
-            <li>US: Oregon (AWS us-west-2)</li>
-            <li>EU: Ireland (AWS eu-west-1)</li>
             <li>
-              HIPAA: Oregon (AWS us-west-2) - HIPAA-compliant region (available
-              with Pro and Teams plans)
+              <DataRegionInfoUs />
+            </li>
+            <li>
+              <DataRegionInfoEu />
+            </li>
+            <li>
+              <DataRegionInfoHipaa />
             </li>
           </ul>
           <p>
-            Regions are strictly separated, and no data is shared across
-            regions. Choosing a region close to you can help improve speed and
-            comply with local data residency laws and privacy regulations.
+            <DataRegionInfoSeparation />
           </p>
           <p>
-            You can have accounts in multiple regions. Each region requires a
-            separate subscription.
+            <DataRegionInfoMultipleAccounts />
           </p>
           <p>
-            Learn more about{" "}
+            <DataRegionInfoLearnMorePrefix />{" "}
             <a
               href="https://langfuse.com/security/data-regions"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary-accent underline"
             >
-              data regions
+              <DataRegionInfoDataRegionsLink />
             </a>{" "}
             and{" "}
             <a
@@ -185,7 +190,7 @@ const DataRegionInfo = () => (
               rel="noopener noreferrer"
               className="text-primary-accent underline"
             >
-              data security & privacy
+              <DataRegionInfoSecurityLink />
             </a>
             .
           </p>
@@ -194,3 +199,58 @@ const DataRegionInfo = () => (
     </DialogContent>
   </Dialog>
 );
+
+const DataRegionInfoLabel = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.whatIsThis")}</>;
+};
+
+const DataRegionInfoTitle = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.dataRegionsTitle")}</>;
+};
+
+const DataRegionInfoIntro = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.availableInThree")}</>;
+};
+
+const DataRegionInfoUs = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.us")}</>;
+};
+
+const DataRegionInfoEu = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.eu")}</>;
+};
+
+const DataRegionInfoHipaa = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.hipaa")}</>;
+};
+
+const DataRegionInfoSeparation = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.separation")}</>;
+};
+
+const DataRegionInfoMultipleAccounts = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.multipleAccounts")}</>;
+};
+
+const DataRegionInfoLearnMorePrefix = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.learnMore")}</>;
+};
+
+const DataRegionInfoDataRegionsLink = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.dataRegionsLink")}</>;
+};
+
+const DataRegionInfoSecurityLink = () => {
+  const { t } = useLanguage();
+  return <>{t("auth.cloudRegion.dataSecurityLink")}</>;
+};

@@ -16,6 +16,8 @@ import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
 import { projectNameSchema } from "@/src/features/auth/lib/projectNameSchema";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export const NewProjectForm = ({
   orgId,
@@ -26,6 +28,7 @@ export const NewProjectForm = ({
 }) => {
   const capture = usePostHogClientCapture();
   const { update: updateSession } = useSession();
+  const { language } = useLanguage();
 
   const form = useForm({
     resolver: zodResolver(projectNameSchema),
@@ -75,10 +78,16 @@ export const NewProjectForm = ({
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Project name</FormLabel>
+              <FormLabel>
+                {localize(language, "Project name", "项目名称")}
+              </FormLabel>
               <FormControl>
                 <Input
-                  placeholder="my-llm-project"
+                  placeholder={localize(
+                    language,
+                    "my-llm-project",
+                    "my-llm-project",
+                  )}
                   {...field}
                   data-testid="new-project-name-input"
                 />
@@ -88,7 +97,7 @@ export const NewProjectForm = ({
           )}
         />
         <Button type="submit" loading={createProjectMutation.isPending}>
-          Create
+          {localize(language, "Create", "创建")}
         </Button>
       </form>
     </Form>

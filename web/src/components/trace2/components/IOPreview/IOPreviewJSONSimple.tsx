@@ -3,6 +3,8 @@ import { type Prisma, type ScoreDomain, deepParseJson } from "@langfuse/shared";
 import { PrettyJsonView } from "@/src/components/ui/PrettyJsonView";
 import { type MediaReturnType } from "@/src/features/media/validation";
 import { CorrectedOutputField } from "./components/CorrectedOutputField";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export interface IOPreviewJSONSimpleProps {
   input?: Prisma.JsonValue;
@@ -74,6 +76,7 @@ export function IOPreviewJSONSimple({
   environment = "default",
   showCorrections = true,
 }: IOPreviewJSONSimpleProps) {
+  const { language } = useLanguage();
   // Parse data if not pre-parsed
   // IMPORTANT: Don't parse while isParsing=true to avoid double-parsing with different object references
   const effectiveInput = useMemo(() => {
@@ -99,7 +102,7 @@ export function IOPreviewJSONSimple({
     <div className="[&_.io-message-content]:px-2 [&_.io-message-header]:px-2">
       {showInput && (
         <PrettyJsonView
-          title="Input"
+          title={localize(language, "Input", "输入")}
           json={input}
           parsedJson={effectiveInput}
           isLoading={isLoading}
@@ -117,7 +120,7 @@ export function IOPreviewJSONSimple({
       )}
       {showOutput && (
         <PrettyJsonView
-          title="Output"
+          title={localize(language, "Output", "输出")}
           json={output}
           parsedJson={effectiveOutput}
           isLoading={isLoading}
@@ -144,7 +147,7 @@ export function IOPreviewJSONSimple({
       )}
       {showMetadata && (
         <PrettyJsonView
-          title="Metadata"
+          title={localize(language, "Metadata", "元数据")}
           json={metadata}
           parsedJson={effectiveMetadata}
           isLoading={isLoading}

@@ -30,6 +30,8 @@ import {
   convertSelectedEnvironmentsToFilter,
 } from "@/src/hooks/use-environment-filter";
 import { Badge } from "@/src/components/ui/badge";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type RowData = {
   userId: string;
@@ -45,6 +47,16 @@ export default function UsersPage() {
   const router = useRouter();
   const projectId = router.query.projectId as string;
   const { isBetaEnabled } = useV4Beta();
+  const { language } = useLanguage();
+
+  const usersTitle = localize(language, "Users", "用户");
+  const docsLabel = localize(language, "docs", "文档");
+  const helpPrefix = localize(
+    language,
+    "Attribute data in Langfuse to a user by adding a userId to your traces. See ",
+    "通过在 traces 中添加 userId，可以将 Langfuse 中的数据关联到用户。查看",
+  );
+  const helpSuffix = localize(language, " to learn more.", "了解更多。");
 
   // Check if the user has any users
   const { data: hasAnyUser, isLoading } = api.users.hasAny.useQuery(
@@ -81,12 +93,11 @@ export default function UsersPage() {
   return (
     <Page
       headerProps={{
-        title: "Users",
+        title: usersTitle,
         help: {
           description: (
             <>
-              Attribute data in Langfuse to a user by adding a userId to your
-              traces. See{" "}
+              {helpPrefix}
               <a
                 href="https://langfuse.com/docs/observability/features/users"
                 target="_blank"
@@ -94,9 +105,9 @@ export default function UsersPage() {
                 className="underline decoration-primary/30 hover:decoration-primary"
                 onClick={(e) => e.stopPropagation()}
               >
-                docs
+                {docsLabel}
               </a>{" "}
-              to learn more.
+              {helpSuffix}
             </>
           ),
           href: "https://langfuse.com/docs/observability/features/users",
@@ -117,6 +128,7 @@ export default function UsersPage() {
 const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
   const router = useRouter();
   const projectId = router.query.projectId as string;
+  const { language } = useLanguage();
 
   const [userFilterState, setUserFilterState] = useQueryFilterState(
     [],
@@ -189,6 +201,52 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
   const [searchQuery, setSearchQuery] = useQueryParam(
     "search",
     withDefault(StringParam, null),
+  );
+
+  const localizedUserFilterColumns = useMemo(
+    () =>
+      usersTableCols.map((column) => {
+        switch (column.name) {
+          case "User ID":
+            return {
+              ...column,
+              name: localize(language, "User ID", "用户 ID"),
+            };
+          case "Environment":
+            return {
+              ...column,
+              name: localize(language, "Environment", "环境"),
+            };
+          case "First Event":
+            return {
+              ...column,
+              name: localize(language, "First Event", "首次事件"),
+            };
+          case "Last Event":
+            return {
+              ...column,
+              name: localize(language, "Last Event", "最近事件"),
+            };
+          case "Total Events":
+            return {
+              ...column,
+              name: localize(language, "Total Events", "事件总数"),
+            };
+          case "Total Tokens":
+            return {
+              ...column,
+              name: localize(language, "Total Tokens", "Token 总数"),
+            };
+          case "Total Cost":
+            return {
+              ...column,
+              name: localize(language, "Total Cost", "总成本"),
+            };
+          default:
+            return column;
+        }
+      }),
+    [language],
   );
 
   const usersV3 = api.users.all.useQuery(
@@ -284,10 +342,13 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
     {
       accessorKey: "userId",
       enableColumnFilter: true,
-      header: "User ID",
+      header: localize(language, "User ID", "用户 ID"),
       headerTooltip: {
-        description:
+        description: localize(
+          language,
           "The unique identifier for the user that was logged in Langfuse. See docs for more details on how to set this up.",
+          "这是在 Langfuse 中记录的用户唯一标识。查看文档了解如何进行设置。",
+        ),
         href: "https://langfuse.com/docs/observability/features/users",
       },
       size: 150,
@@ -305,7 +366,7 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
     },
     {
       accessorKey: "environment",
-      header: "Environment",
+      header: localize(language, "Environment", "环境"),
       id: "environment",
       size: 150,
       enableHiding: true,
@@ -323,9 +384,13 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
     },
     {
       accessorKey: "firstEvent",
-      header: "First Event",
+      header: localize(language, "First Event", "首次事件"),
       headerTooltip: {
-        description: "The earliest trace recorded for this user.",
+        description: localize(
+          language,
+          "The earliest trace recorded for this user.",
+          "该用户最早记录到的 trace。",
+        ),
       },
       size: 150,
       cell: ({ row }) => {
@@ -338,9 +403,13 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
     },
     {
       accessorKey: "lastEvent",
-      header: "Last Event",
+      header: localize(language, "Last Event", "最近事件"),
       headerTooltip: {
-        description: "The latest trace recorded for this user.",
+        description: localize(
+          language,
+          "The latest trace recorded for this user.",
+          "该用户最近记录到的 trace。",
+        ),
       },
       size: 150,
       cell: ({ row }) => {
@@ -353,10 +422,13 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
     },
     {
       accessorKey: "totalEvents",
-      header: "Total Events",
+      header: localize(language, "Total Events", "事件总数"),
       headerTooltip: {
-        description:
+        description: localize(
+          language,
           "Total number of events for the user, includes traces and observations. See data model for more details.",
+          "该用户的事件总数，包含 traces 和 observations。查看数据模型了解更多。",
+        ),
         href: "https://langfuse.com/docs/observability/data-model",
       },
       size: 120,
@@ -370,10 +442,13 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
     },
     {
       accessorKey: "totalTokens",
-      header: "Total Tokens",
+      header: localize(language, "Total Tokens", "Token 总数"),
       headerTooltip: {
-        description:
+        description: localize(
+          language,
           "Total number of tokens used for the user across all generations.",
+          "该用户在所有 generations 中使用的 Token 总数。",
+        ),
         href: "https://langfuse.com/docs/model-usage-and-cost",
       },
       size: 120,
@@ -387,9 +462,13 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
     },
     {
       accessorKey: "totalCost",
-      header: "Total Cost",
+      header: localize(language, "Total Cost", "总成本"),
       headerTooltip: {
-        description: "Total cost for the user across all generations.",
+        description: localize(
+          language,
+          "Total cost for the user across all generations.",
+          "该用户在所有 generations 中产生的总成本。",
+        ),
         href: "https://langfuse.com/docs/model-usage-and-cost",
       },
       size: 120,
@@ -406,14 +485,14 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
   return (
     <>
       <DataTableToolbar
-        filterColumnDefinition={usersTableCols}
+        filterColumnDefinition={localizedUserFilterColumns}
         filterState={userFilterState}
         setFilterState={useDebounce(setUserFilterState)}
         columns={columns}
         timeRange={timeRange}
         setTimeRange={setTimeRange}
         searchConfig={{
-          metadataSearchFields: ["User ID"],
+          metadataSearchFields: [localize(language, "User ID", "用户 ID")],
           updateQuery: setSearchQuery,
           currentQuery: searchQuery ?? undefined,
           tableAllowsFullTextSearch: false,
@@ -446,9 +525,11 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
                       userId: t.id,
                       environment: t.environment ?? undefined,
                       firstEvent:
-                        t.firstTrace?.toLocaleString() ?? "No event yet",
+                        t.firstTrace?.toLocaleString() ??
+                        localize(language, "No event yet", "暂无事件"),
                       lastEvent:
-                        t.lastTrace?.toLocaleString() ?? "No event yet",
+                        t.lastTrace?.toLocaleString() ??
+                        localize(language, "No event yet", "暂无事件"),
                       totalEvents: compactNumberFormatter(
                         isBetaEnabled
                           ? Number(t.totalObservations ?? 0)

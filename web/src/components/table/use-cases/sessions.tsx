@@ -55,6 +55,8 @@ import { TableSelectionManager } from "@/src/features/table/components/TableSele
 import { useScoreColumns } from "@/src/features/scores/hooks/useScoreColumns";
 import { scoreFilters } from "@/src/features/scores/lib/scoreColumns";
 import { BatchExportTableButton } from "@/src/components/BatchExportTableButton";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export type SessionTableRow = {
   id: string;
@@ -87,6 +89,7 @@ export default function SessionsTable({
   omittedFilter = [],
   isBetaEnabled = false,
 }: SessionTableProps) {
+  const { language } = useLanguage();
   const { setDetailPageList } = useDetailPageLists();
   const { timeRange, setTimeRange } = useTableDateRange(projectId);
 
@@ -307,11 +310,19 @@ export default function SessionsTable({
   const addToQueueMutation = api.annotationQueueItems.createMany.useMutation({
     onSuccess: (data) => {
       showSuccessToast({
-        title: "Sessions added to queue",
-        description: `Selected sessions will be added to queue "${data.queueName}". This may take a minute.`,
+        title: localize(language, "Sessions added to queue", "会话已加入队列"),
+        description: localize(
+          language,
+          `Selected sessions will be added to queue "${data.queueName}". This may take a minute.`,
+          `选中的会话将被加入队列 "${data.queueName}"。这可能需要一分钟。`,
+        ),
         link: {
           href: `/project/${projectId}/annotation-queues/${data.queueId}`,
-          text: `View queue "${data.queueName}"`,
+          text: localize(
+            language,
+            `View queue "${data.queueName}"`,
+            `查看队列 "${data.queueName}"`,
+          ),
         },
       });
     },
@@ -408,9 +419,13 @@ export default function SessionsTable({
     {
       id: ActionId.SessionAddToAnnotationQueue,
       type: BatchActionType.Create,
-      label: "Add to Annotation Queue",
-      description: "Add selected sessions to an annotation queue.",
-      targetLabel: "Annotation Queue",
+      label: localize(language, "Add to Annotation Queue", "加入标注队列"),
+      description: localize(
+        language,
+        "Add selected sessions to an annotation queue.",
+        "将选中的会话加入标注队列。",
+      ),
+      targetLabel: localize(language, "Annotation Queue", "标注队列"),
       execute: handleAddToAnnotationQueue,
       accessCheck: {
         scope: "annotationQueues:CUD",
@@ -447,7 +462,7 @@ export default function SessionsTable({
     {
       accessorKey: "id",
       id: "id",
-      header: "ID",
+      header: localize(language, "ID", "ID"),
       size: 200,
       isFixedPosition: true,
       cell: ({ row }) => {
@@ -464,7 +479,7 @@ export default function SessionsTable({
     {
       accessorKey: "createdAt",
       id: "createdAt",
-      header: "Created At",
+      header: localize(language, "Created At", "创建时间"),
       size: 150,
       enableHiding: true,
       enableSorting: true,
@@ -476,7 +491,7 @@ export default function SessionsTable({
     {
       accessorKey: "sessionDuration",
       id: "sessionDuration",
-      header: "Duration",
+      header: localize(language, "Duration", "时长"),
       size: 130,
       enableHiding: true,
       cell: ({ row }) => {
@@ -493,7 +508,7 @@ export default function SessionsTable({
     },
     {
       accessorKey: "environment",
-      header: "Environment",
+      header: localize(language, "Environment", "环境"),
       id: "environment",
       size: 150,
       enableHiding: true,
@@ -512,7 +527,7 @@ export default function SessionsTable({
     },
     {
       accessorKey: "scores",
-      header: "Scores",
+      header: localize(language, "Scores", "评分"),
       id: "scores",
       enableHiding: true,
       defaultHidden: true,
@@ -525,7 +540,7 @@ export default function SessionsTable({
       accessorKey: "userIds",
       enableColumnFilter: !omittedFilter.find((f) => f === "userIds"),
       id: "userIds",
-      header: "User IDs",
+      header: localize(language, "User IDs", "用户 ID"),
       size: 200,
       enableHiding: true,
       cell: ({ row }) => {
@@ -549,10 +564,14 @@ export default function SessionsTable({
     {
       accessorKey: "countTraces",
       id: "countTraces",
-      header: "Traces",
+      header: localize(language, "Traces", "追踪"),
       size: 100,
       headerTooltip: {
-        description: "The number of traces in the session.",
+        description: localize(
+          language,
+          "The number of traces in the session.",
+          "该会话中的 trace 数量。",
+        ),
       },
       enableHiding: true,
       enableSorting: true,
@@ -568,7 +587,7 @@ export default function SessionsTable({
     {
       accessorKey: "inputCost",
       id: "inputCost",
-      header: "Input Cost",
+      header: localize(language, "Input Cost", "输入成本"),
       size: 110,
       enableHiding: true,
       defaultHidden: true,
@@ -586,7 +605,7 @@ export default function SessionsTable({
     {
       accessorKey: "outputCost",
       id: "outputCost",
-      header: "Output Cost",
+      header: localize(language, "Output Cost", "输出成本"),
       size: 110,
       enableHiding: true,
       enableSorting: true,
@@ -604,7 +623,7 @@ export default function SessionsTable({
     {
       accessorKey: "totalCost",
       id: "totalCost",
-      header: "Total Cost",
+      header: localize(language, "Total Cost", "总成本"),
       size: 110,
       enableHiding: true,
       enableSorting: true,
@@ -621,7 +640,7 @@ export default function SessionsTable({
     {
       accessorKey: "inputTokens",
       id: "inputTokens",
-      header: "Input Tokens",
+      header: localize(language, "Input Tokens", "输入 Tokens"),
       size: 110,
       enableHiding: true,
       defaultHidden: true,
@@ -640,7 +659,7 @@ export default function SessionsTable({
     {
       accessorKey: "outputTokens",
       id: "outputTokens",
-      header: "Output Tokens",
+      header: localize(language, "Output Tokens", "输出 Tokens"),
       size: 110,
       enableHiding: true,
       defaultHidden: true,
@@ -659,7 +678,7 @@ export default function SessionsTable({
     {
       accessorKey: "totalTokens",
       id: "totalTokens",
-      header: "Total Tokens",
+      header: localize(language, "Total Tokens", "总 Tokens"),
       size: 110,
       enableHiding: true,
       defaultHidden: true,
@@ -678,7 +697,7 @@ export default function SessionsTable({
     {
       accessorKey: "usage",
       id: "usage",
-      header: "Usage",
+      header: localize(language, "Usage", "用量"),
       size: 220,
       enableHiding: true,
       enableSorting: true,
@@ -705,7 +724,7 @@ export default function SessionsTable({
     {
       accessorKey: "traceTags",
       id: "traceTags",
-      header: "Trace Tags",
+      header: localize(language, "Trace Tags", "Trace 标签"),
       size: 250,
       enableHiding: true,
       defaultHidden: true,
@@ -865,8 +884,11 @@ export default function SessionsTable({
               rowSelection={selectedRows}
               setRowSelection={setSelectedRows}
               help={{
-                description:
+                description: localize(
+                  language,
                   "A session is a collection of related traces, such as a conversation or thread. To begin, add a sessionId to the trace.",
+                  "Session 是一组相关 traces 的集合，例如一次对话或一个线程。开始使用时，请在 trace 中添加 sessionId。",
+                ),
                 href: "https://langfuse.com/docs/observability/features/sessions",
               }}
               rowHeight={rowHeight}

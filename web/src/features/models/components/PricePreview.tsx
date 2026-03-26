@@ -2,6 +2,8 @@ import Decimal from "decimal.js";
 
 import { PriceMapSchema } from "@/src/features/models/validation";
 import { getMaxDecimals } from "@/src/features/models/utils";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function PricePreview({
   prices,
@@ -9,6 +11,7 @@ export function PricePreview({
   prices: Record<string, number | undefined>;
 }) {
   const parsedPrices = PriceMapSchema.safeParse(prices);
+  const { language } = useLanguage();
 
   const getMaxDecimalsForPriceGroup = (
     price: number | undefined,
@@ -28,17 +31,23 @@ export function PricePreview({
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-medium text-muted-foreground">
-            Price Preview
+            {localize(language, "Price Preview", "价格预览")}
           </h4>
         </div>
 
         {parsedPrices.success ? (
           <div className="space-y-2">
             <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2 border-b border-border pb-2 text-xs font-medium text-muted-foreground">
-              <span>Usage Type</span>
-              <span className="text-right">per unit</span>
-              <span className="text-right">per 1K</span>
-              <span className="text-right">per 1M</span>
+              <span>{localize(language, "Usage Type", "用量类型")}</span>
+              <span className="text-right">
+                {localize(language, "per unit", "按单位")}
+              </span>
+              <span className="text-right">
+                {localize(language, "per 1K", "每 1K")}
+              </span>
+              <span className="text-right">
+                {localize(language, "per 1M", "每 1M")}
+              </span>
             </div>
 
             {Object.entries(parsedPrices.data)
@@ -72,7 +81,11 @@ export function PricePreview({
           </div>
         ) : (
           <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-            Invalid price entries. Please check your input format.
+            {localize(
+              language,
+              "Invalid price entries. Please check your input format.",
+              "价格条目无效，请检查输入格式。",
+            )}
           </div>
         )}
       </div>

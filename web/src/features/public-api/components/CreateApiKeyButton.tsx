@@ -20,6 +20,8 @@ import { useLangfuseEnvCode } from "@/src/features/public-api/hooks/useLangfuseE
 import { Label } from "@/src/components/ui/label";
 import { cn } from "@/src/utils/tailwind";
 import { SubHeader } from "@/src/components/layouts/header";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type ApiKeyScope = "project" | "organization";
 
@@ -29,6 +31,7 @@ export function CreateApiKeyButton(props: {
 }) {
   const utils = api.useUtils();
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
 
   const hasProjectAccess = useHasProjectAccess({
     projectId: props.entityId,
@@ -108,13 +111,15 @@ export function CreateApiKeyButton(props: {
       <DialogTrigger asChild>
         <Button variant="secondary">
           <PlusIcon className="-ml-0.5 mr-1.5 h-5 w-5" aria-hidden="true" />
-          Create new API keys
+          {localize(language, "Create new API keys", "创建新的 API 密钥")}
         </Button>
       </DialogTrigger>
       <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>
-            {generatedKeys ? "API Keys" : "Create API Keys"}
+            {generatedKeys
+              ? localize(language, "API Keys", "API 密钥")
+              : localize(language, "Create API Keys", "创建 API 密钥")}
           </DialogTitle>
         </DialogHeader>
         <DialogBody>
@@ -123,10 +128,16 @@ export function CreateApiKeyButton(props: {
           ) : (
             <div className="space-y-4">
               <div>
-                <Label htmlFor="note">Note (optional)</Label>
+                <Label htmlFor="note">
+                  {localize(language, "Note (optional)", "备注（可选）")}
+                </Label>
                 <Input
                   id="note"
-                  placeholder="Production key"
+                  placeholder={localize(
+                    language,
+                    "Production key",
+                    "生产环境密钥",
+                  )}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   onKeyDown={(e) => {
@@ -148,7 +159,7 @@ export function CreateApiKeyButton(props: {
                 mutCreateProjectApiKey.isPending || mutCreateOrgApiKey.isPending
               }
             >
-              Create API keys
+              {localize(language, "Create API keys", "创建 API 密钥")}
             </Button>
           </DialogFooter>
         )}
@@ -167,29 +178,39 @@ export const ApiKeyRender = ({
   className?: string;
 }) => {
   const envCode = useLangfuseEnvCode(generatedKeys);
+  const { language } = useLanguage();
 
   return (
     <div className={cn("space-y-6", className)}>
       <div>
-        <SubHeader title="Secret Key" />
+        <SubHeader title={localize(language, "Secret Key", "密钥")} />
         <div className="text-sm text-muted-foreground">
-          This key can only be viewed once. You can always create new keys in
-          the {scope} settings.
+          {localize(
+            language,
+            `This key can only be viewed once. You can always create new keys in the ${scope} settings.`,
+            `此密钥只能查看一次。你始终可以在${scope === "project" ? "项目" : "组织"}设置中创建新的密钥。`,
+          )}
         </div>
         <CodeView
-          content={generatedKeys?.secretKey ?? "Loading ..."}
+          content={
+            generatedKeys?.secretKey ??
+            localize(language, "Loading ...", "加载中...")
+          }
           className="mt-2"
         />
       </div>
       <div>
-        <SubHeader title="Public Key" />
+        <SubHeader title={localize(language, "Public Key", "公钥")} />
         <CodeView
-          content={generatedKeys?.publicKey ?? "Loading ..."}
+          content={
+            generatedKeys?.publicKey ??
+            localize(language, "Loading ...", "加载中...")
+          }
           className="mt-2"
         />
       </div>
       <div>
-        <SubHeader title=".env" />
+        <SubHeader title={localize(language, ".env", ".env")} />
         <CodeView content={envCode} className="mt-2" />
       </div>
     </div>

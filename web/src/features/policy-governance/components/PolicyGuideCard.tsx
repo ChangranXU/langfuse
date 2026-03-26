@@ -29,6 +29,7 @@ import {
 import { CodeMirrorEditor } from "@/src/components/editor/CodeMirrorEditor";
 import { api } from "@/src/utils/api";
 import { cn } from "@/src/utils/tailwind";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 type PolicyGuideCase = {
   traceId: string;
@@ -261,6 +262,7 @@ export function PolicyGuideCard(props: {
   isGeneratingProposal: boolean;
   hasSectionErrors: boolean;
 }) {
+  const { t } = useLanguage();
   const {
     projectId,
     entry,
@@ -308,7 +310,9 @@ export function PolicyGuideCard(props: {
     (confirmationStats?.rejectedRate ?? 0) * 100 >= highlightThresholdPct;
   const viewViolationsHref = `/project/${projectId}/analysis?analysisLevel=policy_violation&policyType=${encodeURIComponent(entry.name)}`;
   const guideDescription =
-    POLICY_PURPOSES[entry.name] ?? entry.description ?? "Custom policy.";
+    POLICY_PURPOSES[entry.name] ??
+    entry.description ??
+    t("policyCard.customPolicy");
 
   return (
     <Card
@@ -325,7 +329,9 @@ export function PolicyGuideCard(props: {
                 {entry.name}
               </h2>
               <Badge variant={entry.enabled ? "success" : "secondary"}>
-                {entry.enabled ? "Enabled" : "Disabled"}
+                {entry.enabled
+                  ? t("policyCard.enabled")
+                  : t("policyCard.disabled")}
               </Badge>
             </div>
             <p className="max-w-3xl text-sm text-muted-foreground">
@@ -338,14 +344,14 @@ export function PolicyGuideCard(props: {
           <div className="space-y-5">
             <section className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                What this policy does
+                {t("policyCard.whatPolicyDoes")}
               </div>
               <p className="text-sm text-foreground">{guideDescription}</p>
             </section>
 
             <section className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                What it checks today
+                {t("policyCard.whatChecksToday")}
               </div>
               <ul className="space-y-1.5 text-sm text-foreground">
                 {checksToday.length > 0 ? (
@@ -357,7 +363,7 @@ export function PolicyGuideCard(props: {
                   ))
                 ) : (
                   <li className="text-muted-foreground">
-                    No mapped runtime settings found for this policy yet.
+                    {t("policyCard.noMappedRuntimeSettings")}
                   </li>
                 )}
               </ul>
@@ -365,12 +371,12 @@ export function PolicyGuideCard(props: {
 
             <section className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Example blocked action
+                {t("policyCard.exampleBlockedAction")}
               </div>
               <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-foreground">
                 {guideInsight?.exampleBlockedAction ??
                   guideInsight?.examplePrompt ??
-                  "No recent blocked action found for this policy in the selected range."}
+                  t("policyCard.noRecentBlockedAction")}
               </div>
             </section>
 
@@ -381,7 +387,7 @@ export function PolicyGuideCard(props: {
             >
               <AccordionItem value="similar-cases" className="border-none">
                 <AccordionTrigger className="py-3 text-sm">
-                  Similar past cases
+                  {t("policyCard.similarPastCases")}
                 </AccordionTrigger>
                 <AccordionContent className="space-y-3 pt-1">
                   {guideInsight?.similarCases.length ? (
@@ -396,7 +402,9 @@ export function PolicyGuideCard(props: {
                           </div>
                           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                             {policyCase.turnIndex != null ? (
-                              <span>Turn {policyCase.turnIndex}</span>
+                              <span>
+                                {t("policyCard.turn")} {policyCase.turnIndex}
+                              </span>
                             ) : null}
                             {policyCase.traceTimestamp ? (
                               <span>
@@ -409,7 +417,7 @@ export function PolicyGuideCard(props: {
                               disabled={!policyCase.targetObservationId}
                               className="inline-flex items-center gap-1 text-primary hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
                             >
-                              Open trace
+                              {t("policyCard.openTrace")}
                               <ArrowRight className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -421,15 +429,15 @@ export function PolicyGuideCard(props: {
                         ) : null}
                         {policyCase.examplePrompt ? (
                           <div className="mt-2 text-xs text-muted-foreground">
-                            Prompt snippet: {policyCase.examplePrompt}
+                            {t("policyCard.promptSnippet")}{" "}
+                            {policyCase.examplePrompt}
                           </div>
                         ) : null}
                       </div>
                     ))
                   ) : (
                     <div className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">
-                      No matched rejected-confirmation cases found for this
-                      policy in the selected range.
+                      {t("policyCard.noMatchedCases")}
                     </div>
                   )}
                 </AccordionContent>
@@ -440,7 +448,7 @@ export function PolicyGuideCard(props: {
               <section className="rounded-lg border border-primary/20 bg-primary/5 p-3">
                 <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
                   <Sparkles className="h-3.5 w-3.5" />
-                  Beginner summary
+                  {t("policyCard.beginnerSummary")}
                 </div>
                 <div className="whitespace-pre-wrap text-sm text-foreground">
                   {beginnerSummary}
@@ -476,11 +484,11 @@ export function PolicyGuideCard(props: {
                 }}
               >
                 <Sparkles className="mr-2 h-4 w-4" />
-                Generate beginner summary
+                {t("policyCard.generateBeginnerSummary")}
               </Button>
               <Button asChild type="button" variant="outline">
                 <Link href={viewViolationsHref}>
-                  View violations
+                  {t("policyCard.viewViolations")}
                   <ExternalLink className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
@@ -489,7 +497,7 @@ export function PolicyGuideCard(props: {
                 variant="ghost"
                 onClick={() => setIsAdvancedEditorOpen((prev) => !prev)}
               >
-                Open advanced editor
+                {t("policyCard.openAdvancedEditor")}
                 <ChevronDown
                   className={cn(
                     "ml-2 h-4 w-4 transition-transform",
@@ -504,25 +512,25 @@ export function PolicyGuideCard(props: {
             <div className="rounded-lg border bg-muted/20 p-3">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <ShieldCheck className="h-4 w-4 text-primary" />
-                Confirmation signals
+                {t("policyCard.confirmationSignals")}
               </div>
               {confirmationStats ? (
                 <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                   <div className="flex items-center justify-between gap-3">
-                    <span>Total confirmations</span>
+                    <span>{t("policyCard.totalConfirmations")}</span>
                     <span className="font-medium text-foreground">
                       {confirmationStats.totalCount}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span>Accepted</span>
+                    <span>{t("policyCard.accepted")}</span>
                     <span className="font-medium text-foreground">
                       {formatSummaryPercent(confirmationStats.acceptedRate)} (
                       {confirmationStats.acceptedCount})
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span>Rejected</span>
+                    <span>{t("policyCard.rejected")}</span>
                     <span
                       className={cn(
                         "font-medium",
@@ -536,14 +544,14 @@ export function PolicyGuideCard(props: {
                     </span>
                   </div>
                   <div className="rounded-md border bg-background px-2.5 py-2 text-xs">
-                    Highlight threshold on Home: {highlightThresholdPct}%
-                    rejected.
+                    {t("policyCard.highlightThresholdPrefix")}{" "}
+                    {highlightThresholdPct}%{" "}
+                    {t("policyCard.highlightThresholdSuffix")}
                   </div>
                 </div>
               ) : (
                 <div className="mt-3 text-sm text-muted-foreground">
-                  No confirmation data found for this policy in the selected
-                  range.
+                  {t("policyCard.noConfirmationData")}
                 </div>
               )}
             </div>
@@ -551,17 +559,17 @@ export function PolicyGuideCard(props: {
             <div className="rounded-lg border bg-muted/20 p-3">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <FileWarning className="h-4 w-4 text-primary" />
-                Policy evidence
+                {t("policyCard.policyEvidence")}
               </div>
               <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                 <div className="flex items-center justify-between gap-3">
-                  <span>Recent violations</span>
+                  <span>{t("policyCard.recentViolations")}</span>
                   <span className="font-medium text-foreground">
                     {guideInsight?.recentViolationCount ?? 0}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span>Matched past cases</span>
+                  <span>{t("policyCard.matchedPastCases")}</span>
                   <span className="font-medium text-foreground">
                     {guideInsight?.similarCases.length ?? 0}
                   </span>
@@ -578,9 +586,11 @@ export function PolicyGuideCard(props: {
           <CollapsibleContent className="space-y-4 border-t pt-5">
             <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-4 py-3">
               <div>
-                <p className="text-sm font-medium text-foreground">Enabled</p>
+                <p className="text-sm font-medium text-foreground">
+                  {t("policyCard.enabled")}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  Toggle policy activation in `policy_registry.json`.
+                  {t("policyCard.toggleActivation")}
                 </p>
               </div>
               <Switch
@@ -591,7 +601,7 @@ export function PolicyGuideCard(props: {
             </div>
 
             <div className="space-y-2">
-              <Label>Description</Label>
+              <Label>{t("policyCard.description")}</Label>
               <Textarea
                 value={entry.description}
                 disabled={!hasUpdateAccess}
@@ -615,7 +625,7 @@ export function PolicyGuideCard(props: {
                     />
                     {sectionErrors[section] ? (
                       <p className="text-xs text-destructive">
-                        Invalid JSON: {sectionErrors[section]}
+                        {t("policyCard.invalidJson")}: {sectionErrors[section]}
                       </p>
                     ) : null}
                   </div>
@@ -623,7 +633,7 @@ export function PolicyGuideCard(props: {
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">
-                No dedicated runtime settings mapped for this policy.
+                {t("policyCard.noDedicatedRuntimeSettings")}
               </p>
             )}
 
@@ -636,7 +646,9 @@ export function PolicyGuideCard(props: {
                   !hasUpdateAccess || isGeneratingProposal || hasSectionErrors
                 }
               >
-                {isGeneratingProposal ? "Generating..." : "LLM Suggest Update"}
+                {isGeneratingProposal
+                  ? t("policyCard.generating")
+                  : t("policyCard.llmSuggestUpdate")}
               </Button>
             </div>
           </CollapsibleContent>

@@ -103,6 +103,8 @@ import { Button } from "@/src/components/ui/button";
 import { BulkErrorAnalysisButton } from "@/src/features/error-analysis/components/BulkErrorAnalysisButton";
 import { RunEvaluationDialog } from "@/src/features/batch-actions/components/RunEvaluationDialog/index";
 import { AddObservationsToDatasetDialog } from "@/src/features/batch-actions/components/AddObservationsToDatasetDialog/index";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export type EventsTableRow = {
   // Identity fields
@@ -283,6 +285,7 @@ export default function ObservationsEventsTable({
   initialPolicyTypeFilter,
   omittedColumns,
 }: EventsTableProps) {
+  const { language } = useLanguage();
   const router = useRouter();
   const { viewId } = router.query;
 
@@ -331,7 +334,7 @@ export default function ObservationsEventsTable({
     "s",
   );
 
-  const [inputFilterState, setInputFilterState] = useQueryFilterState(
+  const [inputFilterState] = useQueryFilterState(
     // Default type filter - exclude SPAN and EVENT types
     !viewId && !disableDefaultTypeFilter
       ? [
@@ -821,9 +824,13 @@ export default function ObservationsEventsTable({
     {
       id: ActionId.ObservationAddToAnnotationQueue,
       type: BatchActionType.Create,
-      label: "Add to Annotation Queue",
-      description: "Add selected observations to an annotation queue.",
-      targetLabel: "Annotation Queue",
+      label: localize(language, "Add to Annotation Queue", "加入标注队列"),
+      description: localize(
+        language,
+        "Add selected observations to an annotation queue.",
+        "将选中的 observations 加入标注队列。",
+      ),
+      targetLabel: localize(language, "Annotation Queue", "标注队列"),
       execute: handleAddToAnnotationQueue,
       accessCheck: {
         scope: "annotationQueues:CUD",
@@ -832,8 +839,12 @@ export default function ObservationsEventsTable({
     {
       id: ActionId.ObservationAddToDataset,
       type: BatchActionType.Create,
-      label: "Add to Dataset",
-      description: "Add selected observations to a dataset",
+      label: localize(language, "Add to Dataset", "加入数据集"),
+      description: localize(
+        language,
+        "Add selected observations to a dataset",
+        "将选中的 observations 加入数据集",
+      ),
       customDialog: true,
       accessCheck: {
         scope: "datasets:CUD",
@@ -842,8 +853,12 @@ export default function ObservationsEventsTable({
     {
       id: ActionId.ObservationBatchEvaluation,
       type: BatchActionType.Create,
-      label: "Evaluate",
-      description: "Run evaluations on selected observations.",
+      label: localize(language, "Evaluate", "评估"),
+      description: localize(
+        language,
+        "Run evaluations on selected observations.",
+        "对选中的 observations 运行评估。",
+      ),
       customDialog: true,
       icon: <LightbulbIcon className="mr-2 h-4 w-4" />,
       accessCheck: {
@@ -865,6 +880,71 @@ export default function ObservationsEventsTable({
   );
 
   const enableSorting = !hideControls;
+  const getLocalizedEventsColumnName = useCallback(
+    (id: string) => {
+      switch (id) {
+        case "startTime":
+          return localize(language, "Timestamp", "时间戳");
+        case "type":
+          return localize(language, "Type", "类型");
+        case "name":
+          return localize(language, "Name", "名称");
+        case "traceName":
+          return localize(language, "Trace Name", "Trace 名称");
+        case "input":
+          return localize(language, "Input", "输入");
+        case "output":
+          return localize(language, "Output", "输出");
+        case "level":
+          return localize(language, "Level", "级别");
+        case "statusMessage":
+          return localize(language, "Status Message", "状态消息");
+        case "latency":
+          return localize(language, "Latency", "延迟");
+        case "totalCost":
+          return localize(language, "Total Cost", "总成本");
+        case "inputCost":
+          return localize(language, "Input Cost", "输入成本");
+        case "outputCost":
+          return localize(language, "Output Cost", "输出成本");
+        case "toolDefinitions":
+          return localize(language, "Available Tools", "可用工具");
+        case "toolCalls":
+          return localize(language, "Tool Calls", "工具调用");
+        case "timeToFirstToken":
+          return localize(language, "Time to First Token", "首词元时间");
+        case "inputTokens":
+          return localize(language, "Input Tokens", "输入词元");
+        case "outputTokens":
+          return localize(language, "Output Tokens", "输出词元");
+        case "totalTokens":
+          return localize(language, "Total Tokens", "总词元");
+        case "providedModelName":
+          return localize(language, "Model", "模型");
+        case "promptName":
+          return localize(language, "Prompt", "Prompt");
+        case "environment":
+          return localize(language, "Environment", "环境");
+        case "traceTags":
+          return localize(language, "Trace Tags", "Trace 标签");
+        case "endTime":
+          return localize(language, "End Time", "结束时间");
+        case "traceId":
+          return localize(language, "Trace ID", "Trace ID");
+        case "modelId":
+          return localize(language, "Model ID", "模型 ID");
+        case "version":
+          return localize(language, "Version", "版本");
+        case "userId":
+          return localize(language, "User ID", "用户 ID");
+        case "sessionId":
+          return localize(language, "Session ID", "会话 ID");
+        default:
+          return getEventsColumnName(id);
+      }
+    },
+    [language],
+  );
 
   const columns: LangfuseColumnDef<EventsTableRow>[] = [
     ...(hideControls ? [] : [selectActionColumn]),
@@ -899,7 +979,11 @@ export default function ObservationsEventsTable({
                       <Link
                         href={href}
                         prefetch={false}
-                        aria-label="Open full trace"
+                        aria-label={localize(
+                          language,
+                          "Open full trace",
+                          "打开完整 Trace",
+                        )}
                         onClick={(e) => {
                           e.stopPropagation();
                         }}
@@ -908,7 +992,9 @@ export default function ObservationsEventsTable({
                       </Link>
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Open full trace</TooltipContent>
+                  <TooltipContent side="top">
+                    {localize(language, "Open full trace", "打开完整 Trace")}
+                  </TooltipContent>
                 </Tooltip>
               );
             },
@@ -918,7 +1004,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "startTime",
       id: "startTime",
-      header: getEventsColumnName("startTime"),
+      header: getLocalizedEventsColumnName("startTime"),
       size: 150,
       enableHiding: true,
       enableSorting,
@@ -930,7 +1016,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "type",
       id: "type",
-      header: getEventsColumnName("type"),
+      header: getLocalizedEventsColumnName("type"),
       size: 50,
       enableSorting,
       cell: ({ row }) => {
@@ -945,7 +1031,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "name",
       id: "name",
-      header: getEventsColumnName("name"),
+      header: getLocalizedEventsColumnName("name"),
       size: 150,
       enableSorting,
       cell: ({ row }) => {
@@ -956,7 +1042,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "traceName",
       id: "traceName",
-      header: getEventsColumnName("traceName"),
+      header: getLocalizedEventsColumnName("traceName"),
       size: 150,
       enableSorting: true,
       cell: ({ row }) => {
@@ -966,7 +1052,7 @@ export default function ObservationsEventsTable({
     },
     {
       accessorKey: "input",
-      header: getEventsColumnName("input"),
+      header: getLocalizedEventsColumnName("input"),
       id: "input",
       size: 220,
       cell: ({ row }) => {
@@ -992,7 +1078,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "output",
       id: "output",
-      header: getEventsColumnName("output"),
+      header: getLocalizedEventsColumnName("output"),
       size: 220,
       cell: ({ row }) => {
         const value: string | undefined = row.getValue("output");
@@ -1017,7 +1103,7 @@ export default function ObservationsEventsTable({
     },
     {
       accessorKey: "metadata",
-      header: "Metadata",
+      header: localize(language, "Metadata", "元数据"),
       size: 300,
       headerTooltip: {
         description: "Add metadata to traces to track additional information.",
@@ -1135,7 +1221,7 @@ export default function ObservationsEventsTable({
                 </DropdownMenu>
               </div>
             )
-          : getEventsColumnName("level"),
+          : getLocalizedEventsColumnName("level"),
       size: 320,
       minSize: 260,
       headerTooltip: replaceLevelWithPolicyType
@@ -1211,7 +1297,7 @@ export default function ObservationsEventsTable({
     },
     {
       accessorKey: "statusMessage",
-      header: getEventsColumnName("statusMessage"),
+      header: getLocalizedEventsColumnName("statusMessage"),
       id: "statusMessage",
       size: 150,
       headerTooltip: {
@@ -1235,7 +1321,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "latency",
       id: "latency",
-      header: getEventsColumnName("latency"),
+      header: getLocalizedEventsColumnName("latency"),
       size: 100,
       cell: ({ row }) => {
         const latency: number | undefined = row.getValue("latency");
@@ -1248,7 +1334,7 @@ export default function ObservationsEventsTable({
     },
     {
       accessorKey: "totalCost",
-      header: getEventsColumnName("totalCost"),
+      header: getLocalizedEventsColumnName("totalCost"),
       id: "totalCost",
       size: 120,
       cell: ({ row }) => {
@@ -1285,7 +1371,7 @@ export default function ObservationsEventsTable({
         {
           accessorKey: "inputCost",
           id: "inputCost",
-          header: getEventsColumnName("inputCost"),
+          header: getLocalizedEventsColumnName("inputCost"),
           size: 120,
           cell: ({ row }: { row: Row<EventsTableRow> }) => {
             const value = row.getValue("cost") as {
@@ -1304,7 +1390,7 @@ export default function ObservationsEventsTable({
         {
           accessorKey: "outputCost",
           id: "outputCost",
-          header: getEventsColumnName("outputCost"),
+          header: getLocalizedEventsColumnName("outputCost"),
           size: 120,
           cell: ({ row }: { row: Row<EventsTableRow> }) => {
             const value = row.getValue("cost") as {
@@ -1325,7 +1411,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "toolDefinitions",
       id: "toolDefinitions",
-      header: getEventsColumnName("toolDefinitions"),
+      header: getLocalizedEventsColumnName("toolDefinitions"),
       size: 120,
       enableHiding: true,
       enableSorting,
@@ -1340,7 +1426,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "toolCalls",
       id: "toolCalls",
-      header: getEventsColumnName("toolCalls"),
+      header: getLocalizedEventsColumnName("toolCalls"),
       size: 100,
       enableHiding: true,
       enableSorting,
@@ -1355,7 +1441,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "timeToFirstToken",
       id: "timeToFirstToken",
-      header: getEventsColumnName("timeToFirstToken"),
+      header: getLocalizedEventsColumnName("timeToFirstToken"),
       size: 150,
       enableHiding: true,
       enableSorting,
@@ -1372,7 +1458,7 @@ export default function ObservationsEventsTable({
     },
     {
       accessorKey: "usage",
-      header: "Usage",
+      header: localize(language, "Usage", "用量"),
       id: "usage",
       enableHiding: true,
       defaultHidden: true,
@@ -1385,7 +1471,7 @@ export default function ObservationsEventsTable({
         {
           accessorKey: "tokensPerSecond",
           id: "tokensPerSecond",
-          header: "Tokens per second",
+          header: localize(language, "Tokens per second", "每秒词元"),
           size: 200,
           cell: ({ row }: { row: Row<EventsTableRow> }) => {
             const latency: number | undefined = row.getValue("latency");
@@ -1410,7 +1496,7 @@ export default function ObservationsEventsTable({
         {
           accessorKey: "inputTokens",
           id: "inputTokens",
-          header: getEventsColumnName("inputTokens"),
+          header: getLocalizedEventsColumnName("inputTokens"),
           size: 100,
           enableHiding: true,
           defaultHidden: true,
@@ -1427,7 +1513,7 @@ export default function ObservationsEventsTable({
         {
           accessorKey: "outputTokens",
           id: "outputTokens",
-          header: getEventsColumnName("outputTokens"),
+          header: getLocalizedEventsColumnName("outputTokens"),
           size: 100,
           enableHiding: true,
           defaultHidden: true,
@@ -1444,7 +1530,7 @@ export default function ObservationsEventsTable({
         {
           accessorKey: "totalTokens",
           id: "totalTokens",
-          header: getEventsColumnName("totalTokens"),
+          header: getLocalizedEventsColumnName("totalTokens"),
           size: 100,
           enableHiding: true,
           defaultHidden: true,
@@ -1463,7 +1549,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "providedModelName",
       id: "providedModelName",
-      header: getEventsColumnName("providedModelName"),
+      header: getLocalizedEventsColumnName("providedModelName"),
       size: 150,
       enableHiding: true,
       enableSorting,
@@ -1507,7 +1593,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "promptName",
       id: "promptName",
-      header: getEventsColumnName("promptName"),
+      header: getLocalizedEventsColumnName("promptName"),
       headerTooltip: {
         description: "Link to prompt version in Langfuse prompt management.",
         href: "https://langfuse.com/docs/prompt-management/get-started",
@@ -1524,7 +1610,7 @@ export default function ObservationsEventsTable({
     },
     {
       accessorKey: "environment",
-      header: getEventsColumnName("environment"),
+      header: getLocalizedEventsColumnName("environment"),
       id: "environment",
       size: 150,
       enableHiding: true,
@@ -1544,7 +1630,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "traceTags",
       id: "traceTags",
-      header: getEventsColumnName("traceTags"),
+      header: getLocalizedEventsColumnName("traceTags"),
       size: 250,
       enableHiding: true,
       cell: ({ row }) => {
@@ -1565,7 +1651,7 @@ export default function ObservationsEventsTable({
     },
     {
       accessorKey: "scores",
-      header: "Scores",
+      header: localize(language, "Scores", "评分"),
       id: "scores",
       enableHiding: true,
       defaultHidden: true,
@@ -1577,7 +1663,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "endTime",
       id: "endTime",
-      header: getEventsColumnName("endTime"),
+      header: getLocalizedEventsColumnName("endTime"),
       size: 150,
       enableHiding: true,
       enableSorting,
@@ -1590,7 +1676,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "traceId",
       id: "traceId",
-      header: getEventsColumnName("traceId"),
+      header: getLocalizedEventsColumnName("traceId"),
       size: 100,
       cell: ({ row }) => {
         const value = row.getValue("traceId");
@@ -1605,7 +1691,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "modelId",
       id: "modelId",
-      header: getEventsColumnName("modelId"),
+      header: getLocalizedEventsColumnName("modelId"),
       size: 100,
       enableHiding: true,
       defaultHidden: true,
@@ -1613,7 +1699,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "version",
       id: "version",
-      header: getEventsColumnName("version"),
+      header: getLocalizedEventsColumnName("version"),
       size: 100,
       headerTooltip: {
         description: "Track changes via the version tag.",
@@ -1626,7 +1712,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "userId",
       id: "userId",
-      header: getEventsColumnName("userId"),
+      header: getLocalizedEventsColumnName("userId"),
       size: 150,
       enableHiding: true,
       defaultHidden: true,
@@ -1634,7 +1720,7 @@ export default function ObservationsEventsTable({
     {
       accessorKey: "sessionId",
       id: "sessionId",
-      header: getEventsColumnName("sessionId"),
+      header: getLocalizedEventsColumnName("sessionId"),
       size: 150,
       enableHiding: true,
       defaultHidden: true,
@@ -1702,12 +1788,16 @@ export default function ObservationsEventsTable({
     if (hideControls) return undefined;
     return {
       itemType: "TRACE",
-      customTitlePrefix: "Observation ID:",
+      customTitlePrefix: localize(
+        language,
+        "Observation ID:",
+        "Observation ID：",
+      ),
       detailNavigationKey: "observations",
       children: <PeekViewObservationDetail projectId={projectId} />,
       ...peekNavigationProps,
     };
-  }, [projectId, peekNavigationProps, hideControls]);
+  }, [language, projectId, peekNavigationProps, hideControls]);
 
   const rows: EventsTableRow[] = useMemo(() => {
     const result =
@@ -1914,7 +2004,12 @@ export default function ObservationsEventsTable({
             columns={effectiveColumns}
             filterState={queryFilter.filterState}
             searchConfig={{
-              metadataSearchFields: ["ID", "Name", "Trace Name", "Model"],
+              metadataSearchFields: [
+                localize(language, "ID", "ID"),
+                localize(language, "Name", "名称"),
+                localize(language, "Trace Name", "Trace 名称"),
+                localize(language, "Model", "模型"),
+              ],
               updateQuery: setSearchQuery,
               currentQuery: searchQuery ?? undefined,
               searchType,

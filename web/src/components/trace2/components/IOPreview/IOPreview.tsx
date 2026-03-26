@@ -17,6 +17,8 @@ import { IOPreviewPretty } from "./IOPreviewPretty";
 import { Button } from "@/src/components/ui/button";
 import { ActionButton } from "@/src/components/ActionButton";
 import { BookOpen, X } from "lucide-react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export type { ViewMode };
 
@@ -157,6 +159,7 @@ export function IOPreview({
   environment = "default",
   showCorrections = true,
 }: IOPreviewProps) {
+  const { language } = useLanguage();
   const capture = usePostHogClientCapture();
   const [dismissedTraceViewNotifications, setDismissedTraceViewNotifications] =
     useLocalStorage<string[]>(STORAGE_KEY, []);
@@ -184,11 +187,24 @@ export function IOPreview({
       parsedMetadata !== undefined ? parsedMetadata : metadata;
 
     return [
-      `Input: ${getValueShapeLabel(resolvedInput)}`,
-      `Output: ${getValueShapeLabel(resolvedOutput)}`,
-      `Metadata: ${getValueShapeLabel(resolvedMetadata)}`,
+      localize(
+        language,
+        `Input: ${getValueShapeLabel(resolvedInput)}`,
+        `输入：${getValueShapeLabel(resolvedInput)}`,
+      ),
+      localize(
+        language,
+        `Output: ${getValueShapeLabel(resolvedOutput)}`,
+        `输出：${getValueShapeLabel(resolvedOutput)}`,
+      ),
+      localize(
+        language,
+        `Metadata: ${getValueShapeLabel(resolvedMetadata)}`,
+        `元数据：${getValueShapeLabel(resolvedMetadata)}`,
+      ),
     ].join(" | ");
   }, [
+    language,
     isParserObservation,
     input,
     output,
@@ -266,7 +282,8 @@ export function IOPreview({
       {isParserObservation && parserSummary && (
         <div className="mx-2 mb-2 rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">
-            {parserSummaryTitle ?? "Parser step"}
+            {parserSummaryTitle ??
+              localize(language, "Parser step", "解析器步骤")}
           </span>
           <span className="ml-2">{parserSummary}</span>
         </div>
@@ -356,7 +373,7 @@ export function IOPreview({
                     : [...prev, EMPTY_IO_ALERT_ID],
                 );
               }}
-              title="Dismiss"
+              title={localize(language, "Dismiss", "关闭")}
             >
               <X className="h-3.5 w-3.5" />
             </Button>
@@ -365,11 +382,19 @@ export function IOPreview({
                 <BookOpen className="h-4 w-4 text-muted-foreground" />
               </div>
               <h3 className="text-sm font-semibold">
-                Looks like this trace didn&apos;t receive an input or output.
+                {localize(
+                  language,
+                  "Looks like this trace didn't receive an input or output.",
+                  "看起来这个 Trace 没有收到输入或输出。",
+                )}
               </h3>
             </div>
             <p className="max-w-sm text-sm text-muted-foreground">
-              Add it in your code to make debugging a lot easier.
+              {localize(
+                language,
+                "Add it in your code to make debugging a lot easier.",
+                "在代码中补充这些信息会让调试容易很多。",
+              )}
             </p>
             <ActionButton
               variant="outline"
@@ -378,7 +403,7 @@ export function IOPreview({
               trackingEventName="notification:click_link"
               trackingProps={{ notification_id: EMPTY_IO_ALERT_ID }}
             >
-              View Documentation
+              {localize(language, "View Documentation", "查看文档")}
             </ActionButton>
           </div>
         </div>

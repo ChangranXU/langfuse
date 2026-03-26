@@ -17,6 +17,10 @@ import {
   isLLMCompletionError,
   logger,
 } from "@langfuse/shared/src/server";
+import {
+  applyLanguageInstructionToMessages,
+  getLanguageFromCookieHeader,
+} from "@/src/features/i18n/server";
 import { projectRoleAccessRights } from "@/src/features/rbac/constants/projectAccessRights";
 import {
   createTRPCRouter,
@@ -601,6 +605,7 @@ export const policySuggestionRouter = createTRPCRouter({
     .input(GeneratePolicySuggestionInputSchema)
     .output(PolicySuggestionGenerateOutputSchema)
     .mutation(async ({ input, ctx }) => {
+      const language = getLanguageFromCookieHeader(ctx.headers.cookie);
       if (input.fromTimestamp > input.toTimestamp) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -781,7 +786,11 @@ export const policySuggestionRouter = createTRPCRouter({
       try {
         rawResult = await fetchLLMCompletion({
           llmConnection: parsedKey.data,
-          messages,
+          messages: applyLanguageInstructionToMessages({
+            messages,
+            language,
+            mode: "structured",
+          }),
           modelParams: {
             provider: parsedKey.data.provider,
             adapter: LLMAdapter.OpenAI,
@@ -796,7 +805,11 @@ export const policySuggestionRouter = createTRPCRouter({
         try {
           rawResult = await fetchLLMCompletion({
             llmConnection: parsedKey.data,
-            messages,
+            messages: applyLanguageInstructionToMessages({
+              messages,
+              language,
+              mode: "structured",
+            }),
             modelParams: {
               provider: parsedKey.data.provider,
               adapter: LLMAdapter.OpenAI,

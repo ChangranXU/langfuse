@@ -10,6 +10,8 @@ import { Loader2 } from "lucide-react";
 import { PrettyJsonView } from "@/src/components/ui/PrettyJsonView";
 import { type TreeNode } from "@/src/components/trace2/lib/types";
 import { useLogViewObservationIO } from "./useLogViewObservationIO";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export interface LogViewExpandedContentProps {
   node: TreeNode;
@@ -40,6 +42,7 @@ export const LogViewExpandedContent = memo(function LogViewExpandedContent({
   externalExpansionState,
   onExternalExpansionChange,
 }: LogViewExpandedContentProps) {
+  const { language } = useLanguage();
   // Fetch I/O data lazily
   const { data, isLoading, isError } = useLogViewObservationIO({
     observationId: node.id,
@@ -76,13 +79,15 @@ export const LogViewExpandedContent = memo(function LogViewExpandedContent({
       {isLoading && (
         <div className="flex items-center justify-center py-4">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-xs text-muted-foreground">Loading...</span>
+          <span className="ml-2 text-xs text-muted-foreground">
+            {localize(language, "Loading...", "加载中...")}
+          </span>
         </div>
       )}
 
       {isError && (
         <div className="flex h-full w-full items-center bg-destructive/10 px-6 py-2 text-xs text-destructive">
-          Failed to load data
+          {localize(language, "Failed to load data", "加载数据失败")}
         </div>
       )}
 
@@ -104,7 +109,7 @@ export const LogViewExpandedContent = memo(function LogViewExpandedContent({
 
       {!jsonData && !isLoading && !isError && (
         <div className="py-2 pl-6 text-xs text-muted-foreground">
-          No input/output/metadata
+          {localize(language, "No input/output/metadata", "无输入/输出/元数据")}
         </div>
       )}
     </div>

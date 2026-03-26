@@ -69,6 +69,8 @@ import {
   aggregateTraceMetrics,
   getDescendantIds,
 } from "@/src/components/trace2/lib/trace-aggregation";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export interface ObservationDetailViewProps {
   observation: ObservationReturnTypeWithMetadata;
@@ -81,6 +83,7 @@ export function ObservationDetailView({
   projectId,
   traceId,
 }: ObservationDetailViewProps) {
+  const { language } = useLanguage();
   // Tab and view state from URL (via SelectionContext)
   const {
     selectedTab: globalSelectedTab,
@@ -298,17 +301,29 @@ export function ObservationDetailView({
             >
               <TooltipProvider>
                 <TabsBarList>
-                  <TabsBarTrigger value="preview">Preview</TabsBarTrigger>
+                  <TabsBarTrigger value="preview">
+                    {localize(language, "Preview", "预览")}
+                  </TabsBarTrigger>
                   {showLogViewTab && (
                     <TabsBarTrigger value="log">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span>Log View</span>
+                          <span>
+                            {localize(language, "Log View", "日志视图")}
+                          </span>
                         </TooltipTrigger>
                         <TooltipContent className="text-xs">
                           {isLogViewVirtualized
-                            ? `Shows all ${observations.length} observations with virtualization enabled.`
-                            : "Shows all observations concatenated. Great for quickly scanning through them."}
+                            ? localize(
+                                language,
+                                `Shows all ${observations.length} observations with virtualization enabled.`,
+                                `显示全部 ${observations.length} 个 observations，并启用虚拟化。`,
+                              )
+                            : localize(
+                                language,
+                                "Shows all observations concatenated. Great for quickly scanning through them.",
+                                "将所有 observations 拼接显示，便于快速浏览。",
+                              )}
                         </TooltipContent>
                       </Tooltip>
                     </TabsBarTrigger>
@@ -343,7 +358,7 @@ export function ObservationDetailView({
                             value="pretty"
                             className="h-fit px-1 text-xs"
                           >
-                            Formatted
+                            {localize(language, "Formatted", "格式化")}
                           </TabsTrigger>
                           {selectedTab === "log" && isLogViewVirtualized ? (
                             <HoverCard openDelay={200}>
@@ -364,15 +379,27 @@ export function ObservationDetailView({
                                 sideOffset={8}
                               >
                                 <p className="font-medium">
-                                  JSON view unavailable
+                                  {localize(
+                                    language,
+                                    "JSON view unavailable",
+                                    "JSON 视图不可用",
+                                  )}
                                 </p>
                                 <p className="mt-1 text-muted-foreground">
-                                  Disabled for traces with{" "}
+                                  {localize(
+                                    language,
+                                    "Disabled for traces with",
+                                    "以下情况已禁用：Trace 包含",
+                                  )}{" "}
                                   {
                                     TRACE_VIEW_CONFIG.logView
                                       .virtualizationThreshold
                                   }
-                                  + observations to maintain performance.
+                                  {localize(
+                                    language,
+                                    "+ observations to maintain performance.",
+                                    "+ 个 observations，以保持性能。",
+                                  )}
                                 </p>
                               </HoverCardContent>
                             </HoverCard>
@@ -396,7 +423,7 @@ export function ObservationDetailView({
                               onCheckedChange={handleBetaToggle}
                             />
                             <span className="text-xs text-muted-foreground">
-                              Beta
+                              {localize(language, "Beta", "测试版")}
                             </span>
                           </div>
                         )}
@@ -523,17 +550,27 @@ export function ObservationDetailView({
         >
           <TooltipProvider>
             <TabsBarList>
-              <TabsBarTrigger value="preview">Preview</TabsBarTrigger>
+              <TabsBarTrigger value="preview">
+                {localize(language, "Preview", "预览")}
+              </TabsBarTrigger>
               {showLogViewTab && (
                 <TabsBarTrigger value="log">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span>Log View</span>
+                      <span>{localize(language, "Log View", "日志视图")}</span>
                     </TooltipTrigger>
                     <TooltipContent className="text-xs">
                       {isLogViewVirtualized
-                        ? `Shows all ${observations.length} observations with virtualization enabled.`
-                        : "Shows all observations concatenated. Great for quickly scanning through them."}
+                        ? localize(
+                            language,
+                            `Shows all ${observations.length} observations with virtualization enabled.`,
+                            `显示全部 ${observations.length} 个 observations，并启用虚拟化。`,
+                          )
+                        : localize(
+                            language,
+                            "Shows all observations concatenated. Great for quickly scanning through them.",
+                            "将所有 observations 拼接显示，便于快速浏览。",
+                          )}
                     </TooltipContent>
                   </Tooltip>
                 </TabsBarTrigger>
@@ -565,7 +602,7 @@ export function ObservationDetailView({
                         value="pretty"
                         className="h-fit px-1 text-xs"
                       >
-                        Formatted
+                        {localize(language, "Formatted", "格式化")}
                       </TabsTrigger>
                       {selectedTab === "log" && isLogViewVirtualized ? (
                         <HoverCard openDelay={200}>
@@ -585,14 +622,28 @@ export function ObservationDetailView({
                             className="w-64 text-sm"
                             sideOffset={8}
                           >
-                            <p className="font-medium">JSON view unavailable</p>
+                            <p className="font-medium">
+                              {localize(
+                                language,
+                                "JSON view unavailable",
+                                "JSON 视图不可用",
+                              )}
+                            </p>
                             <p className="mt-1 text-muted-foreground">
-                              Disabled for traces with{" "}
+                              {localize(
+                                language,
+                                "Disabled for traces with",
+                                "以下情况已禁用：Trace 包含",
+                              )}{" "}
                               {
                                 TRACE_VIEW_CONFIG.logView
                                   .virtualizationThreshold
                               }
-                              + observations to maintain performance.
+                              {localize(
+                                language,
+                                "+ observations to maintain performance.",
+                                "+ 个 observations，以保持性能。",
+                              )}
                             </p>
                           </HoverCardContent>
                         </HoverCard>
@@ -615,7 +666,7 @@ export function ObservationDetailView({
                           onCheckedChange={handleBetaToggle}
                         />
                         <span className="text-xs text-muted-foreground">
-                          Beta
+                          {localize(language, "Beta", "测试版")}
                         </span>
                       </div>
                     )}

@@ -20,7 +20,7 @@ import {
   isTableDataRangeOptionAvailable,
   isDashboardDateRangeOptionAvailable,
   getAbbreviatedTimeRange,
-  getTimeRangeLabel,
+  getLocalizedTimeRangeLabel,
 } from "@/src/utils/date-range-utils";
 import { useEntitlementLimit } from "@/src/features/entitlements/hooks";
 import { useMemo } from "react";
@@ -30,6 +30,8 @@ import {
   HoverCardTrigger,
 } from "@/src/components/ui/hover-card";
 import { HoverCardPortal } from "@radix-ui/react-hover-card";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type BaseDateRangeDropdownProps<T> = {
   selectedOption: T;
@@ -44,15 +46,17 @@ const BaseDateRangeDropdown = <T extends string>({
   limitedOptions,
   onSelectionChange,
 }: BaseDateRangeDropdownProps<T>) => {
+  const { language } = useLanguage();
+
   return (
     <Select value={selectedOption} onValueChange={onSelectionChange}>
       <SelectTrigger className="w-fit font-medium hover:bg-accent hover:text-accent-foreground focus:ring-0 focus:ring-offset-0">
-        <SelectValue placeholder="Select">
+        <SelectValue placeholder={localize(language, "Select", "选择")}>
           <div className="flex items-center gap-2">
             <span className="w-10 rounded bg-muted px-1.5 py-0.5 text-center text-xs">
               {getAbbreviatedTimeRange(selectedOption)}
             </span>
-            <span>{getTimeRangeLabel(selectedOption)}</span>
+            <span>{getLocalizedTimeRangeLabel(selectedOption, language)}</span>
           </div>
         </SelectValue>
       </SelectTrigger>
@@ -73,7 +77,7 @@ const BaseDateRangeDropdown = <T extends string>({
                 <span className="w-10 rounded bg-muted px-1.5 py-0.5 text-center text-xs">
                   {getAbbreviatedTimeRange(item)}
                 </span>
-                <span>{getTimeRangeLabel(item)}</span>
+                <span>{getLocalizedTimeRangeLabel(item, language)}</span>
               </div>
             </SelectItem>
           );
@@ -86,7 +90,11 @@ const BaseDateRangeDropdown = <T extends string>({
               </HoverCardTrigger>
               <HoverCardPortal>
                 <HoverCardContent className="w-60 text-sm" side="right">
-                  This time range is not available in your current plan.
+                  {localize(
+                    language,
+                    "This time range is not available in your current plan.",
+                    "当前套餐不支持此时间范围。",
+                  )}
                 </HoverCardContent>
               </HoverCardPortal>
             </HoverCard>

@@ -12,6 +12,8 @@ import { useUiCustomization } from "@/src/ee/features/ui-customization/useUiCust
 import { type LlmApiKeys } from "@langfuse/shared";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { PencilIcon } from "lucide-react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function UpdateLLMApiKeyDialog({
   apiKey,
@@ -26,6 +28,7 @@ export function UpdateLLMApiKeyDialog({
 }) {
   const [internalOpen, setInternalOpen] = useState(false);
   const uiCustomization = useUiCustomization();
+  const { language } = useLanguage();
 
   // Use external state if provided, otherwise use internal state
   const isOpen = open !== undefined ? open : internalOpen;
@@ -50,7 +53,9 @@ export function UpdateLLMApiKeyDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <DialogHeader>
-          <DialogTitle>Update LLM Connection</DialogTitle>
+          <DialogTitle>
+            {localize(language, "Update LLM Connection", "更新 LLM 连接")}
+          </DialogTitle>
         </DialogHeader>
         {isOpen && (
           <CreateLLMApiKeyForm

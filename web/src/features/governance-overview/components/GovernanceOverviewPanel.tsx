@@ -22,6 +22,7 @@ import {
 import { type FilterState } from "@langfuse/shared";
 import { type DataPoint } from "@/src/features/widgets/chart-library/chart-props";
 import { Button } from "@/src/components/ui/button";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 function getSafeIsoTime(value: unknown): string {
   const asString = String(value);
@@ -39,6 +40,7 @@ export function GovernanceOverviewPanel(props: {
   isLoading?: boolean;
   metricsVersion?: ViewVersion;
 }) {
+  const { t } = useLanguage();
   const [trendMode, setTrendMode] = useState<
     "error_warning" | "policy_violation"
   >("error_warning");
@@ -152,17 +154,17 @@ export function GovernanceOverviewPanel(props: {
       const group = groupedByTime.get(time)!;
       errorWarningTrendData.push({
         time_dimension: time,
-        dimension: "Errors",
+        dimension: t("dashboard.governance.errors"),
         metric: group.ERROR,
       });
       errorWarningTrendData.push({
         time_dimension: time,
-        dimension: "Warnings",
+        dimension: t("dashboard.governance.warnings"),
         metric: group.WARNING,
       });
       policyViolationTrendData.push({
         time_dimension: time,
-        dimension: "Policy Violations",
+        dimension: t("dashboard.governance.policyViolations"),
         metric: group.POLICY_VIOLATION,
       });
     }
@@ -182,7 +184,7 @@ export function GovernanceOverviewPanel(props: {
       latestWarnings: latest?.WARNING ?? 0,
       latestPolicyViolations: latest?.POLICY_VIOLATION ?? 0,
     };
-  }, [observations.data]);
+  }, [observations.data, t]);
 
   const experiencePackCount =
     summaryQuery.data?.summary.experiences.length ?? 0;
@@ -205,82 +207,96 @@ export function GovernanceOverviewPanel(props: {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Governed Signals</CardTitle>
+            <CardTitle className="text-sm">
+              {t("dashboard.governance.governedSignals")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
               {compactNumberFormatter(governedCount)}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              ERROR + WARNING + POLICY_VIOLATION observations
+              {t("dashboard.governance.governedSignalsDesc")}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Errors</CardTitle>
+            <CardTitle className="text-sm">
+              {t("dashboard.governance.errors")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold text-destructive">
               {compactNumberFormatter(errorCount)}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Latest bucket: {compactNumberFormatter(latestErrors)}
+              {t("dashboard.governance.latestBucket")}:{" "}
+              {compactNumberFormatter(latestErrors)}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Warnings</CardTitle>
+            <CardTitle className="text-sm">
+              {t("dashboard.governance.warnings")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold text-yellow-600 dark:text-yellow-400">
               {compactNumberFormatter(warningCount)}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Latest bucket: {compactNumberFormatter(latestWarnings)}
+              {t("dashboard.governance.latestBucket")}:{" "}
+              {compactNumberFormatter(latestWarnings)}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Policy Violations</CardTitle>
+            <CardTitle className="text-sm">
+              {t("dashboard.governance.policyViolations")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold text-emerald-500 dark:text-emerald-200">
               {compactNumberFormatter(policyViolationCount)}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Latest bucket: {compactNumberFormatter(latestPolicyViolations)}
+              {t("dashboard.governance.latestBucket")}:{" "}
+              {compactNumberFormatter(latestPolicyViolations)}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Governance Assets</CardTitle>
+            <CardTitle className="text-sm">
+              {t("dashboard.governance.assets")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
               {compactNumberFormatter(experiencePackCount)}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Experience packs · {compactNumberFormatter(promptPackLineCount)}{" "}
-              prompt lines
+              {t("dashboard.governance.experiencePacks")} ·{" "}
+              {compactNumberFormatter(promptPackLineCount)}{" "}
+              {t("dashboard.governance.promptLines")}
             </div>
           </CardContent>
         </Card>
       </div>
 
       <DashboardCard
-        title="Governance Trend"
+        title={t("dashboard.governance.trend")}
         description={
           trendMode === "policy_violation"
-            ? "Count of blocked policy actions over time (prevent high-risk actions)."
-            : "Error/Warning changes over time with governance monitoring."
+            ? t("dashboard.governance.trendPolicyDescription")
+            : t("dashboard.governance.trendErrorDescription")
         }
         isLoading={isPanelLoading}
       >
@@ -290,14 +306,14 @@ export function GovernanceOverviewPanel(props: {
             size="sm"
             onClick={() => setTrendMode("error_warning")}
           >
-            Error & Warning
+            {t("dashboard.governance.errorsAndWarnings")}
           </Button>
           <Button
             variant={trendMode === "policy_violation" ? "default" : "outline"}
             size="sm"
             onClick={() => setTrendMode("policy_violation")}
           >
-            Policy Violation
+            {t("dashboard.governance.policyViolationsTab")}
           </Button>
         </div>
         {hasTrendData ? (
@@ -318,8 +334,8 @@ export function GovernanceOverviewPanel(props: {
             isLoading={isPanelLoading}
             description={
               trendMode === "policy_violation"
-                ? "No POLICY_VIOLATION observations found in the current time range."
-                : "No ERROR/WARNING observations found in the current time range."
+                ? t("dashboard.governance.noPolicyViolations")
+                : t("dashboard.governance.noErrorsWarnings")
             }
           />
         )}

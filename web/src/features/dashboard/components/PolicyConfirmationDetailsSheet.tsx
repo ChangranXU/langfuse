@@ -16,6 +16,7 @@ import {
 import { cn } from "@/src/utils/tailwind";
 import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { StringParam, useQueryParam } from "use-query-params";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 type PolicyConfirmationState = "accepted" | "rejected";
 
@@ -60,6 +61,7 @@ export function PolicyConfirmationDetailsSheet(props: {
     toTimestamp,
     metricsVersion,
   } = props;
+  const { t } = useLanguage();
   const [selectedDetailKey, setSelectedDetailKey] = useState<string | null>(
     null,
   );
@@ -197,7 +199,11 @@ export function PolicyConfirmationDetailsSheet(props: {
         continue;
       }
 
-      const label = (node.node ?? node.name ?? "Unnamed node").trim();
+      const label = (
+        node.node ??
+        node.name ??
+        t("dashboard.policyConfirmationDetails.unnamedNode")
+      ).trim();
       if (!isSessionTurnNodeLabel(label)) {
         continue;
       }
@@ -231,24 +237,29 @@ export function PolicyConfirmationDetailsSheet(props: {
     });
   }, [selectedTurnNodes, setSelectedObservationId]);
 
-  const stateLabel = state === "accepted" ? "Accepted" : "Rejected";
+  const stateLabel =
+    state === "accepted"
+      ? t("dashboard.policyConfirmationDetails.stateAccepted")
+      : t("dashboard.policyConfirmationDetails.stateRejected");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="flex min-h-0 min-w-[92vw] max-w-none flex-col gap-0 overflow-hidden p-0">
         <SheetHeader className="border-b px-6 py-4">
           <SheetTitle>
-            {stateLabel} turns for {policyName}
+            {stateLabel} {t("dashboard.policyConfirmationDetails.turnsFor")}{" "}
+            {policyName}
           </SheetTitle>
           <SheetDescription>
-            Select a turn to inspect its nodes and the full trace.
+            {t("dashboard.policyConfirmationDetails.selectTurnInspect")}
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <div className="flex w-[22rem] min-w-[22rem] flex-col border-r">
             <div className="border-b px-4 py-3 text-sm font-medium">
-              Matching turns ({details.length})
+              {t("dashboard.policyConfirmationDetails.matchingTurns")} (
+              {details.length})
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {details.length > 0 ? (
@@ -272,11 +283,13 @@ export function PolicyConfirmationDetailsSheet(props: {
                           {detail.traceName || detail.traceId}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          Trace ID: {detail.traceId}
+                          {t("dashboard.policyConfirmationDetails.traceId")}:{" "}
+                          {detail.traceId}
                         </div>
                         <div className="mt-2">
                           <Badge variant="secondary">
-                            Turn {detail.turnIndex ?? "-"}
+                            {t("dashboard.policyConfirmationDetails.turn")}{" "}
+                            {detail.turnIndex ?? "-"}
                           </Badge>
                         </div>
                       </button>
@@ -286,7 +299,9 @@ export function PolicyConfirmationDetailsSheet(props: {
               ) : (
                 <NoDataOrLoading
                   isLoading={detailsQuery.isLoading}
-                  description="No matching turns found."
+                  description={t(
+                    "dashboard.policyConfirmationDetails.noMatchingTurns",
+                  )}
                 />
               )}
             </div>
@@ -296,14 +311,14 @@ export function PolicyConfirmationDetailsSheet(props: {
             <div className="border-b px-4 py-3">
               <div className="text-sm font-medium text-foreground">
                 {selectedDetail
-                  ? `Nodes in turn ${selectedDetail.turnIndex ?? "-"}`
-                  : "Turn nodes"}
+                  ? `${t("dashboard.policyConfirmationDetails.nodesInTurn")} ${selectedDetail.turnIndex ?? "-"}`
+                  : t("dashboard.policyConfirmationDetails.turnNodes")}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {selectedDetail ? (
                   selectedTrace.isLoading || isGraphLoading ? (
                     <span className="text-xs text-muted-foreground">
-                      Loading nodes...
+                      {t("dashboard.policyConfirmationDetails.loadingNodes")}
                     </span>
                   ) : selectedTurnNodes.length > 0 ? (
                     selectedTurnNodes.map((node) => {
@@ -327,12 +342,14 @@ export function PolicyConfirmationDetailsSheet(props: {
                     })
                   ) : (
                     <span className="text-xs text-muted-foreground">
-                      No nodes found for this turn.
+                      {t("dashboard.policyConfirmationDetails.noNodesForTurn")}
                     </span>
                   )
                 ) : (
                   <span className="text-xs text-muted-foreground">
-                    Select a turn from the list.
+                    {t(
+                      "dashboard.policyConfirmationDetails.selectTurnFromList",
+                    )}
                   </span>
                 )}
               </div>
@@ -359,7 +376,9 @@ export function PolicyConfirmationDetailsSheet(props: {
                   <div className="flex h-full items-center justify-center p-4">
                     <NoDataOrLoading
                       isLoading={selectedTrace.isLoading}
-                      description="Unable to load this trace."
+                      description={t(
+                        "dashboard.policyConfirmationDetails.unableToLoadTrace",
+                      )}
                     />
                   </div>
                 )
@@ -367,7 +386,9 @@ export function PolicyConfirmationDetailsSheet(props: {
                 <div className="flex h-full items-center justify-center p-4">
                   <NoDataOrLoading
                     isLoading={detailsQuery.isLoading}
-                    description="Select a turn to inspect its trace."
+                    description={t(
+                      "dashboard.policyConfirmationDetails.selectTurnInspectTrace",
+                    )}
                   />
                 </div>
               )}

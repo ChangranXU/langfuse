@@ -39,6 +39,8 @@ import { SettingsTableCard } from "@/src/components/layouts/settings-table-card"
 import useSessionStorage from "@/src/components/useSessionStorage";
 import { useQueryParam, withDefault, StringParam } from "use-query-params";
 import { useEffect } from "react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export type MembersTableRow = {
   user: {
@@ -71,6 +73,7 @@ export function MembersTable({
     : `orgMembers_${orgId}_pagination`;
 
   const session = useSession();
+  const { language } = useLanguage();
   const hasOrgViewAccess = useHasOrganizationAccess({
     organizationId: orgId,
     scope: "organizationMembers:read",
@@ -151,7 +154,7 @@ export function MembersTable({
     {
       accessorKey: "user",
       id: "user",
-      header: "Name",
+      header: localize(language, "Name", "姓名"),
       cell: ({ row }) => {
         const { name, image } = row.getValue("user") as MembersTableRow["user"];
         return (
@@ -159,7 +162,7 @@ export function MembersTable({
             <Avatar className="h-7 w-7">
               <AvatarImage
                 src={image ?? undefined}
-                alt={name ?? "User Avatar"}
+                alt={name ?? localize(language, "User Avatar", "用户头像")}
               />
               <AvatarFallback>
                 {name
@@ -179,12 +182,12 @@ export function MembersTable({
     {
       accessorKey: "email",
       id: "email",
-      header: "Email",
+      header: localize(language, "Email", "邮箱"),
     },
     {
       accessorKey: "providers",
       id: "providers",
-      header: "SSO Provider",
+      header: localize(language, "SSO Provider", "SSO 提供方"),
       enableHiding: true,
       cell: ({ row }) => {
         const providers = row.getValue("providers") as string[];
@@ -196,10 +199,13 @@ export function MembersTable({
     {
       accessorKey: "orgRole",
       id: "orgRole",
-      header: "Organization Role",
+      header: localize(language, "Organization Role", "组织角色"),
       headerTooltip: {
-        description:
+        description: localize(
+          language,
           "The org-role is the default role for this user in this organization and applies to the organization and all its projects.",
+          "组织角色是该用户在当前组织中的默认角色，并适用于该组织及其所有项目。",
+        ),
         href: "https://langfuse.com/docs/administration/rbac",
       },
       cell: ({ row }) => {
@@ -234,14 +240,22 @@ export function MembersTable({
                     side="right"
                   >
                     <p className="text-xs">
-                      The organization-level role can to be edited in the{" "}
+                      {localize(
+                        language,
+                        "The organization-level role can be edited in the ",
+                        "组织级角色可在",
+                      )}
                       <Link
                         href={`/organization/${orgId}/settings/members`}
                         className="underline"
                       >
-                        organization settings
+                        {localize(
+                          language,
+                          "organization settings",
+                          "组织设置",
+                        )}
                       </Link>
-                      .
+                      {localize(language, ".", "中修改。")}
                     </p>
                   </HoverCardContent>
                 </HoverCardPortal>
@@ -258,10 +272,13 @@ export function MembersTable({
           {
             accessorKey: "projectRole",
             id: "projectRole",
-            header: "Project Role",
+            header: localize(language, "Project Role", "项目角色"),
             headerTooltip: {
-              description:
+              description: localize(
+                language,
                 "The role for this user in this specific project. This role overrides the default project role.",
+                "这是该用户在当前特定项目中的角色，会覆盖默认项目角色。",
+              ),
               href: "https://langfuse.com/docs/administration/rbac",
             },
             cell: ({
@@ -276,7 +293,9 @@ export function MembersTable({
                 "meta",
               ) as MembersTableRow["meta"];
 
-              if (!projectRolesEntitlement) return "N/A on plan";
+              if (!projectRolesEntitlement) {
+                return localize(language, "N/A on plan", "当前套餐不可用");
+              }
 
               return (
                 <ProjectRoleDropdown
@@ -297,7 +316,7 @@ export function MembersTable({
     {
       accessorKey: "createdAt",
       id: "createdAt",
-      header: "Member Since",
+      header: localize(language, "Member Since", "加入时间"),
       enableHiding: true,
       defaultHidden: true,
       cell: ({ row }) => {
@@ -308,7 +327,7 @@ export function MembersTable({
     {
       accessorKey: "meta",
       id: "meta",
-      header: "Actions",
+      header: localize(language, "Actions", "操作"),
       enableHiding: false,
       cell: ({ row }) => {
         const { orgMembershipId, userId } = row.getValue(
@@ -322,8 +341,16 @@ export function MembersTable({
                 if (
                   confirm(
                     userId === session.data?.user?.id
-                      ? "Are you sure you want to leave the organization?"
-                      : "Are you sure you want to remove this member from the organization?",
+                      ? localize(
+                          language,
+                          "Are you sure you want to leave the organization?",
+                          "确定要离开该组织吗？",
+                        )
+                      : localize(
+                          language,
+                          "Are you sure you want to remove this member from the organization?",
+                          "确定要将该成员移出组织吗？",
+                        ),
                   )
                 ) {
                   mutDeleteMember.mutate({ orgId, orgMembershipId });
@@ -372,9 +399,15 @@ export function MembersTable({
   if (project ? !hasProjectViewAccess : !hasOrgViewAccess) {
     return (
       <Alert>
-        <AlertTitle>Access Denied</AlertTitle>
+        <AlertTitle>
+          {localize(language, "Access Denied", "访问被拒绝")}
+        </AlertTitle>
         <AlertDescription>
-          You do not have permission to view members of this organization.
+          {localize(
+            language,
+            "You do not have permission to view members of this organization.",
+            "你没有权限查看该组织的成员。",
+          )}
         </AlertDescription>
       </Alert>
     );
@@ -392,7 +425,10 @@ export function MembersTable({
           <CreateProjectMemberButton orgId={orgId} project={project} />
         }
         searchConfig={{
-          metadataSearchFields: ["Name", "Email"],
+          metadataSearchFields: [
+            localize(language, "Name", "姓名"),
+            localize(language, "Email", "邮箱"),
+          ],
           updateQuery: setSearchQuery,
           currentQuery: searchQuery ?? undefined,
           tableAllowsFullTextSearch: false,
@@ -485,13 +521,18 @@ const OrgRoleDropdown = ({
 }) => {
   const utils = api.useUtils();
   const session = useSession();
+  const { language } = useLanguage();
   const mut = api.members.updateOrgMembership.useMutation({
     onSuccess: (data) => {
       utils.members.invalidate();
       if (data.userId === session.data?.user?.id) void session.update();
       showSuccessToast({
-        title: "Saved",
-        description: "Organization role updated successfully",
+        title: localize(language, "Saved", "已保存"),
+        description: localize(
+          language,
+          "Organization role updated successfully",
+          "组织角色已成功更新",
+        ),
         duration: 2000,
       });
     },
@@ -505,7 +546,11 @@ const OrgRoleDropdown = ({
         if (
           userId !== session.data?.user?.id ||
           confirm(
-            "Are you sure that you want to change your own organization role?",
+            localize(
+              language,
+              "Are you sure that you want to change your own organization role?",
+              "确定要更改你自己的组织角色吗？",
+            ),
           )
         ) {
           mut.mutate({
@@ -545,13 +590,18 @@ const ProjectRoleDropdown = ({
 }) => {
   const utils = api.useUtils();
   const session = useSession();
+  const { language } = useLanguage();
   const mut = api.members.updateProjectRole.useMutation({
     onSuccess: (data) => {
       utils.members.invalidate();
       if (data.userId === session.data?.user?.id) void session.update();
       showSuccessToast({
-        title: "Saved",
-        description: "Project role updated successfully",
+        title: localize(language, "Saved", "已保存"),
+        description: localize(
+          language,
+          "Project role updated successfully",
+          "项目角色已成功更新",
+        ),
         duration: 2000,
       });
     },
@@ -564,7 +614,13 @@ const ProjectRoleDropdown = ({
       onValueChange={(value) => {
         if (
           userId !== session.data?.user?.id ||
-          confirm("Are you sure that you want to change your own project role?")
+          confirm(
+            localize(
+              language,
+              "Are you sure that you want to change your own project role?",
+              "确定要更改你自己的项目角色吗？",
+            ),
+          )
         ) {
           mut.mutate({
             orgId,

@@ -9,6 +9,8 @@ import {
   parseStringArray,
   parseStringRecord,
 } from "@/src/features/governance/utils/policyMetadata";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type PolicyAction = {
   tool: string;
@@ -49,6 +51,7 @@ export function ObservationGovernanceAnalysisPanel(props: {
   traceMetadata?: unknown;
   hasProjectAccess: boolean;
 }) {
+  const { language } = useLanguage();
   const isPolicyViolation = props.level === "POLICY_VIOLATION";
   const isGovernanceLevel =
     props.level === "ERROR" || props.level === "WARNING" || isPolicyViolation;
@@ -139,11 +142,19 @@ export function ObservationGovernanceAnalysisPanel(props: {
   }, [policyDescriptions, policyNames, policySources]);
 
   const panelTitle = isPolicyViolation
-    ? "Policy Enforcement"
-    : "Governance Analysis & Suggestion";
+    ? localize(language, "Policy Enforcement", "策略执行")
+    : localize(language, "Governance Analysis & Suggestion", "治理分析与建议");
   const panelSubtitle = isPolicyViolation
-    ? "This node was blocked by policy. Action shows what was prevented."
-    : "Node-level diagnostics and mitigation guidance for this failure.";
+    ? localize(
+        language,
+        "This node was blocked by policy. Action shows what was prevented.",
+        "该节点被策略阻止。操作会显示被阻止的内容。",
+      )
+    : localize(
+        language,
+        "Node-level diagnostics and mitigation guidance for this failure.",
+        "针对该失败的节点级诊断与缓解建议。",
+      );
 
   const rawOutputContent = statusMessage ?? null;
   const policyActions = useMemo(
@@ -219,7 +230,7 @@ export function ObservationGovernanceAnalysisPanel(props: {
           {inactivateErrorType ? (
             <div>
               <div className="mb-1 min-w-0 text-xs font-medium text-muted-foreground">
-                Inactive Policy Signal
+                {localize(language, "Inactive Policy Signal", "未激活策略信号")}
               </div>
               <div className="min-w-0 whitespace-pre-wrap break-words rounded-md border bg-background p-2 font-mono text-xs text-muted-foreground">
                 {inactivateErrorType}
@@ -229,7 +240,7 @@ export function ObservationGovernanceAnalysisPanel(props: {
           {isPolicyViolation ? (
             <div>
               <div className="mb-1 min-w-0 text-xs font-medium text-muted-foreground">
-                Action
+                {localize(language, "Action", "操作")}
               </div>
               <div className="min-w-0 rounded-md border bg-background p-2 text-sm">
                 {policyActions.length > 0 ? (
@@ -257,7 +268,7 @@ export function ObservationGovernanceAnalysisPanel(props: {
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground">
-                    Not available
+                    {localize(language, "Not available", "不可用")}
                   </div>
                 )}
               </div>
@@ -266,13 +277,15 @@ export function ObservationGovernanceAnalysisPanel(props: {
 
           <div>
             <div className="mb-1 min-w-0 text-xs font-medium text-muted-foreground">
-              {isPolicyViolation ? "Policy Details" : "Output"}
+              {isPolicyViolation
+                ? localize(language, "Policy Details", "策略详情")
+                : localize(language, "Output", "输出")}
             </div>
             {isPolicyViolation ? (
               <div className="divide-y rounded-md border bg-background text-xs">
                 <div className="space-y-2 p-3">
                   <div className="text-sm font-semibold text-foreground">
-                    Policy Protected
+                    {localize(language, "Policy Protected", "策略保护")}
                   </div>
                   {normalizedPolicyProtectedLines.length > 0 ? (
                     <div className="mt-1 space-y-1">
@@ -287,13 +300,13 @@ export function ObservationGovernanceAnalysisPanel(props: {
                     </div>
                   ) : (
                     <div className="mt-1 text-muted-foreground">
-                      Not available
+                      {localize(language, "Not available", "不可用")}
                     </div>
                   )}
                 </div>
                 <div className="space-y-2 p-3">
                   <div className="text-sm font-semibold text-foreground">
-                    Policy Names
+                    {localize(language, "Policy Names", "策略名称")}
                   </div>
                   {policyNameList.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
@@ -308,13 +321,13 @@ export function ObservationGovernanceAnalysisPanel(props: {
                     </div>
                   ) : (
                     <div className="mt-1 text-muted-foreground">
-                      Not available
+                      {localize(language, "Not available", "不可用")}
                     </div>
                   )}
                 </div>
                 <div className="space-y-2 p-3">
                   <div className="text-sm font-semibold text-foreground">
-                    Policy Descriptions
+                    {localize(language, "Policy Descriptions", "策略说明")}
                   </div>
                   <div className="space-y-1 text-muted-foreground">
                     {policyNameList.length > 0 ? (
@@ -323,17 +336,18 @@ export function ObservationGovernanceAnalysisPanel(props: {
                           <span className="font-medium text-foreground">
                             {policyName}:
                           </span>{" "}
-                          {policyDescriptions[policyName] ?? "Not available"}
+                          {policyDescriptions[policyName] ??
+                            localize(language, "Not available", "不可用")}
                         </div>
                       ))
                     ) : (
-                      <div>Not available</div>
+                      <div>{localize(language, "Not available", "不可用")}</div>
                     )}
                   </div>
                 </div>
                 <div className="space-y-2 p-3">
                   <div className="text-sm font-semibold text-foreground">
-                    Policy Sources
+                    {localize(language, "Policy Sources", "策略来源")}
                   </div>
                   <div className="space-y-2 text-muted-foreground">
                     {policyNameList.length > 0 ? (
@@ -346,12 +360,13 @@ export function ObservationGovernanceAnalysisPanel(props: {
                             {policyName}
                           </div>
                           <div className="mt-1 whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
-                            {policySources[policyName] ?? "Not available"}
+                            {policySources[policyName] ??
+                              localize(language, "Not available", "不可用")}
                           </div>
                         </div>
                       ))
                     ) : (
-                      <div>Not available</div>
+                      <div>{localize(language, "Not available", "不可用")}</div>
                     )}
                   </div>
                 </div>
@@ -377,7 +392,11 @@ export function ObservationGovernanceAnalysisPanel(props: {
                       variant="secondary"
                       size="icon-xs"
                       onClick={() => setIsOutputExpanded((prev) => !prev)}
-                      title={isOutputExpanded ? "Collapse" : "Expand"}
+                      title={
+                        isOutputExpanded
+                          ? localize(language, "Collapse", "收起")
+                          : localize(language, "Expand", "展开")
+                      }
                     >
                       {isOutputExpanded ? (
                         <ChevronUp className="h-3 w-3" />
@@ -390,33 +409,49 @@ export function ObservationGovernanceAnalysisPanel(props: {
               </div>
             ) : !isPolicyViolation ? (
               <div className="min-w-0 rounded-md border bg-background p-2 text-xs text-muted-foreground">
-                No status message available.
+                {localize(
+                  language,
+                  "No status message available.",
+                  "没有可用的状态消息。",
+                )}
               </div>
             ) : null}
           </div>
 
           {!canQueryGovernance ? (
             <div className="min-w-0 rounded-md border bg-background p-2 text-xs text-muted-foreground">
-              Governance analysis is available for project members.
+              {localize(
+                language,
+                "Governance analysis is available for project members.",
+                "治理分析仅对项目成员可用。",
+              )}
             </div>
           ) : errorAnalysisQuery.isLoading ? (
             <div className="min-w-0 rounded-md border bg-background p-2 text-xs text-muted-foreground">
-              Loading governance analysis...
+              {localize(
+                language,
+                "Loading governance analysis...",
+                "正在加载治理分析...",
+              )}
             </div>
           ) : errorAnalysisQuery.data ? (
             <div className="min-w-0">
               <div className="mb-1 text-xs font-medium text-muted-foreground">
-                Analysis
+                {localize(language, "Analysis", "分析")}
               </div>
               <div className="min-w-0 rounded-md border bg-background p-2 text-sm">
-                <div className="font-medium">Root cause</div>
+                <div className="font-medium">
+                  {localize(language, "Root cause", "根本原因")}
+                </div>
                 <div className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
                   {errorAnalysisQuery.data.rendered.rootCause}
                 </div>
 
                 {errorAnalysisQuery.data.rendered.resolveNow.length > 0 && (
                   <div className="mt-3">
-                    <div className="text-xs font-medium">Resolve now</div>
+                    <div className="text-xs font-medium">
+                      {localize(language, "Resolve now", "立即处理")}
+                    </div>
                     <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                       {errorAnalysisQuery.data.rendered.resolveNow.map(
                         (item, idx) => (
@@ -436,7 +471,11 @@ export function ObservationGovernanceAnalysisPanel(props: {
                   0 && (
                   <div className="mt-3">
                     <div className="text-xs font-medium">
-                      Prevention next call
+                      {localize(
+                        language,
+                        "Prevention next call",
+                        "下次调用预防措施",
+                      )}
                     </div>
                     <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                       {errorAnalysisQuery.data.rendered.preventionNextCall.map(

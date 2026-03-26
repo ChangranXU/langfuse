@@ -16,6 +16,7 @@ import type { Session } from "next-auth";
 import type { NavigationItem } from "@/src/components/layouts/utilities/routes";
 import type { RouteGroup } from "@/src/components/layouts/routes";
 import dynamic from "next/dynamic";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 const CommandMenu = dynamic(
   () =>
@@ -76,6 +77,7 @@ export function AuthenticatedLayout({
   metadata,
   onSignOut,
 }: AuthenticatedLayoutProps) {
+  const { t } = useLanguage();
   // Safe assertion: AuthenticatedLayout is only rendered after auth checks pass
   // in AppLayout, which guarantees session.user exists at this point
   const user = session.user;
@@ -92,9 +94,9 @@ export function AuthenticatedLayout({
       avatar: user.image ?? "",
     },
     items: [
-      { name: "Account Settings", href: "/account/settings" },
-      { name: "Theme", onClick: () => {}, content: <ThemeToggle /> },
-      { name: "Sign out", onClick: onSignOut },
+      { name: t("nav.accountSettings"), href: "/account/settings" },
+      { name: t("nav.theme"), onClick: () => {}, content: <ThemeToggle /> },
+      { name: t("nav.signOut"), onClick: onSignOut },
     ],
   };
 

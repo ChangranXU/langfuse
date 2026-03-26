@@ -26,10 +26,13 @@ import { DialogDescription } from "@radix-ui/react-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/src/components/ui/alert";
 import { CreateLLMApiKeyDialog } from "./CreateLLMApiKeyDialog";
 import { UpdateLLMApiKeyDialog } from "./UpdateLLMApiKeyDialog";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function LlmApiKeyList(props: { projectId: string }) {
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const { language } = useLanguage();
 
   const hasAccess = useHasProjectAccess({
     projectId: props.projectId,
@@ -52,11 +55,17 @@ export function LlmApiKeyList(props: { projectId: string }) {
   if (!hasAccess) {
     return (
       <div>
-        <Header title="LLM Connections" />
+        <Header title={localize(language, "LLM Connections", "LLM 连接")} />
         <Alert>
-          <AlertTitle>Access Denied</AlertTitle>
+          <AlertTitle>
+            {localize(language, "Access Denied", "访问被拒绝")}
+          </AlertTitle>
           <AlertDescription>
-            You do not have permission to view LLM API keys for this project.
+            {localize(
+              language,
+              "You do not have permission to view LLM API keys for this project.",
+              "你没有权限查看此项目的 LLM API 密钥。",
+            )}
           </AlertDescription>
         </Alert>
       </div>
@@ -65,27 +74,34 @@ export function LlmApiKeyList(props: { projectId: string }) {
 
   return (
     <div id="llm-api-keys">
-      <Header title="LLM Connections" />
+      <Header title={localize(language, "LLM Connections", "LLM 连接")} />
       <p className="mb-4 text-sm">
-        Connect your LLM services to enable evaluations and playground features.
-        Your provider will charge based on usage.
+        {localize(
+          language,
+          "Connect your LLM services to enable evaluations and playground features. Your provider will charge based on usage.",
+          "连接你的 LLM 服务以启用评估和 playground 功能。你的服务提供商将根据使用量收费。",
+        )}
       </p>
       <Card className="mb-4 overflow-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="text-primary md:table-cell">
-                Provider
+                {localize(language, "Provider", "提供商")}
               </TableHead>
               <TableHead className="text-primary md:table-cell">
-                Adapter
+                {localize(language, "Adapter", "适配器")}
               </TableHead>
               <TableHead className="text-primary md:table-cell">
-                Base URL
+                {localize(language, "Base URL", "基础 URL")}
               </TableHead>
-              <TableHead className="text-primary">API Key</TableHead>
+              <TableHead className="text-primary">
+                {localize(language, "API Key", "API 密钥")}
+              </TableHead>
               {hasExtraHeaderKeys ? (
-                <TableHead className="text-primary">Extra headers</TableHead>
+                <TableHead className="text-primary">
+                  {localize(language, "Extra headers", "额外请求头")}
+                </TableHead>
               ) : null}
               <TableHead />
             </TableRow>
@@ -94,7 +110,7 @@ export function LlmApiKeyList(props: { projectId: string }) {
             {apiKeys.data?.data.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center">
-                  None
+                  {localize(language, "None", "无")}
                 </TableCell>
               </TableRow>
             ) : (
@@ -107,7 +123,7 @@ export function LlmApiKeyList(props: { projectId: string }) {
                   <TableCell className="font-mono">{apiKey.provider}</TableCell>
                   <TableCell className="font-mono">{apiKey.adapter}</TableCell>
                   <TableCell className="max-w-md overflow-auto font-mono">
-                    {apiKey.baseURL ?? "default"}
+                    {apiKey.baseURL ?? localize(language, "default", "默认")}
                   </TableCell>
                   <TableCell className="font-mono">
                     {apiKey.displaySecretKey}
@@ -157,6 +173,7 @@ export function LlmApiKeyList(props: { projectId: string }) {
 // show dialog to let user confirm that this is a destructive action
 function DeleteApiKeyButton(props: { projectId: string; apiKeyId: string }) {
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
   const hasAccess = useHasProjectAccess({
     projectId: props.projectId,
     scope: "llmApiKeys:delete",
@@ -179,10 +196,15 @@ function DeleteApiKeyButton(props: { projectId: string; apiKeyId: string }) {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="mb-5">Delete LLM Connection</DialogTitle>
+          <DialogTitle className="mb-5">
+            {localize(language, "Delete LLM Connection", "删除 LLM 连接")}
+          </DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete this connection? This action cannot
-            be undone.
+            {localize(
+              language,
+              "Are you sure you want to delete this connection? This action cannot be undone.",
+              "确定要删除此连接吗？此操作无法撤销。",
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -205,10 +227,10 @@ function DeleteApiKeyButton(props: { projectId: string; apiKeyId: string }) {
             }}
             loading={mutDeleteApiKey.isPending}
           >
-            Permanently delete
+            {localize(language, "Permanently delete", "永久删除")}
           </Button>
           <Button variant="ghost" onClick={() => setOpen(false)}>
-            Cancel
+            {localize(language, "Cancel", "取消")}
           </Button>
         </DialogFooter>
       </DialogContent>

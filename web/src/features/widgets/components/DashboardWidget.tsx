@@ -24,6 +24,8 @@ import { ChartLoadingState } from "@/src/features/widgets/chart-library/ChartLoa
 import { getChartLoadingStateProps } from "@/src/features/widgets/chart-library/chartLoadingStateUtils";
 import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { type ViewVersion } from "@/src/features/query";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export interface WidgetPlacement {
   id: string;
@@ -52,6 +54,7 @@ export function DashboardWidget({
   onDeleteWidget: (tileId: string) => void;
   dashboardOwner: "LANGFUSE" | "PROJECT";
 }) {
+  const { language } = useLanguage();
   const router = useRouter();
   const utils = api.useUtils();
   const { isBetaEnabled } = useV4Beta();
@@ -242,7 +245,9 @@ export function DashboardWidget({
       <div
         className={`flex items-center justify-center rounded-lg border bg-background p-4`}
       >
-        <div className="text-muted-foreground">Loading...</div>
+        <div className="text-muted-foreground">
+          {localize(language, "Loading...", "加载中...")}
+        </div>
       </div>
     );
   }

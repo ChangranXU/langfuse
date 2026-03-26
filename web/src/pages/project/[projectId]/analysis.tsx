@@ -9,6 +9,7 @@ import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import ObservationsEventsTable from "@/src/features/events/components/EventsTable";
 import ObservationsTable from "@/src/components/table/use-cases/observations";
 import type { ObservationLevelType } from "@langfuse/shared";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 type AnalysisTab = "error_warning" | "policy_violation";
 
@@ -24,6 +25,7 @@ function parseTab(value: unknown): AnalysisTab {
 }
 
 export default function AnalysisPage() {
+  const { t } = useLanguage();
   const router = useRouter();
   const projectId = router.query.projectId as string;
   const tab = useMemo(
@@ -95,7 +97,7 @@ export default function AnalysisPage() {
   return (
     <Page
       headerProps={{
-        title: "Analysis",
+        title: t("analysis.pageTitle"),
       }}
       scrollable={showOnboarding}
     >
@@ -106,9 +108,11 @@ export default function AnalysisPage() {
           <div className="flex items-center justify-between px-3 pt-3">
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
-                <TabsTrigger value="error_warning">Error & Warning</TabsTrigger>
+                <TabsTrigger value="error_warning">
+                  {t("analysis.tabErrorWarning")}
+                </TabsTrigger>
                 <TabsTrigger value="policy_violation">
-                  Policy Violation
+                  {t("analysis.tabPolicyViolation")}
                 </TabsTrigger>
               </TabsList>
             </Tabs>

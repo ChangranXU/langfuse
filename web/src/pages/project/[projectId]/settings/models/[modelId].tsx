@@ -36,10 +36,13 @@ import {
 } from "@/src/components/ui/hover-card";
 import { CodeMirrorEditor } from "@/src/components/editor";
 import { useEffect } from "react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export default function ModelDetailPage() {
   const router = useRouter();
   const { priceUnit, priceUnitMultiplier } = usePriceUnitMultiplier();
+  const { language } = useLanguage();
   const projectId = router.query.projectId as string;
   const modelId = router.query.modelId as string;
   const pricingTierParam = router.query.pricingTier as string | undefined;
@@ -94,15 +97,25 @@ export default function ModelDetailPage() {
       ),
     [activeTier?.prices, priceUnitMultiplier],
   );
+  const localizedPriceUnit =
+    priceUnit === "per unit"
+      ? localize(language, "per unit", "按单位")
+      : priceUnit === "per 1K units"
+        ? localize(language, "per 1K units", "每 1K 单位")
+        : priceUnit === "per 1M units"
+          ? localize(language, "per 1M units", "每 1M 单位")
+          : priceUnit;
 
   // If not found, redirect to models page
   if (!isLoading && !model) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center">
-        <div className="mb-4 text-xl font-medium">Model not found</div>
+        <div className="mb-4 text-xl font-medium">
+          {localize(language, "Model not found", "未找到模型")}
+        </div>
         <Button variant="outline" asChild>
           <Link href={`/project/${projectId}/settings/models`}>
-            Return to Models page
+            {localize(language, "Return to Models page", "返回模型页面")}
           </Link>
         </Button>
       </div>
@@ -112,7 +125,9 @@ export default function ModelDetailPage() {
   const isLangfuseModel = !Boolean(model?.projectId);
 
   if (isLoading || !model) {
-    return <div className="p-3">Loading...</div>;
+    return (
+      <div className="p-3">{localize(language, "Loading...", "加载中...")}</div>
+    );
   }
 
   return (
@@ -121,16 +136,20 @@ export default function ModelDetailPage() {
       headerProps={{
         title: model.modelName,
         help: {
-          description: "Model configuration and pricing details",
+          description: localize(
+            language,
+            "Model configuration and pricing details",
+            "模型配置和定价详情",
+          ),
           href: "https://langfuse.com/docs/model-usage-and-cost",
         },
         breadcrumb: [
           {
-            name: "Settings",
+            name: localize(language, "Settings", "设置"),
             href: `/project/${router.query.projectId as string}/settings`,
           },
           {
-            name: "Models",
+            name: localize(language, "Models", "模型"),
             href: `/project/${router.query.projectId as string}/settings/models`,
           },
           { name: model.modelName },
@@ -165,36 +184,42 @@ export default function ModelDetailPage() {
       <div className="grid grid-cols-2 gap-6 p-2">
         <Card>
           <CardHeader>
-            <CardTitle>Model configuration</CardTitle>
+            <CardTitle>
+              {localize(language, "Model configuration", "模型配置")}
+            </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div>
               <div className="text-sm font-medium text-muted-foreground">
-                Match Pattern
+                {localize(language, "Match Pattern", "匹配模式")}
               </div>
               <div className="mt-1 font-mono text-sm">{model.matchPattern}</div>
             </div>
 
             <div>
               <div className="text-sm font-medium text-muted-foreground">
-                Maintained by
+                {localize(language, "Maintained by", "维护者")}
               </div>
               <div className="mt-1 text-sm">
-                {isLangfuseModel ? "Langfuse" : "User"}
+                {isLangfuseModel
+                  ? "Langfuse"
+                  : localize(language, "User", "用户")}
               </div>
             </div>
 
             <div>
               <div className="text-sm font-medium text-muted-foreground">
-                Tokenizer
+                {localize(language, "Tokenizer", "Tokenizer")}
               </div>
-              <div className="mt-1 text-sm">{model.tokenizerId || "None"}</div>
+              <div className="mt-1 text-sm">
+                {model.tokenizerId || localize(language, "None", "无")}
+              </div>
             </div>
 
             {model.tokenizerId && (
               <div>
                 <div className="text-sm font-medium text-muted-foreground">
-                  Tokenizer Config
+                  {localize(language, "Tokenizer Config", "Tokenizer 配置")}
                 </div>
                 <pre className="mt-1 rounded bg-muted p-2 text-sm">
                   <JSONView json={model.tokenizerConfig} />
@@ -207,18 +232,24 @@ export default function ModelDetailPage() {
         <Card id="pricing-section">
           <CardHeader>
             <div className="flex flex-col gap-2">
-              <CardTitle>Pricing</CardTitle>
+              <CardTitle>{localize(language, "Pricing", "定价")}</CardTitle>
               {model.pricingTiers.length > 1 && (
                 <div className="flex items-center gap-4">
                   <label className="text-sm font-medium text-muted-foreground">
-                    Pricing Tier
+                    {localize(language, "Pricing Tier", "定价层级")}
                   </label>
                   <Select
                     value={activeTier?.id ?? ""}
                     onValueChange={setSelectedTierId}
                   >
                     <SelectTrigger className="w-[200px]">
-                      <SelectValue placeholder="Select tier" />
+                      <SelectValue
+                        placeholder={localize(
+                          language,
+                          "Select tier",
+                          "选择层级",
+                        )}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {model.pricingTiers.map((tier) => (
@@ -237,7 +268,9 @@ export default function ModelDetailPage() {
                           size="sm"
                         >
                           <InfoIcon className="h-3 w-3" />
-                          <span>Conditions</span>
+                          <span>
+                            {localize(language, "Conditions", "条件")}
+                          </span>
                         </Button>
                       </HoverCardTrigger>
                       <HoverCardContent
@@ -245,11 +278,18 @@ export default function ModelDetailPage() {
                         collisionPadding={20}
                       >
                         <p className="text-sm font-medium">
-                          Pricing Tier Conditions
+                          {localize(
+                            language,
+                            "Pricing Tier Conditions",
+                            "定价层级条件",
+                          )}
                         </p>
                         <p className="pt-2 text-sm text-muted-foreground">
-                          This tier is applied when the following conditions are
-                          met:
+                          {localize(
+                            language,
+                            "This tier is applied when the following conditions are met:",
+                            "满足以下条件时将应用此层级：",
+                          )}
                         </p>
                         <div className="mt-2">
                           <CodeMirrorEditor
@@ -274,9 +314,11 @@ export default function ModelDetailPage() {
           <CardContent>
             <div className="flex flex-col gap-2">
               <div className="grid grid-cols-2 gap-2 border-b border-border text-sm font-medium text-muted-foreground">
-                <span>Usage Type</span>
+                <span>{localize(language, "Usage Type", "用量类型")}</span>
                 <span className="flex items-center gap-2">
-                  <span>Price {priceUnit}</span>
+                  <span>
+                    {localize(language, "Price", "价格")} {localizedPriceUnit}
+                  </span>
                   <PriceUnitSelector />
                 </span>
               </div>
@@ -305,13 +347,17 @@ export default function ModelDetailPage() {
         <Card className="col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Model observations</span>
+              <span>
+                {localize(language, "Model observations", "模型观测")}
+              </span>
               <Button variant="ghost" asChild>
                 <Link
                   href={`/project/${projectId}/observations`}
                   className="flex items-center gap-1"
                 >
-                  <span className="text-sm">View all</span>
+                  <span className="text-sm">
+                    {localize(language, "View all", "查看全部")}
+                  </span>
                   <SquareArrowOutUpRight className="h-4 w-4" />
                 </Link>
               </Button>

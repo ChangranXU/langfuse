@@ -7,6 +7,8 @@ import {
   ChartTooltipContent,
 } from "@/src/components/ui/chart";
 import { compactSmallNumberFormatter } from "@/src/utils/numbers";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 interface HistogramDataPoint {
   binLabel: string;
@@ -23,6 +25,7 @@ const HistogramChart = ({
   data: DataPoint[];
   subtleFill?: boolean;
 }) => {
+  const { language } = useLanguage();
   const transformHistogramData = (data: DataPoint[]): HistogramDataPoint[] => {
     if (!data.length) return [];
 
@@ -61,7 +64,7 @@ const HistogramChart = ({
   if (!histogramData.length) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
-        No data available
+        {localize(language, "No data available", "没有可用数据")}
       </div>
     );
   }

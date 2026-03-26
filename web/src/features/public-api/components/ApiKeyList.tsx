@@ -30,6 +30,8 @@ import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/src/components/ui/alert";
 import startCase from "lodash/startCase";
 import { useLangfuseEnvCode } from "@/src/features/public-api/hooks/useLangfuseEnvCode";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type ApiKeyScope = "project" | "organization";
 type ApiKeyEntity = { id: string; note: string | null };
@@ -37,6 +39,7 @@ type ApiKeyEntity = { id: string; note: string | null };
 export function ApiKeyList(props: { entityId: string; scope: ApiKeyScope }) {
   const { entityId, scope } = props;
   const envCode = useLangfuseEnvCode();
+  const { language } = useLanguage();
 
   if (!entityId) {
     throw new Error(
@@ -71,11 +74,17 @@ export function ApiKeyList(props: { entityId: string; scope: ApiKeyScope }) {
   if (!hasAccess) {
     return (
       <div>
-        <Header title="API Keys" />
+        <Header title={localize(language, "API Keys", "API 密钥")} />
         <Alert>
-          <AlertTitle>Access Denied</AlertTitle>
+          <AlertTitle>
+            {localize(language, "Access Denied", "访问被拒绝")}
+          </AlertTitle>
           <AlertDescription>
-            You do not have permission to view API keys for this {scope}.
+            {localize(
+              language,
+              `You do not have permission to view API keys for this ${scope}.`,
+              `你没有权限查看此${scope === "project" ? "项目" : "组织"}的 API 密钥。`,
+            )}
           </AlertDescription>
         </Alert>
       </div>
@@ -85,9 +94,19 @@ export function ApiKeyList(props: { entityId: string; scope: ApiKeyScope }) {
   return (
     <div className="space-y-4">
       <Header
-        title={startCase(`${scope} API keys`)}
+        title={localize(
+          language,
+          startCase(`${scope} API keys`),
+          scope === "project" ? "项目 API 密钥" : "组织 API 密钥",
+        )}
         help={{
-          description: `Learn more about ${scope} API keys`,
+          description: localize(
+            language,
+            `Learn more about ${scope} API keys`,
+            scope === "project"
+              ? "了解更多项目 API 密钥信息"
+              : "了解更多组织 API 密钥信息",
+          ),
           href:
             scope === "project"
               ? "https://langfuse.com/docs/api#authentication"
@@ -101,11 +120,17 @@ export function ApiKeyList(props: { entityId: string; scope: ApiKeyScope }) {
           <TableHeader>
             <TableRow>
               <TableHead className="hidden text-primary md:table-cell">
-                Created
+                {localize(language, "Created", "创建时间")}
               </TableHead>
-              <TableHead className="text-primary">Note</TableHead>
-              <TableHead className="text-primary">Public Key</TableHead>
-              <TableHead className="text-primary">Secret Key</TableHead>
+              <TableHead className="text-primary">
+                {localize(language, "Note", "备注")}
+              </TableHead>
+              <TableHead className="text-primary">
+                {localize(language, "Public Key", "公钥")}
+              </TableHead>
+              <TableHead className="text-primary">
+                {localize(language, "Secret Key", "密钥")}
+              </TableHead>
               {/* <TableHead className="text-primary">Last used</TableHead> */}
               <TableHead />
             </TableRow>
@@ -114,7 +139,7 @@ export function ApiKeyList(props: { entityId: string; scope: ApiKeyScope }) {
             {apiKeysQuery.data?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center">
-                  None
+                  {localize(language, "None", "无")}
                 </TableCell>
               </TableRow>
             ) : (
@@ -170,6 +195,7 @@ function DeleteApiKeyButton(props: {
 }) {
   const { entityId, apiKeyId, scope } = props;
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
 
   const hasProjectAccess = useHasProjectAccess({
     projectId: props.entityId,
@@ -235,10 +261,15 @@ function DeleteApiKeyButton(props: {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="mb-5">Delete API key</DialogTitle>
+          <DialogTitle className="mb-5">
+            {localize(language, "Delete API key", "删除 API 密钥")}
+          </DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete this API key? This action cannot be
-            undone.
+            {localize(
+              language,
+              "Are you sure you want to delete this API key? This action cannot be undone.",
+              "确定要删除此 API 密钥吗？此操作无法撤销。",
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -249,10 +280,10 @@ function DeleteApiKeyButton(props: {
               mutDeleteOrgApiKey.isPending || mutDeleteProjectApiKey.isPending
             }
           >
-            Permanently delete
+            {localize(language, "Permanently delete", "永久删除")}
           </Button>
           <Button variant="ghost" onClick={() => setOpen(false)}>
-            Cancel
+            {localize(language, "Cancel", "取消")}
           </Button>
         </DialogFooter>
       </DialogContent>

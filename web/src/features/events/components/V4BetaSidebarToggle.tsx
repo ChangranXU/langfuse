@@ -6,10 +6,12 @@ import {
   TooltipTrigger,
 } from "@/src/components/ui/tooltip";
 import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 import { cn } from "@/src/utils/tailwind";
 
 export function V4BetaSidebarToggle() {
   const { isBetaEnabled, setBetaEnabled, isLoading } = useV4Beta();
+  const { t } = useLanguage();
 
   return (
     <Tooltip>
@@ -32,7 +34,7 @@ export function V4BetaSidebarToggle() {
             htmlFor="v4-beta-toggle"
             className="cursor-pointer text-sm font-normal group-data-[collapsible=icon]:hidden"
           >
-            v4 Beta
+            {t("nav.v4Beta")}
           </Label>
         </div>
       </TooltipTrigger>

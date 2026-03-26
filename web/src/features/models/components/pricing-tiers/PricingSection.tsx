@@ -7,6 +7,8 @@ import { TierPriceEditor } from "./TierPriceEditor";
 import { TierPrefillButtons } from "./TierPrefillButtons";
 import type { UseFormReturn, UseFieldArrayReturn } from "react-hook-form";
 import type { FormUpsertModel } from "../../validation";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type PricingSectionProps = {
   fields: UseFieldArrayReturn<FormUpsertModel, "pricingTiers">["fields"];
@@ -25,16 +27,20 @@ export function PricingSection({
 }: PricingSectionProps) {
   const hasMultipleTiers = fields.length > 1;
   const defaultTierIndex = fields.findIndex((f) => f.isDefault);
+  const { language } = useLanguage();
 
   if (!hasMultipleTiers) {
     // SIMPLE VIEW: Just show prices for the single default tier
     return (
       <div className="space-y-4">
         <div>
-          <FormLabel>Prices</FormLabel>
+          <FormLabel>{localize(language, "Prices", "价格")}</FormLabel>
           <FormDescription>
-            Set prices per usage type for this model. Usage types must exactly
-            match the keys of the ingested usage details.
+            {localize(
+              language,
+              "Set prices per usage type for this model. Usage types must exactly match the keys of the ingested usage details.",
+              "为该模型设置各用量类型的价格。用量类型必须与摄取的 usage details 中的键完全一致。",
+            )}
           </FormDescription>
         </div>
 
@@ -47,7 +53,7 @@ export function PricingSection({
 
         <Button type="button" variant="ghost" onClick={addTier}>
           <PlusCircle className="mr-2 h-4 w-4" />
-          Add Custom Pricing Tier
+          {localize(language, "Add Custom Pricing Tier", "添加自定义定价层级")}
         </Button>
       </div>
     );
@@ -57,10 +63,13 @@ export function PricingSection({
   return (
     <div className="space-y-4">
       <div>
-        <FormLabel>Pricing Tiers</FormLabel>
+        <FormLabel>{localize(language, "Pricing Tiers", "定价层级")}</FormLabel>
         <FormDescription>
-          Define pricing rules evaluated in priority order. Tiers are checked
-          from top to bottom until conditions match.
+          {localize(
+            language,
+            "Define pricing rules evaluated in priority order. Tiers are checked from top to bottom until conditions match.",
+            "定义按优先级顺序评估的定价规则。系统会从上到下检查各层级，直到条件匹配为止。",
+          )}
         </FormDescription>
       </div>
 
@@ -83,7 +92,7 @@ export function PricingSection({
 
       <Button type="button" variant="outline" onClick={addTier}>
         <PlusCircle className="mr-2 h-4 w-4" />
-        Add Custom Tier
+        {localize(language, "Add Custom Tier", "添加自定义层级")}
       </Button>
     </div>
   );

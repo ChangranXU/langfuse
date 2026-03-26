@@ -61,6 +61,7 @@ import {
 } from "@/src/components/ui/input-command";
 import { useQueryProject } from "@/src/features/projects/hooks";
 import { useLangfuseCloudRegion } from "@/src/features/organizations/hooks";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 /**
  * Extended ColumnDefinition with optional alert for UI display.
@@ -94,6 +95,7 @@ export function PopoverFilterBuilder({
   filterWithAI?: boolean;
   buttonType?: "default" | "icon";
 }) {
+  const { t } = useLanguage();
   const capture = usePostHogClientCapture();
   const [wipFilterState, _setWipFilterState] =
     useState<WipFilterState>(filterState);
@@ -169,7 +171,7 @@ export function PopoverFilterBuilder({
         <PopoverTrigger asChild>
           {buttonType === "default" ? (
             <Button variant="outline" type="button">
-              <span>Filters</span>
+              <span>{t("filters.button")}</span>
               {filterState.length > 0 && filterState.length < 3 ? (
                 <InlineFilterState
                   filterState={filterState}
@@ -237,7 +239,7 @@ export function PopoverFilterBuilder({
                 <X className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Clear all filters</TooltipContent>
+            <TooltipContent>{t("filters.clearAll")}</TooltipContent>
           </Tooltip>
         ) : (
           <Tooltip>
@@ -252,7 +254,7 @@ export function PopoverFilterBuilder({
                 <X className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Clear all filters</TooltipContent>
+            <TooltipContent>{t("filters.clearAll")}</TooltipContent>
           </Tooltip>
         )
       ) : null}
@@ -267,6 +269,7 @@ export function InlineFilterState({
   filterState: FilterState;
   className?: string;
 }) {
+  const { t } = useLanguage();
   return filterState.map((filter, i) => {
     return (
       <span
@@ -298,7 +301,7 @@ export function InlineFilterState({
             ? new Date(filter.value).toLocaleString()
             : filter.type === "stringOptions" || filter.type === "arrayOptions"
               ? filter.value.length > 2
-                ? `${filter.value.length} selected`
+                ? `${filter.value.length} ${t("filters.selectedSuffix")}`
                 : filter.value.join(", ")
               : filter.type === "number" || filter.type === "numberObject"
                 ? filter.value
@@ -425,6 +428,7 @@ function FilterBuilderForm({
   columnsWithCustomSelect?: string[];
   filterWithAI?: boolean;
 }) {
+  const { t } = useLanguage();
   const { isLangfuseCloud } = useLangfuseCloudRegion();
   const [showAiFilter, setShowAiFilter] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -474,7 +478,7 @@ function FilterBuilderForm({
 
         if (result && Array.isArray(result.filters)) {
           if (result.filters.length === 0) {
-            setAiError("Failed to generate filters, try again");
+            setAiError(t("filters.aiGenerateFailedRetry"));
             return;
           }
 
@@ -484,12 +488,14 @@ function FilterBuilderForm({
           setShowAiFilter(false);
         } else {
           console.error(result);
-          setAiError("Invalid response format from API");
+          setAiError(t("filters.aiInvalidResponse"));
         }
       } catch (error) {
         console.error("Error calling tRPC API:", error);
         setAiError(
-          error instanceof Error ? error.message : "Failed to generate filters",
+          error instanceof Error
+            ? error.message
+            : t("filters.aiGenerateFailed"),
         );
       }
     }
@@ -517,7 +523,7 @@ function FilterBuilderForm({
             disabled={false}
             title={
               !organization?.aiFeaturesEnabled
-                ? "AI features are disabled for your organization. Click to enable them in organization settings."
+                ? t("filters.aiDisabledTitle")
                 : undefined
             }
             className="w-full justify-start text-muted-foreground"
@@ -525,13 +531,13 @@ function FilterBuilderForm({
             <WandSparkles className="mr-2 h-4 w-4" />
             {!organization?.aiFeaturesEnabled ? (
               <>
-                AI Filters: Enable in Organization Settings (Admin Only)
+                {t("filters.aiEnableInOrgSettings")}
                 <ExternalLink className="ml-2 h-4 w-4" />
               </>
             ) : showAiFilter ? (
-              "Cancel"
+              t("filters.cancel")
             ) : (
-              "Create Filter with AI"
+              t("filters.createWithAi")
             )}
           </Button>
           {showAiFilter && (
@@ -542,7 +548,7 @@ function FilterBuilderForm({
                   setAiPrompt(e.target.value);
                   if (aiError) setAiError(null); // Clear error when user starts typing
                 }}
-                placeholder="Describe the filters you want to apply..."
+                placeholder={t("filters.aiDescribePrompt")}
                 className="min-h-[80px] min-w-[28rem] resize-none"
                 disabled={createFilterMutation.isPending}
                 onKeyDown={(e) => {
@@ -564,18 +570,15 @@ function FilterBuilderForm({
                   disabled={createFilterMutation.isPending || !aiPrompt.trim()}
                 >
                   {createFilterMutation.isPending
-                    ? "Loading..."
-                    : "Generate filters"}
+                    ? t("filters.loading")
+                    : t("filters.generate")}
                 </Button>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Info className="h-4 w-4 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p className="text-xs">
-                      We convert natural language into deterministic filters
-                      which you can adjust afterwards
-                    </p>
+                    <p className="text-xs">{t("filters.aiInfo")}</p>
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -600,7 +603,9 @@ function FilterBuilderForm({
                 );
                 return (
                   <tr key={i}>
-                    <td className="p-1 text-sm">{i === 0 ? "Where" : "And"}</td>
+                    <td className="p-1 text-sm">
+                      {i === 0 ? t("filters.where") : t("filters.and")}
+                    </td>
                     <td className="flex gap-2 p-1">
                       {/* selector of the column to be filtered */}
                       <Popover>
@@ -613,7 +618,7 @@ function FilterBuilderForm({
                             className="flex w-full min-w-32 items-center justify-between gap-2"
                           >
                             <span className="truncate">
-                              {column ? column.name : "Column"}
+                              {column ? column.name : t("filters.column")}
                             </span>
                             <ChevronDown className="h-4 w-4 flex-shrink-0 opacity-50" />
                           </Button>
@@ -629,12 +634,12 @@ function FilterBuilderForm({
                         >
                           <InputCommand>
                             <InputCommandInput
-                              placeholder="Search for column"
+                              placeholder={t("filters.searchColumn")}
                               variant="bottom"
                             />
                             <InputCommandList>
                               <InputCommandEmpty>
-                                No options found.
+                                {t("filters.noOptionsFound")}
                               </InputCommandEmpty>
                               <InputCommandGroup>
                                 {columns.map((option) => {
@@ -906,7 +911,7 @@ function FilterBuilderForm({
                       ) : filter.type === "stringOptions" ||
                         filter.type === "arrayOptions" ? (
                         <MultiSelect
-                          title="Value"
+                          title={t("filters.value")}
                           className="min-w-[100px]"
                           options={
                             column?.type === filter.type ? column.options : []
@@ -926,7 +931,7 @@ function FilterBuilderForm({
                       ) : filter.type === "categoryOptions" &&
                         column?.type === "categoryOptions" ? (
                         <MultiSelect
-                          title="Value"
+                          title={t("filters.value")}
                           className="min-w-[100px]"
                           options={
                             column?.options
@@ -1024,7 +1029,7 @@ function FilterBuilderForm({
               size="sm"
             >
               <Plus className="mr-2 h-4 w-4" />
-              Add filter
+              {t("filters.addFilter")}
             </Button>
           ) : null}
         </>

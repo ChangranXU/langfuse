@@ -3,6 +3,8 @@ import { ActionButton } from "@/src/components/ActionButton";
 import { TestModelMatchDialog } from "./TestModelMatchDialog";
 import { FlaskConical } from "lucide-react";
 import { type ButtonProps } from "@/src/components/ui/button";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type TestModelMatchButtonProps = {
   projectId: string;
@@ -16,6 +18,7 @@ export function TestModelMatchButton({
   variant,
 }: TestModelMatchButtonProps) {
   const [open, setOpen] = useState(false);
+  const { language } = useLanguage();
 
   return (
     <>
@@ -25,7 +28,7 @@ export function TestModelMatchButton({
         onClick={() => setOpen(true)}
         data-testid="test-model-match-button"
       >
-        Test Model Match
+        {localize(language, "Test Model Match", "测试模型匹配")}
       </ActionButton>
 
       <TestModelMatchDialog

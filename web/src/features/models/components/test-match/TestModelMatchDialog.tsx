@@ -16,6 +16,8 @@ import { MatchedModelCard } from "./MatchedModelCard";
 import { MatchedTierCard } from "./MatchedTierCard";
 import { NoMatchDisplay } from "./NoMatchDisplay";
 import { Loader2, CheckCircle, SquareArrowOutUpRight } from "lucide-react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type TestModelMatchDialogProps = {
   projectId: string;
@@ -33,6 +35,7 @@ export function TestModelMatchDialog({
   const [modelName, setModelName] = useState("");
   const [usageDetails, setUsageDetails] = useState<Record<string, number>>({});
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const { language } = useLanguage();
 
   // Query for match result - only enabled after submit
   const { data, isLoading, error, refetch } = api.models.testMatch.useQuery(
@@ -69,10 +72,15 @@ export function TestModelMatchDialog({
       <DialogContent size="lg" className="min-h-[62vh] overflow-y-auto">
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col">
           <DialogHeader>
-            <DialogTitle>Test Model Match</DialogTitle>
+            <DialogTitle>
+              {localize(language, "Test Model Match", "测试模型匹配")}
+            </DialogTitle>
             <DialogDescription className="mt-1">
-              Test which model and pricing tier your ingestion data would match
-              against.
+              {localize(
+                language,
+                "Test which model and pricing tier your ingestion data would match against.",
+                "测试你的摄取数据将匹配到哪个模型和定价层级。",
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -82,12 +90,22 @@ export function TestModelMatchDialog({
               <div className="space-y-6">
                 {/* Model Name Input */}
                 <div className="space-y-2">
-                  <div className="text-sm font-medium">Model Name *</div>
+                  <div className="text-sm font-medium">
+                    {localize(language, "Model Name *", "模型名称 *")}
+                  </div>
                   <div className="text-sm text-muted-foreground">
-                    The model name on your generations.
+                    {localize(
+                      language,
+                      "The model name on your generations.",
+                      "你的 generations 上报的模型名称。",
+                    )}
                   </div>
                   <Input
-                    placeholder="e.g. gpt-4-turbo"
+                    placeholder={localize(
+                      language,
+                      "e.g. gpt-4-turbo",
+                      "例如：gpt-4-turbo",
+                    )}
                     value={modelName}
                     onChange={(e) => setModelName(e.target.value.trim())}
                     autoFocus
@@ -110,14 +128,14 @@ export function TestModelMatchDialog({
                   onClick={() => onOpenChange(false)}
                   className="flex-1"
                 >
-                  Close
+                  {localize(language, "Close", "关闭")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={!modelName.trim() || isLoading}
                   className="flex-1"
                 >
-                  Test Match
+                  {localize(language, "Test Match", "测试匹配")}
                 </Button>
               </div>
             </div>
@@ -133,13 +151,19 @@ export function TestModelMatchDialog({
                     {isLoading && (
                       <div className="flex min-h-[300px] items-center justify-center gap-2 rounded-lg border bg-muted/30 p-6 text-muted-foreground">
                         <Loader2 className="h-5 w-5 animate-spin" />
-                        <span>Testing match...</span>
+                        <span>
+                          {localize(
+                            language,
+                            "Testing match...",
+                            "正在测试匹配...",
+                          )}
+                        </span>
                       </div>
                     )}
 
                     {error && (
                       <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">
-                        Error: {error.message}
+                        {localize(language, "Error:", "错误：")} {error.message}
                       </div>
                     )}
 
@@ -150,7 +174,7 @@ export function TestModelMatchDialog({
                             <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 dark:border-green-900 dark:bg-green-950">
                               <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
                               <span className="text-sm font-medium text-green-900 dark:text-green-100">
-                                Match Found
+                                {localize(language, "Match Found", "找到匹配")}
                               </span>
                             </div>
                             <MatchedModelCard
@@ -177,7 +201,7 @@ export function TestModelMatchDialog({
                       href={`/project/${projectId}/settings/models/${data.model.id}?pricingTier=${data.matchedTier.id}`}
                       target="_blank"
                     >
-                      View Model Details
+                      {localize(language, "View Model Details", "查看模型详情")}
                       <SquareArrowOutUpRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>

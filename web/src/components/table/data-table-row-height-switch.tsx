@@ -11,6 +11,8 @@ import {
 import useLocalStorage from "@/src/components/useLocalStorage";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { Rows3, Rows2, Rows4 } from "lucide-react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 const heightOptions = [
   { id: "s", label: "Small", icon: <Rows4 /> },
@@ -55,18 +57,31 @@ export const DataTableRowHeightSwitch = ({
   setRowHeight: (e: RowHeight) => void;
 }) => {
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
+  const getHeightLabel = (id: RowHeight) =>
+    id === "s"
+      ? localize(language, "Small", "小")
+      : id === "m"
+        ? localize(language, "Medium", "中")
+        : localize(language, "Large", "大");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" title="Row height">
+        <Button
+          variant="outline"
+          size="icon"
+          title={localize(language, "Row height", "行高")}
+        >
           <Rows3 className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuPortal>
         <DropdownMenuContent>
-          <DropdownMenuLabel>Row height</DropdownMenuLabel>
+          <DropdownMenuLabel>
+            {localize(language, "Row height", "行高")}
+          </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {heightOptions.map(({ id, label }) => (
+          {heightOptions.map(({ id }) => (
             <DropdownMenuCheckboxItem
               key={id}
               checked={rowHeight === id}
@@ -79,7 +94,7 @@ export const DataTableRowHeightSwitch = ({
                 setRowHeight(id);
               }}
             >
-              {label}
+              {getHeightLabel(id)}
             </DropdownMenuCheckboxItem>
           ))}
         </DropdownMenuContent>

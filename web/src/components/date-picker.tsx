@@ -23,9 +23,12 @@ import {
   type DashboardDateRange,
   TIME_RANGES,
   formatDateRange,
+  getLocalizedTimeRangeLabel,
   type TimeRange,
 } from "@/src/utils/date-range-utils";
 import { combineDateAndTime } from "@/src/components/ui/time-picker-utils";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function DatePicker({
   date,
@@ -42,6 +45,8 @@ export function DatePicker({
   disabled?: boolean;
   includeTimePicker?: boolean;
 }) {
+  const { language } = useLanguage();
+
   return (
     <div className="flex flex-row gap-2 align-middle">
       <Popover>
@@ -59,7 +64,7 @@ export function DatePicker({
             {date ? (
               format(date, includeTimePicker ? "PPP pp" : "PPP")
             ) : (
-              <span>Pick a date</span>
+              <span>{localize(language, "Pick a date", "选择日期")}</span>
             )}
           </Button>
         </PopoverTrigger>
@@ -80,7 +85,7 @@ export function DatePicker({
           variant="ghost"
           size="icon"
           onClick={() => onChange(undefined)}
-          title="reset date"
+          title={localize(language, "reset date", "重置日期")}
         >
           <X size={14} />
         </Button>
@@ -107,6 +112,7 @@ export function DatePickerWithRange({
   setDateRangeAndOption,
   disabled,
 }: DatePickerWithRangeProps) {
+  const { language } = useLanguage();
   const [internalDateRange, setInternalDateRange] = useState<
     RDPDateRange | undefined
   >(dateRange);
@@ -206,7 +212,7 @@ export function DatePickerWithRange({
                 format(internalDateRange.from, "LLL dd, y")
               )
             ) : (
-              <span>Pick a date</span>
+              <span>{localize(language, "Pick a date", "选择日期")}</span>
             )}
           </Button>
         </PopoverTrigger>
@@ -224,7 +230,10 @@ export function DatePickerWithRange({
           <div className="flex flex-col gap-2 border-t-2 py-1.5 sm:flex-row sm:gap-0">
             <div className="px-3">
               <p className="px-1 text-sm font-medium">
-                Start<span className="hidden sm:inline"> time</span>
+                {localize(language, "Start", "开始")}
+                <span className="hidden sm:inline">
+                  {localize(language, " time", "时间")}
+                </span>
               </p>
               <TimePicker
                 date={internalDateRange?.from}
@@ -234,7 +243,10 @@ export function DatePickerWithRange({
             </div>
             <div className="px-3">
               <p className="px-1 text-sm font-medium">
-                End<span className="hidden sm:inline"> time</span>
+                {localize(language, "End", "结束")}
+                <span className="hidden sm:inline">
+                  {localize(language, " time", "时间")}
+                </span>
               </p>
               <TimePicker
                 date={internalDateRange?.to}
@@ -268,6 +280,7 @@ export function TimeRangePicker({
   onTimeRangeChange,
   disabled,
 }: TimeRangePickerProps) {
+  const { language } = useLanguage();
   // Determine the range type
   const rangeType: "named" | "custom" | null = timeRange
     ? "from" in timeRange
@@ -403,7 +416,7 @@ export function TimeRangePicker({
           <span>
             {dateRange
               ? formatDateRange(dateRange.from, dateRange.to)
-              : "Select from calendar"}
+              : localize(language, "Select from calendar", "从日历选择")}
           </span>
         </div>
       );
@@ -415,7 +428,11 @@ export function TimeRangePicker({
           <span className="h-5 w-10 rounded bg-muted px-1.5 text-center text-xs leading-5">
             {setting?.abbreviation || namedRangeValue}
           </span>
-          <span>{setting?.label || namedRangeValue}</span>
+          <span>
+            {namedRangeValue
+              ? getLocalizedTimeRangeLabel(namedRangeValue, language)
+              : ""}
+          </span>
         </div>
       );
     } else {
@@ -423,7 +440,7 @@ export function TimeRangePicker({
       return (
         <div className="flex items-center gap-2">
           <CalendarIcon className="h-4 w-4" />
-          <span>Select time range</span>
+          <span>{localize(language, "Select time range", "选择时间范围")}</span>
         </div>
       );
     }
@@ -460,7 +477,9 @@ export function TimeRangePicker({
               />
               <div className="flex flex-col gap-3 border-t p-3">
                 <div className="flex flex-col gap-1">
-                  <p className="px-1 text-sm font-medium">Start time</p>
+                  <p className="px-1 text-sm font-medium">
+                    {localize(language, "Start time", "开始时间")}
+                  </p>
                   <TimePicker
                     date={internalDateRange?.from}
                     setDate={onStartTimeSelection}
@@ -468,7 +487,9 @@ export function TimeRangePicker({
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <p className="px-1 text-sm font-medium">End time</p>
+                  <p className="px-1 text-sm font-medium">
+                    {localize(language, "End time", "结束时间")}
+                  </p>
                   <TimePicker
                     date={internalDateRange?.to}
                     setDate={onEndTimeSelection}
@@ -495,7 +516,9 @@ export function TimeRangePicker({
                     <span className="h-5 w-10 rounded bg-muted px-1.5 text-center text-xs leading-5">
                       {setting.abbreviation}
                     </span>
-                    <span>{setting.label}</span>
+                    <span>
+                      {getLocalizedTimeRangeLabel(presetKey, language)}
+                    </span>
                   </div>
                 );
               })}
@@ -508,7 +531,9 @@ export function TimeRangePicker({
                 <span className="leading flex h-5 w-10 items-center justify-center rounded bg-muted px-1.5 text-center text-xs">
                   <CalendarIcon className="h-3 w-3" />
                 </span>
-                <span>Select from calendar</span>
+                <span>
+                  {localize(language, "Select from calendar", "从日历选择")}
+                </span>
               </div>
             </div>
           )}

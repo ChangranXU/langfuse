@@ -1,16 +1,28 @@
 import { env } from "@/src/env.mjs";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
-export const CloudPrivacyNotice = ({ action }: { action: string }) =>
-  env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION !== undefined ? (
+export const CloudPrivacyNotice = ({
+  action,
+}: {
+  action: "signingIn" | "creatingAccount";
+}) => {
+  const { t } = useLanguage();
+
+  if (env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION === undefined) return null;
+
+  return (
     <div className="mx-auto mt-10 max-w-lg text-center text-xs text-muted-foreground">
-      By {action} you are agreeing to our{" "}
+      {t("auth.privacy.prefix")}{" "}
+      {action === "signingIn"
+        ? t("auth.privacy.signingIn")
+        : t("auth.privacy.creatingAccount")}{" "}
       <a
         href="https://langfuse.com/terms"
         target="_blank"
         rel="noopener noreferrer"
         className="italic"
       >
-        Terms and Conditions
+        {t("auth.privacy.terms")}
       </a>
       ,{" "}
       <a
@@ -18,7 +30,7 @@ export const CloudPrivacyNotice = ({ action }: { action: string }) =>
         rel="noopener noreferrer"
         className="italic"
       >
-        Privacy Policy
+        {t("auth.privacy.privacy")}
       </a>
       , and{" "}
       <a
@@ -26,8 +38,9 @@ export const CloudPrivacyNotice = ({ action }: { action: string }) =>
         rel="noopener noreferrer"
         className="italic"
       >
-        Cookie Policy
+        {t("auth.privacy.cookie")}
       </a>
-      . You also confirm that the entered data is accurate.
+      . {t("auth.privacy.accuracy")}
     </div>
-  ) : null;
+  );
+};

@@ -13,6 +13,8 @@ import {
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
 import { showErrorToast } from "@/src/features/notifications/showErrorToast";
 import { api } from "@/src/utils/api";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 /**
  * Props for the SlackDisconnectButton component
@@ -80,6 +82,7 @@ export const SlackDisconnectButton: React.FC<SlackDisconnectButtonProps> = ({
   showConfirmation = true,
   showText = true,
 }) => {
+  const { language } = useLanguage();
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -90,8 +93,12 @@ export const SlackDisconnectButton: React.FC<SlackDisconnectButtonProps> = ({
       setIsDialogOpen(false);
 
       showSuccessToast({
-        title: "Slack Disconnected",
-        description: "Successfully disconnected from your Slack workspace.",
+        title: localize(language, "Slack Disconnected", "Slack 已断开连接"),
+        description: localize(
+          language,
+          "Successfully disconnected from your Slack workspace.",
+          "已成功断开与你的 Slack 工作区的连接。",
+        ),
       });
 
       onSuccess?.();
@@ -99,9 +106,18 @@ export const SlackDisconnectButton: React.FC<SlackDisconnectButtonProps> = ({
     onError: (error: any) => {
       setIsDisconnecting(false);
 
-      const errorMessage = error.message || "Failed to disconnect from Slack";
+      const errorMessage =
+        error.message ||
+        localize(
+          language,
+          "Failed to disconnect from Slack",
+          "断开 Slack 连接失败",
+        );
 
-      showErrorToast("Disconnection Failed", errorMessage);
+      showErrorToast(
+        localize(language, "Disconnection Failed", "断开连接失败"),
+        errorMessage,
+      );
 
       onError?.(new Error(errorMessage));
     },
@@ -141,7 +157,12 @@ export const SlackDisconnectButton: React.FC<SlackDisconnectButtonProps> = ({
       ) : (
         <Unlink className={showText ? "mr-2 h-4 w-4" : "h-4 w-4"} />
       )}
-      {showText && (isDisconnecting ? "Disconnecting..." : buttonText)}
+      {showText &&
+        (isDisconnecting
+          ? localize(language, "Disconnecting...", "断开连接中...")
+          : buttonText === "Disconnect"
+            ? localize(language, "Disconnect", "断开连接")
+            : buttonText)}
     </>
   );
 
@@ -162,25 +183,61 @@ export const SlackDisconnectButton: React.FC<SlackDisconnectButtonProps> = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
-              Disconnect Slack Integration
+              {localize(
+                language,
+                "Disconnect Slack Integration",
+                "断开 Slack 集成",
+              )}
             </DialogTitle>
             <DialogDescription className="space-y-2">
               <p>
-                Are you sure you want to disconnect your Slack workspace from
-                this project?
+                {localize(
+                  language,
+                  "Are you sure you want to disconnect your Slack workspace from this project?",
+                  "确定要将你的 Slack 工作区与此项目断开连接吗？",
+                )}
               </p>
               <div className="space-y-2 rounded-md bg-muted p-3">
-                <p className="text-sm font-medium">This will:</p>
+                <p className="text-sm font-medium">
+                  {localize(language, "This will:", "这将会：")}
+                </p>
                 <ul className="ml-4 space-y-1 text-sm">
-                  <li>• Remove the bot from your Slack workspace</li>
-                  <li>• Disable all existing Slack automations</li>
-                  <li>• Stop all future Slack notifications</li>
-                  <li>• Delete stored workspace credentials</li>
+                  <li>
+                    {localize(
+                      language,
+                      "• Remove the bot from your Slack workspace",
+                      "• 从你的 Slack 工作区移除机器人",
+                    )}
+                  </li>
+                  <li>
+                    {localize(
+                      language,
+                      "• Disable all existing Slack automations",
+                      "• 禁用所有现有 Slack 自动化",
+                    )}
+                  </li>
+                  <li>
+                    {localize(
+                      language,
+                      "• Stop all future Slack notifications",
+                      "• 停止所有未来的 Slack 通知",
+                    )}
+                  </li>
+                  <li>
+                    {localize(
+                      language,
+                      "• Delete stored workspace credentials",
+                      "• 删除已存储的工作区凭证",
+                    )}
+                  </li>
                 </ul>
               </div>
               <p className="text-sm text-muted-foreground">
-                You can reconnect at any time, but you&apos;ll need to
-                reconfigure your automations.
+                {localize(
+                  language,
+                  "You can reconnect at any time, but you'll need to reconfigure your automations.",
+                  "你可以随时重新连接，但需要重新配置你的自动化。",
+                )}
               </p>
             </DialogDescription>
           </DialogHeader>
@@ -190,7 +247,7 @@ export const SlackDisconnectButton: React.FC<SlackDisconnectButtonProps> = ({
               onClick={() => setIsDialogOpen(false)}
               disabled={isDisconnecting}
             >
-              Cancel
+              {localize(language, "Cancel", "取消")}
             </Button>
             <Button
               variant="destructive"
@@ -200,12 +257,12 @@ export const SlackDisconnectButton: React.FC<SlackDisconnectButtonProps> = ({
               {isDisconnecting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Disconnecting...
+                  {localize(language, "Disconnecting...", "断开连接中...")}
                 </>
               ) : (
                 <>
                   <Unlink className="mr-2 h-4 w-4" />
-                  Disconnect
+                  {localize(language, "Disconnect", "断开连接")}
                 </>
               )}
             </Button>

@@ -14,6 +14,8 @@ import { MessageCircleIcon, MessageCircleOff } from "lucide-react";
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import { type SelectionData } from "./contexts/InlineCommentSelectionContext";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function CommentDrawerButton({
   projectId,
@@ -40,6 +42,7 @@ export function CommentDrawerButton({
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
+  const { language } = useLanguage();
   const router = useRouter();
   const [isMentionDropdownOpen, setIsMentionDropdownOpen] = useState(false);
   const [internalIsDrawerOpen, setInternalIsDrawerOpen] = useState(false);
@@ -165,7 +168,7 @@ export function CommentDrawerButton({
               <MessageCircleIcon
                 className={size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"}
               />
-              <span>Add comment</span>
+              <span>{localize(language, "Add comment", "添加评论")}</span>
               <span className="flex h-3.5 w-fit items-center justify-center rounded-sm bg-primary/50 px-1 text-xs text-primary-foreground shadow-sm">
                 {count > 99 ? "99+" : count}
               </span>
@@ -175,7 +178,7 @@ export function CommentDrawerButton({
               <MessageCircleIcon
                 className={size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"}
               />
-              <span>Add comment</span>
+              <span>{localize(language, "Add comment", "添加评论")}</span>
             </div>
           )}
         </Button>
@@ -194,7 +197,7 @@ export function CommentDrawerButton({
         >
           <DrawerHeader className="sr-only flex-shrink-0 rounded-sm bg-background">
             <DrawerTitle>
-              <Header title="Comments"></Header>
+              <Header title={localize(language, "Comments", "评论")}></Header>
             </DrawerTitle>
           </DrawerHeader>
           <div data-vaul-no-drag className="min-h-0 flex-1 px-2 pt-2">

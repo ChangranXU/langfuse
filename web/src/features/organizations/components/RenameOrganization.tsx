@@ -19,11 +19,14 @@ import { useQueryOrganization } from "@/src/features/organizations/hooks";
 import { Card } from "@/src/components/ui/card";
 import { LockIcon } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export default function RenameOrganization() {
   const { update: updateSession } = useSession();
   const capture = usePostHogClientCapture();
   const organization = useQueryOrganization();
+  const { language } = useLanguage();
   const hasAccess = useHasOrganizationAccess({
     organizationId: organization?.id,
     scope: "organization:update",
@@ -63,19 +66,31 @@ export default function RenameOrganization() {
 
   return (
     <div>
-      <Header title="Organization Name" />
+      <Header title={localize(language, "Organization Name", "组织名称")} />
       <Card className="mb-4 p-3">
         {form.getValues().name !== "" ? (
           <p className="mb-4 text-sm text-primary">
-            Your Organization will be renamed from &quot;
+            {localize(
+              language,
+              'Your Organization will be renamed from "',
+              '你的组织将从 "',
+            )}
             {orgName}
-            &quot; to &quot;
-            <b>{form.watch().name}</b>&quot;.
+            {localize(language, '" to "', '" 重命名为 "')}
+            <b>{form.watch().name}</b>
+            {'"'}
+            {localize(language, ".", "。")}
           </p>
         ) : (
           <p className="mb-4 text-sm">
-            Your Organization is currently named &quot;<b>{orgName}</b>
-            &quot;.
+            {localize(
+              language,
+              'Your Organization is currently named "',
+              '你的组织当前名称为 "',
+            )}
+            <b>{orgName}</b>
+            {'"'}
+            {localize(language, ".", "。")}
           </p>
         )}
         <Form {...form}>
@@ -98,7 +113,9 @@ export default function RenameOrganization() {
                         disabled={!hasAccess}
                       />
                       {!hasAccess && (
-                        <span title="No access">
+                        <span
+                          title={localize(language, "No access", "无访问权限")}
+                        >
                           <LockIcon className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-muted" />
                         </span>
                       )}
@@ -116,7 +133,7 @@ export default function RenameOrganization() {
                 disabled={form.getValues().name === "" || !hasAccess}
                 className="mt-4"
               >
-                Save
+                {localize(language, "Save", "保存")}
               </Button>
             )}
           </form>

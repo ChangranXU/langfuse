@@ -21,9 +21,14 @@ import {
   contextWithLangfuseProps,
 } from "@langfuse/shared/src/server";
 import * as opentelemetry from "@opentelemetry/api";
+import {
+  applyLanguageInstructionToMessages,
+  getLanguageFromRequest,
+} from "@/src/features/i18n/server";
 
 export default async function chatCompletionHandler(req: NextRequest) {
   try {
+    const language = getLanguageFromRequest(req);
     const body = validateChatCompletionBody(await req.json());
     const { userId } = await authorizeRequestOrThrow(body.projectId);
 
@@ -78,6 +83,11 @@ export default async function chatCompletionHandler(req: NextRequest) {
       if (structuredOutputSchema) {
         const result = await fetchLLMCompletion({
           ...fetchLLMCompletionParams,
+          messages: applyLanguageInstructionToMessages({
+            messages,
+            language,
+            mode: "structured",
+          }),
           streaming: false,
           structuredOutputSchema,
         });
@@ -118,7 +128,11 @@ export default async function chatCompletionHandler(req: NextRequest) {
 
         const result = await (fetchLLMCompletion as any)({
           ...fetchLLMCompletionParams,
-          messages: fixedMessages,
+          messages: applyLanguageInstructionToMessages({
+            messages: fixedMessages,
+            language,
+            mode: "structured",
+          }),
           streaming: false,
           tools: tools ?? [],
         });
@@ -128,14 +142,24 @@ export default async function chatCompletionHandler(req: NextRequest) {
       if (streaming) {
         const completion = await fetchLLMCompletion({
           ...fetchLLMCompletionParams,
-          streaming,
+          messages: applyLanguageInstructionToMessages({
+            messages,
+            language,
+            mode: "prose",
+          }),
+          streaming: true,
         });
 
         return new StreamingTextResponse(completion);
       } else {
         const completion = await fetchLLMCompletion({
           ...fetchLLMCompletionParams,
-          streaming,
+          messages: applyLanguageInstructionToMessages({
+            messages,
+            language,
+            mode: "prose",
+          }),
+          streaming: false,
         });
 
         return NextResponse.json({ content: completion });

@@ -18,6 +18,8 @@ import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { useEventsTraceData } from "@/src/features/events/hooks/useEventsTraceData";
 import { showErrorToast } from "@/src/features/notifications/showErrorToast";
 import { useEffect } from "react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 const TRACE_LIVE_REFRESH_INTERVAL_MS = 5_000;
 
@@ -30,6 +32,7 @@ export function TracePage({
 }) {
   const router = useRouter();
   const session = useSession();
+  const { language } = useLanguage();
   const routeProjectId = (router.query.projectId as string) ?? "";
   const { isBetaEnabled } = useV4Beta();
 
@@ -123,7 +126,10 @@ export function TracePage({
       />
     );
 
-  if (!trace.data) return <div className="p-3">Loading...</div>;
+  if (!trace.data)
+    return (
+      <div className="p-3">{localize(language, "Loading...", "加载中...")}</div>
+    );
   const policyConfirmationTurnIndexes =
     "policyConfirmationTurnIndexes" in trace.data
       ? trace.data.policyConfirmationTurnIndexes

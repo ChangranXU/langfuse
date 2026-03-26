@@ -26,12 +26,14 @@ import { organizationFormSchema } from "@/src/features/organizations/utils/organ
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { SurveyName } from "@prisma/client";
 import { useLangfuseCloudRegion } from "@/src/features/organizations/hooks";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 export const NewOrganizationForm = ({
   onSuccess,
 }: {
   onSuccess: (orgId: string) => void;
 }) => {
+  const { t } = useLanguage();
   const { update: updateSession } = useSession();
 
   const form = useForm({
@@ -49,6 +51,23 @@ export const NewOrganizationForm = ({
   const createSurveyMutation = api.surveys.create.useMutation();
   const watchedType = form.watch("type");
   const { isLangfuseCloud } = useLangfuseCloudRegion();
+
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case "Personal":
+        return t("organizationsForm.typePersonal");
+      case "Educational":
+        return t("organizationsForm.typeEducational");
+      case "Company":
+        return t("organizationsForm.typeCompany");
+      case "Startup":
+        return t("organizationsForm.typeStartup");
+      case "Agency":
+        return t("organizationsForm.typeAgency");
+      default:
+        return t("organizationsForm.typeNA");
+    }
+  };
 
   function onSubmit(values: z.infer<typeof organizationFormSchema>) {
     capture("organizations:new_form_submit");
@@ -112,10 +131,10 @@ export const NewOrganizationForm = ({
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Organization name</FormLabel>
+              <FormLabel>{t("organizationsForm.organizationName")}</FormLabel>
               <FormControl>
                 <Input
-                  placeholder="my-org"
+                  placeholder={t("organizationsForm.namePlaceholder")}
                   {...field}
                   data-testid="new-org-name-input"
                 />
@@ -131,23 +150,37 @@ export const NewOrganizationForm = ({
               name="type"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Type</FormLabel>
+                  <FormLabel>{t("organizationsForm.typeLabel")}</FormLabel>
                   <FormDescription>
-                    What would best describe your organization?
+                    {t("organizationsForm.typeDescription")}
                   </FormDescription>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger ref={field.ref}>
-                        <SelectValue placeholder="Please choose" />
+                        <SelectValue
+                          placeholder={t("organizationsForm.pleaseChoose")}
+                        />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="Personal">Personal</SelectItem>
-                      <SelectItem value="Educational">Educational</SelectItem>
-                      <SelectItem value="Company">Company</SelectItem>
-                      <SelectItem value="Startup">Startup</SelectItem>
-                      <SelectItem value="Agency">Agency</SelectItem>
-                      <SelectItem value="N/A">N/A</SelectItem>
+                      <SelectItem value="Personal">
+                        {t("organizationsForm.typePersonal")}
+                      </SelectItem>
+                      <SelectItem value="Educational">
+                        {t("organizationsForm.typeEducational")}
+                      </SelectItem>
+                      <SelectItem value="Company">
+                        {t("organizationsForm.typeCompany")}
+                      </SelectItem>
+                      <SelectItem value="Startup">
+                        {t("organizationsForm.typeStartup")}
+                      </SelectItem>
+                      <SelectItem value="Agency">
+                        {t("organizationsForm.typeAgency")}
+                      </SelectItem>
+                      <SelectItem value="N/A">
+                        {t("organizationsForm.typeNA")}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -160,14 +193,19 @@ export const NewOrganizationForm = ({
                 name="size"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{watchedType} size</FormLabel>
+                    <FormLabel>
+                      {getTypeLabel(watchedType)} {t("organizationsForm.size")}
+                    </FormLabel>
                     <FormDescription>
-                      How many people are in your {watchedType}?
+                      {t("organizationsForm.sizeDescriptionPrefix")}{" "}
+                      {getTypeLabel(watchedType)}?
                     </FormDescription>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger ref={field.ref}>
-                          <SelectValue placeholder="Please choose" />
+                          <SelectValue
+                            placeholder={t("organizationsForm.pleaseChoose")}
+                          />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -176,7 +214,7 @@ export const NewOrganizationForm = ({
                         <SelectItem value="50-99">50-99</SelectItem>
                         <SelectItem value="100-299">100-299</SelectItem>
                         <SelectItem value="More than 300">
-                          More than 300
+                          {t("organizationsForm.moreThan300")}
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -188,7 +226,7 @@ export const NewOrganizationForm = ({
           </>
         )}
         <Button type="submit" loading={createOrgMutation.isPending}>
-          Create
+          {t("organizationsForm.create")}
         </Button>
       </form>
     </Form>

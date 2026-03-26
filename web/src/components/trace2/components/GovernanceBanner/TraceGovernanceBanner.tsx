@@ -8,10 +8,13 @@ import {
   getMetadataRecord,
   mergeRelevantPolicyMetadata,
 } from "@/src/features/governance/utils/policyMetadata";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 const GOVERNANCE_REFRESH_INTERVAL_MS = 5_000;
 
 export function TraceGovernanceBanner() {
+  const { language } = useLanguage();
   const { trace, observations } = useTraceData();
   const { selectedNodeId, setSelectedNodeId } = useSelection();
   const hasProjectAccess = useIsAuthenticatedAndProjectMember(trace.projectId);
@@ -322,33 +325,42 @@ export function TraceGovernanceBanner() {
       <div className="flex flex-wrap items-center gap-1.5">
         {enhancedGovernanceEnabled ? (
           <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-            <span>Enhanced Governance Mode:</span>
+            <span>
+              {localize(
+                language,
+                "Enhanced Governance Mode:",
+                "增强治理模式：",
+              )}
+            </span>
             <span className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-              Active
+              {localize(language, "Active", "已启用")}
             </span>
           </div>
         ) : null}
       </div>
       <div className="mt-1 text-sm text-muted-foreground">
-        Governance Summary:{" "}
-        <span className="font-bold text-foreground">{errorCount}</span> errors,{" "}
-        <span className="font-bold text-foreground">{warningCount}</span>{" "}
-        warnings,{" "}
-        <span className="font-bold text-foreground">
-          {policyViolationCount}
-        </span>{" "}
-        policy violations across{" "}
-        <span className="font-bold text-foreground">{observations.length}</span>{" "}
-        nodes.
+        {localize(
+          language,
+          `Governance Summary: ${errorCount} errors, ${warningCount} warnings, ${policyViolationCount} policy violations across ${observations.length} nodes.`,
+          `治理摘要：${errorCount} 个错误，${warningCount} 个警告，${policyViolationCount} 个策略违规，共涉及 ${observations.length} 个节点。`,
+        )}
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-        <span>Error node types:</span>
+        <span>{localize(language, "Error node types:", "错误节点类型：")}</span>
         {errorCount === 0 ? (
-          <span className="font-bold text-foreground">none</span>
+          <span className="font-bold text-foreground">
+            {localize(language, "none", "无")}
+          </span>
         ) : !hasProjectAccess ? (
-          <span>unavailable (project access required)</span>
+          <span>
+            {localize(
+              language,
+              "unavailable (project access required)",
+              "不可用（需要项目访问权限）",
+            )}
+          </span>
         ) : isErrorTypeLoading && errorGroups.length === 0 ? (
-          <span>loading...</span>
+          <span>{localize(language, "loading...", "加载中...")}</span>
         ) : (
           errorGroups.map((group) => {
             const isActive = expandedErrorType === group.type;
@@ -374,11 +386,19 @@ export function TraceGovernanceBanner() {
         )}
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-        <span>Policy violation node types:</span>
+        <span>
+          {localize(
+            language,
+            "Policy violation node types:",
+            "策略违规节点类型：",
+          )}
+        </span>
         {policyViolationCount === 0 ? (
-          <span className="font-bold text-foreground">none</span>
+          <span className="font-bold text-foreground">
+            {localize(language, "none", "无")}
+          </span>
         ) : isPolicyTypeLoading && policyViolationGroups.length === 0 ? (
-          <span>loading...</span>
+          <span>{localize(language, "loading...", "加载中...")}</span>
         ) : (
           policyViolationGroups.map((group) => {
             const isActive = expandedPolicyViolationType === group.type;

@@ -39,11 +39,14 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/src/components/ui/alert";
 import { TriangleAlert } from "lucide-react";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function TransferProjectButton() {
   const capture = usePostHogClientCapture();
   const session = useSession();
   const { project, organization } = useQueryProject();
+  const { language } = useLanguage();
   const hasAccess = useHasOrganizationAccess({
     organizationId: organization?.id,
     scope: "projects:transfer_org",
@@ -63,7 +66,11 @@ export function TransferProjectButton() {
 
   const formSchema = z.object({
     name: z.string().includes(confirmMessage, {
-      message: `Please confirm with "${confirmMessage}"`,
+      message: localize(
+        language,
+        `Please confirm with "${confirmMessage}"`,
+        `请输入 "${confirmMessage}" 以确认`,
+      ),
     }),
     projectId: z.string(),
   });
@@ -71,9 +78,12 @@ export function TransferProjectButton() {
   const transferProject = api.projects.transfer.useMutation({
     onSuccess: async () => {
       showSuccessToast({
-        title: "Project transferred",
-        description:
+        title: localize(language, "Project transferred", "项目已转移"),
+        description: localize(
+          language,
           "The project is successfully transferred to the new organization. Redirecting...",
+          "项目已成功转移到新组织。正在跳转...",
+        ),
       });
       await new Promise((resolve) => setTimeout(resolve, 5000));
       void session.update();
@@ -102,28 +112,37 @@ export function TransferProjectButton() {
     <Dialog>
       <DialogTrigger asChild>
         <Button variant="destructive-secondary" disabled={!hasAccess}>
-          Transfer Project
+          {localize(language, "Transfer Project", "转移项目")}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold">
-            Transfer Project
+            {localize(language, "Transfer Project", "转移项目")}
           </DialogTitle>
           <Alert className="mt-2">
             <TriangleAlert className="h-4 w-4" />
-            <AlertTitle>Warning</AlertTitle>
+            <AlertTitle>{localize(language, "Warning", "警告")}</AlertTitle>
             <AlertDescription>
-              Transferring the project will move it to a different organization:
+              {localize(
+                language,
+                "Transferring the project will move it to a different organization:",
+                "转移项目会将其移动到另一个组织：",
+              )}
               <ul className="list-disc pl-4">
                 <li>
-                  Members who are not part of the new organization will lose
-                  access.
+                  {localize(
+                    language,
+                    "Members who are not part of the new organization will lose access.",
+                    "不属于新组织的成员将失去访问权限。",
+                  )}
                 </li>
                 <li>
-                  The project remains fully operational as API keys, settings,
-                  and data will remain unchanged. All features (e.g. tracing,
-                  prompt management) will continue to work without interruption.
+                  {localize(
+                    language,
+                    "The project remains fully operational as API keys, settings, and data will remain unchanged. All features (e.g. tracing, prompt management) will continue to work without interruption.",
+                    "项目会继续正常运行，因为 API 密钥、设置和数据都不会改变。所有功能（如 tracing、prompt management）都会持续可用，不会中断。",
+                  )}
                 </li>
               </ul>
             </AlertDescription>
@@ -137,7 +156,13 @@ export function TransferProjectButton() {
                 name="projectId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Select New Organization</FormLabel>
+                    <FormLabel>
+                      {localize(
+                        language,
+                        "Select New Organization",
+                        "选择新组织",
+                      )}
+                    </FormLabel>
                     <FormControl>
                       <Select
                         onValueChange={field.onChange}
@@ -145,7 +170,13 @@ export function TransferProjectButton() {
                         disabled={transferProject.isPending}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select organization" />
+                          <SelectValue
+                            placeholder={localize(
+                              language,
+                              "Select organization",
+                              "选择组织",
+                            )}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {organizationsToTransferTo
@@ -159,8 +190,11 @@ export function TransferProjectButton() {
                       </Select>
                     </FormControl>
                     <FormDescription>
-                      Transfer this project to another organization where you
-                      have the ability to create projects.
+                      {localize(
+                        language,
+                        "Transfer this project to another organization where you have the ability to create projects.",
+                        "将此项目转移到另一个你拥有创建项目权限的组织。",
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -171,12 +205,18 @@ export function TransferProjectButton() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Confirm</FormLabel>
+                    <FormLabel>
+                      {localize(language, "Confirm", "确认")}
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder={confirmMessage} {...field} />
                     </FormControl>
                     <FormDescription>
-                      {`To confirm, type "${confirmMessage}" in the input box `}
+                      {localize(
+                        language,
+                        `To confirm, type "${confirmMessage}" in the input box.`,
+                        `要确认，请在输入框中输入 "${confirmMessage}"。`,
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -190,7 +230,7 @@ export function TransferProjectButton() {
                 loading={transferProject.isPending}
                 className="w-full"
               >
-                Transfer project
+                {localize(language, "Transfer project", "转移项目")}
               </Button>
             </DialogFooter>
           </form>

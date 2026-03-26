@@ -40,6 +40,8 @@ import {
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { RoleSelectItem } from "@/src/features/rbac/components/RoleSelectItem";
 import { ActionButton } from "@/src/components/ActionButton";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 const formSchema = z.object({
   email: z.string().trim().email(),
@@ -52,6 +54,7 @@ export function CreateProjectMemberButton(props: {
   project?: { id: string; name: string };
 }) {
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
   const [open, setOpen] = useState(false);
   const hasOrgAccess = useHasOrganizationAccess({
     organizationId: props.orgId,
@@ -147,15 +150,24 @@ export function CreateProjectMemberButton(props: {
             icon={<PlusIcon className="h-5 w-5" aria-hidden="true" />}
           >
             {hasOnlySingleProjectAccess
-              ? "Add project member"
-              : "Add new member"}
+              ? localize(language, "Add project member", "添加项目成员")
+              : localize(language, "Add new member", "添加新成员")}
           </ActionButton>
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Add new member to the{" "}
-              {hasOnlySingleProjectAccess ? "project" : "organization"}
+              {hasOnlySingleProjectAccess
+                ? localize(
+                    language,
+                    "Add new member to the project",
+                    "向项目添加新成员",
+                  )
+                : localize(
+                    language,
+                    "Add new member to the organization",
+                    "向组织添加新成员",
+                  )}
             </DialogTitle>
           </DialogHeader>
           <Form {...form}>
@@ -166,7 +178,9 @@ export function CreateProjectMemberButton(props: {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email</FormLabel>
+                      <FormLabel>
+                        {localize(language, "Email", "邮箱")}
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="jsdoe@example.com" {...field} />
                       </FormControl>
@@ -180,7 +194,9 @@ export function CreateProjectMemberButton(props: {
                     name="orgRole"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Organization Role</FormLabel>
+                        <FormLabel>
+                          {localize(language, "Organization Role", "组织角色")}
+                        </FormLabel>
                         <Select
                           defaultValue={field.value}
                           onValueChange={(value) =>
@@ -191,7 +207,13 @@ export function CreateProjectMemberButton(props: {
                         >
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select an organization role" />
+                              <SelectValue
+                                placeholder={localize(
+                                  language,
+                                  "Select an organization role",
+                                  "选择组织角色",
+                                )}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -211,7 +233,9 @@ export function CreateProjectMemberButton(props: {
                     name="projectRole"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Project Role</FormLabel>
+                        <FormLabel>
+                          {localize(language, "Project Role", "项目角色")}
+                        </FormLabel>
                         <Select
                           defaultValue={field.value}
                           onValueChange={(value) =>
@@ -222,7 +246,13 @@ export function CreateProjectMemberButton(props: {
                         >
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select a project role" />
+                              <SelectValue
+                                placeholder={localize(
+                                  language,
+                                  "Select a project role",
+                                  "选择项目角色",
+                                )}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -243,8 +273,11 @@ export function CreateProjectMemberButton(props: {
                         </Select>
                         {!hasOnlySingleProjectAccess && (
                           <FormDescription>
-                            This project role will override the default role for
-                            this current project ({props.project!.name}).
+                            {localize(
+                              language,
+                              `This project role will override the default role for this current project (${props.project!.name}).`,
+                              `这个项目角色将覆盖当前项目（${props.project!.name}）的默认角色。`,
+                            )}
                           </FormDescription>
                         )}
                         <FormMessage />
@@ -259,7 +292,7 @@ export function CreateProjectMemberButton(props: {
                   className="w-full"
                   loading={form.formState.isSubmitting}
                 >
-                  Grant access
+                  {localize(language, "Grant access", "授予访问权限")}
                 </Button>
                 <FormMessage />
               </DialogFooter>

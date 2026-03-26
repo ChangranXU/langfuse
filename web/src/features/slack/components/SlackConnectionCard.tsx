@@ -13,6 +13,8 @@ import { Alert, AlertDescription } from "@/src/components/ui/alert";
 import { api } from "@/src/utils/api";
 import { SlackConnectButton } from "@/src/features/slack/components/SlackConnectButton";
 import { SlackDisconnectButton } from "@/src/features/slack/components/SlackDisconnectButton";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 /**
  * Props for the SlackConnectionCard component
@@ -50,6 +52,7 @@ export const SlackConnectionCard: React.FC<SlackConnectionCardProps> = ({
   onConnectionChange,
   showConnectButton = true,
 }) => {
+  const { language } = useLanguage();
   // Get Slack integration status
   const {
     data: integrationStatus,
@@ -77,14 +80,20 @@ export const SlackConnectionCard: React.FC<SlackConnectionCardProps> = ({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            Slack Connection
+            {localize(language, "Slack Connection", "Slack 连接")}
           </CardTitle>
-          <CardDescription>Checking connection status...</CardDescription>
+          <CardDescription>
+            {localize(
+              language,
+              "Checking connection status...",
+              "正在检查连接状态...",
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-2 text-muted-foreground">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            <span>Loading...</span>
+            <span>{localize(language, "Loading...", "加载中...")}</span>
           </div>
         </CardContent>
       </Card>
@@ -97,15 +106,25 @@ export const SlackConnectionCard: React.FC<SlackConnectionCardProps> = ({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            Slack Connection
+            {localize(language, "Slack Connection", "Slack 连接")}
           </CardTitle>
-          <CardDescription>Error loading connection status</CardDescription>
+          <CardDescription>
+            {localize(
+              language,
+              "Error loading connection status",
+              "加载连接状态时出错",
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Failed to load Slack integration status. Please try again.
+              {localize(
+                language,
+                "Failed to load Slack integration status. Please try again.",
+                "加载 Slack 集成状态失败，请重试。",
+              )}
             </AlertDescription>
           </Alert>
         </CardContent>
@@ -119,10 +138,14 @@ export const SlackConnectionCard: React.FC<SlackConnectionCardProps> = ({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            Slack Connection
+            {localize(language, "Slack Connection", "Slack 连接")}
           </CardTitle>
           <CardDescription>
-            Connect your Slack workspace to send notifications
+            {localize(
+              language,
+              "Connect your Slack workspace to send notifications",
+              "连接你的 Slack 工作区以发送通知",
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -135,8 +158,11 @@ export const SlackConnectionCard: React.FC<SlackConnectionCardProps> = ({
 
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">
-              Connect your Slack workspace to enable real-time notifications for
-              your automations.
+              {localize(
+                language,
+                "Connect your Slack workspace to enable real-time notifications for your automations.",
+                "连接你的 Slack 工作区，以为自动化启用实时通知。",
+              )}
             </p>
 
             {showConnectButton && (
@@ -160,28 +186,40 @@ export const SlackConnectionCard: React.FC<SlackConnectionCardProps> = ({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          Slack Connection
+          {localize(language, "Slack Connection", "Slack 连接")}
         </CardTitle>
-        <CardDescription>Connected to your Slack workspace</CardDescription>
+        <CardDescription>
+          {localize(
+            language,
+            "Connected to your Slack workspace",
+            "已连接到你的 Slack 工作区",
+          )}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Connection Status */}
         <div className="flex items-center gap-2">
           <CheckCircle className="h-4 w-4 text-green-500" />
-          <span className="text-sm font-medium">Connected</span>
+          <span className="text-sm font-medium">
+            {localize(language, "Connected", "已连接")}
+          </span>
         </div>
 
         {/* Team Information */}
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Workspace:</span>
+            <span className="text-sm font-medium">
+              {localize(language, "Workspace:", "工作区：")}
+            </span>
             <Badge variant="secondary" className="text-xs">
               {integrationStatus.teamName}
             </Badge>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Team ID:</span>
+            <span className="text-sm font-medium">
+              {localize(language, "Team ID:", "团队 ID：")}
+            </span>
             <Badge variant="outline" className="font-mono text-xs">
               {integrationStatus.teamId}
             </Badge>
@@ -189,7 +227,9 @@ export const SlackConnectionCard: React.FC<SlackConnectionCardProps> = ({
 
           {integrationStatus.botUserId && (
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">Bot User:</span>
+              <span className="text-sm font-medium">
+                {localize(language, "Bot User:", "机器人用户：")}
+              </span>
               <Badge variant="outline" className="font-mono text-xs">
                 {integrationStatus.botUserId}
               </Badge>
@@ -214,7 +254,7 @@ export const SlackConnectionCard: React.FC<SlackConnectionCardProps> = ({
             onClick={() => refetchStatus()}
             disabled={disabled}
           >
-            Refresh Status
+            {localize(language, "Refresh Status", "刷新状态")}
           </Button>
         </div>
       </CardContent>

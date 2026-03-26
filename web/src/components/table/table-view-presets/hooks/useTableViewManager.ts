@@ -19,6 +19,8 @@ import isEqual from "lodash/isEqual";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { validateOrderBy, validateFilters } from "../validation";
 import { isSystemPresetId } from "../components/data-table-view-presets-drawer";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 interface TableStateUpdaters {
   setColumnOrder: (columnOrder: string[]) => void;
@@ -49,6 +51,7 @@ export function useTableViewManager({
   validationContext = {},
   currentFilterState,
 }: UseTableStateProps) {
+  const { language } = useLanguage();
   const router = useRouter();
   const { viewId } = router.query;
   const [isInitialized, setIsInitialized] = useState(false);
@@ -223,8 +226,12 @@ export function useTableViewManager({
         validFilters.length !== viewData.filters.length
       ) {
         showErrorToast(
-          "Outdated view",
-          "This view is outdated. Some old filters or ordering may have been ignored. Please update your view.",
+          localize(language, "Outdated view", "视图已过期"),
+          localize(
+            language,
+            "This view is outdated. Some old filters or ordering may have been ignored. Please update your view.",
+            "该视图已过期。部分旧筛选条件或排序可能已被忽略。请更新你的视图。",
+          ),
           "WARNING",
         );
       }
@@ -262,6 +269,7 @@ export function useTableViewManager({
       // for a page reload
     },
     [
+      language,
       setColumnOrder,
       setColumnVisibility,
       validationContext,

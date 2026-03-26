@@ -45,6 +45,8 @@ import { numberFormatter } from "@/src/utils/numbers";
 import { formatMetricName } from "@/src/features/widgets/utils";
 import { type OrderByState } from "@langfuse/shared";
 import { ChartLoadingState } from "@/src/features/widgets/chart-library/ChartLoadingState";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 /**
  * Props interface for the PivotTable component
@@ -239,6 +241,7 @@ export const PivotTable: React.FC<PivotTableProps> = ({
   onSortChange,
   isLoading = false,
 }) => {
+  const { language } = useLanguage();
   // Transform chart data into pivot table structure
   const pivotTableRows = useMemo(() => {
     if (!data || data.length === 0) {
@@ -359,7 +362,9 @@ export const PivotTable: React.FC<PivotTableProps> = ({
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <p className="text-sm text-muted-foreground">No data available</p>
+          <p className="text-sm text-muted-foreground">
+            {localize(language, "No data available", "没有可用数据")}
+          </p>
         </div>
       </div>
     );
@@ -371,7 +376,11 @@ export const PivotTable: React.FC<PivotTableProps> = ({
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
           <p className="text-sm text-muted-foreground">
-            Unable to process data for pivot table
+            {localize(
+              language,
+              "Unable to process data for pivot table",
+              "无法处理透视表数据",
+            )}
           </p>
         </div>
       </div>

@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/src/components/ui/alert-dialog";
 import { Button } from "@/src/components/ui/button";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 type PolicyStatsRow = {
   policyName: string;
@@ -79,6 +80,7 @@ function PolicyStatsTable(props: {
   }) => void;
   onHighlightedRowClick?: (policyName: string) => void;
 }) {
+  const { t } = useLanguage();
   const {
     rows,
     highlightThresholdPct,
@@ -102,25 +104,25 @@ function PolicyStatsTable(props: {
               scope="col"
               className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
             >
-              Policy
+              {t("dashboard.policyConfirmation.policy")}
             </th>
             <th
               scope="col"
               className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
             >
-              Total
+              {t("dashboard.policyConfirmation.total")}
             </th>
             <th
               scope="col"
               className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
             >
-              Accepted
+              {t("dashboard.policyConfirmation.accepted")}
             </th>
             <th
               scope="col"
               className="py-3.5 pl-4 pr-3 text-center text-xs font-semibold text-primary sm:pl-0"
             >
-              Rejected
+              {t("dashboard.policyConfirmation.rejected")}
             </th>
           </tr>
         </thead>
@@ -221,6 +223,7 @@ export const PolicyConfirmationStatsCard = ({
   isLoading?: boolean;
   metricsVersion?: ViewVersion;
 }) => {
+  const { t } = useLanguage();
   const settingsQuery = api.projects.getErrorAnalysisSettings.useQuery(
     { projectId },
     {
@@ -273,8 +276,8 @@ export const PolicyConfirmationStatsCard = ({
   return (
     <DashboardCard
       className={className}
-      title="Policy confirmation stats"
-      description={`Sorted by rejected ratio (desc). Highlight threshold: ${highlightThresholdPct}%`}
+      title={t("dashboard.policyConfirmation.title")}
+      description={`${t("dashboard.policyConfirmation.descriptionPrefix")} ${highlightThresholdPct}%`}
       isLoading={isCardLoading}
       cardContentClassName="flex min-h-0 flex-1 flex-col"
     >
@@ -282,7 +285,7 @@ export const PolicyConfirmationStatsCard = ({
         <div className="mt-1 flex min-h-0 flex-1 flex-col">
           <TotalMetric
             metric={compactNumberFormatter(totalConfirmations)}
-            description="Total policy confirmations (accepted + rejected)"
+            description={t("dashboard.policyConfirmation.totalDescription")}
           />
           <div className="mt-3 min-h-0 flex-1">
             <PolicyStatsTable
@@ -299,7 +302,7 @@ export const PolicyConfirmationStatsCard = ({
       ) : (
         <NoDataOrLoading
           isLoading={isCardLoading}
-          description="No policy confirmations found in the selected range."
+          description={t("dashboard.policyConfirmation.noData")}
         />
       )}
       {selectedDetail ? (
@@ -330,16 +333,18 @@ export const PolicyConfirmationStatsCard = ({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Policy refinement suggestion</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("dashboard.policyConfirmation.dialogTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {selectedSuggestionPolicyName
-                ? `User feedback indicates potential dissatisfaction with "${selectedSuggestionPolicyName}". Would you like to review and refine this policy with LLM-assisted suggestions?`
-                : "Generate a policy refinement suggestion from rejected-turn evidence."}
+                ? `${t("dashboard.policyConfirmation.dialogDescriptionPrefix")} "${selectedSuggestionPolicyName}". ${t("dashboard.policyConfirmation.dialogDescriptionSuffix")}`
+                : t("dashboard.policyConfirmation.dialogDescriptionFallback")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {suggestionMutation.isPending ? (
             <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-              Generating suggestion from policy enforcement context...
+              {t("dashboard.policyConfirmation.generatingContext")}
             </div>
           ) : null}
           {suggestionMutation.error ? (
@@ -351,7 +356,7 @@ export const PolicyConfirmationStatsCard = ({
             <div className="space-y-3 rounded-md border bg-muted/30 p-3">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Suggestion
+                  {t("dashboard.policyConfirmation.suggestion")}
                 </div>
                 <div className="mt-1 whitespace-pre-wrap text-sm text-foreground">
                   {suggestionMutation.data.suggestion.suggestion}
@@ -359,7 +364,7 @@ export const PolicyConfirmationStatsCard = ({
               </div>
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Reason
+                  {t("dashboard.policyConfirmation.reason")}
                 </div>
                 <div className="mt-1 whitespace-pre-wrap text-sm text-foreground">
                   {suggestionMutation.data.suggestion.reason}
@@ -369,7 +374,7 @@ export const PolicyConfirmationStatsCard = ({
               0 ? (
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Supporting signals
+                    {t("dashboard.policyConfirmation.supportingSignals")}
                   </div>
                   <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                     {suggestionMutation.data.suggestion.supportingSignals.map(
@@ -384,7 +389,9 @@ export const PolicyConfirmationStatsCard = ({
           ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={suggestionMutation.isPending}>
-              {suggestionMutation.data ? "Close" : "No"}
+              {suggestionMutation.data
+                ? t("common.close")
+                : t("dashboard.policyConfirmation.no")}
             </AlertDialogCancel>
             <Button
               type="button"
@@ -404,10 +411,10 @@ export const PolicyConfirmationStatsCard = ({
               }}
             >
               {suggestionMutation.isPending
-                ? "Generating..."
+                ? t("dashboard.policyConfirmation.generating")
                 : suggestionMutation.data
-                  ? "Regenerate with latest context"
-                  : "Yes, generate suggestion"}
+                  ? t("dashboard.policyConfirmation.regenerate")
+                  : t("dashboard.policyConfirmation.yesGenerate")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

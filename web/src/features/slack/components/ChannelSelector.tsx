@@ -18,6 +18,8 @@ import {
 } from "@/src/components/ui/popover";
 import { Alert, AlertDescription } from "@/src/components/ui/alert";
 import { api } from "@/src/utils/api";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 /**
  * Represents a Slack channel
@@ -84,6 +86,7 @@ export const ChannelSelector: React.FC<ChannelSelectorProps> = ({
   filterChannels,
   showRefreshButton = true,
 }) => {
+  const { language } = useLanguage();
   const [open, setOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -180,7 +183,13 @@ export const ChannelSelector: React.FC<ChannelSelectorProps> = ({
         <div className="flex items-center gap-2">
           <Select disabled>
             <SelectTrigger>
-              <SelectValue placeholder="Loading channels..." />
+              <SelectValue
+                placeholder={localize(
+                  language,
+                  "Loading channels...",
+                  "正在加载频道...",
+                )}
+              />
             </SelectTrigger>
           </Select>
           {showRefreshButton && (
@@ -200,7 +209,13 @@ export const ChannelSelector: React.FC<ChannelSelectorProps> = ({
         <div className="flex items-center gap-2">
           <Select disabled>
             <SelectTrigger>
-              <SelectValue placeholder="Error loading channels" />
+              <SelectValue
+                placeholder={localize(
+                  language,
+                  "Error loading channels",
+                  "加载频道出错",
+                )}
+              />
             </SelectTrigger>
           </Select>
           {showRefreshButton && (
@@ -211,8 +226,11 @@ export const ChannelSelector: React.FC<ChannelSelectorProps> = ({
         </div>
         <Alert>
           <AlertDescription>
-            Failed to load channels. Please check your Slack connection and try
-            again.
+            {localize(
+              language,
+              "Failed to load channels. Please check your Slack connection and try again.",
+              "加载频道失败。请检查你的 Slack 连接后重试。",
+            )}
           </AlertDescription>
         </Alert>
       </div>
@@ -234,7 +252,11 @@ export const ChannelSelector: React.FC<ChannelSelectorProps> = ({
               {selectedChannel ? (
                 renderChannelItem(selectedChannel)
               ) : (
-                <span className="text-muted-foreground">{placeholder}</span>
+                <span className="text-muted-foreground">
+                  {placeholder === "Select a channel"
+                    ? localize(language, "Select a channel", "选择频道")
+                    : placeholder}
+                </span>
               )}
               <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
@@ -242,15 +264,27 @@ export const ChannelSelector: React.FC<ChannelSelectorProps> = ({
           <PopoverContent className="w-full p-0" align="start">
             <Command shouldFilter={false}>
               <CommandInput
-                placeholder="Search channels..."
+                placeholder={localize(
+                  language,
+                  "Search channels...",
+                  "搜索频道...",
+                )}
                 value={searchValue}
                 onValueChange={setSearchValue}
               />
               <CommandList>
                 <CommandEmpty>
                   {searchValue
-                    ? "No channels match your search."
-                    : "No channels available."}
+                    ? localize(
+                        language,
+                        "No channels match your search.",
+                        "没有频道匹配你的搜索。",
+                      )
+                    : localize(
+                        language,
+                        "No channels available.",
+                        "没有可用频道。",
+                      )}
                 </CommandEmpty>
                 <CommandGroup>
                   {filteredChannels.map((channel) => (
@@ -286,8 +320,12 @@ export const ChannelSelector: React.FC<ChannelSelectorProps> = ({
       {/* Channel stats */}
       {channelsData?.channels && (
         <div className="text-xs text-muted-foreground">
-          {filteredChannels.length} of {channelsData.channels.length} channels
-          {memberOnly && " (member only)"}
+          {localize(
+            language,
+            `${filteredChannels.length} of ${channelsData.channels.length} channels`,
+            `${filteredChannels.length}/${channelsData.channels.length} 个频道`,
+          )}
+          {memberOnly && localize(language, " (member only)", "（仅成员）")}
         </div>
       )}
     </div>

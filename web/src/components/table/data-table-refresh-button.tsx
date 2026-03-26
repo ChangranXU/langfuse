@@ -8,6 +8,8 @@ import {
   DropdownMenuTrigger,
 } from "@/src/components/ui/dropdown-menu";
 import { cn } from "@/src/utils/tailwind";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export const REFRESH_INTERVALS = [
   { label: "Off", value: null },
@@ -32,7 +34,10 @@ export function DataTableRefreshButton({
   interval,
   setInterval,
 }: DataTableRefreshButtonProps) {
+  const { language } = useLanguage();
   const activeInterval = REFRESH_INTERVALS.find((i) => i.value === interval);
+  const formatIntervalLabel = (label: string) =>
+    label === "Off" ? localize(language, "Off", "关闭") : label;
 
   return (
     <div className="flex items-center">
@@ -42,7 +47,7 @@ export function DataTableRefreshButton({
         onClick={onRefresh}
         disabled={isRefreshing}
         className="rounded-r-none border-r-0"
-        title="Refresh"
+        title={localize(language, "Refresh", "刷新")}
       >
         <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
       </Button>
@@ -55,7 +60,9 @@ export function DataTableRefreshButton({
           >
             <ChevronDown className="h-4 w-4" />
             <span className="ml-1 text-sm">
-              {activeInterval?.label ?? "Off"}
+              {activeInterval
+                ? formatIntervalLabel(activeInterval.label)
+                : localize(language, "Off", "关闭")}
             </span>
           </Button>
         </DropdownMenuTrigger>
@@ -74,8 +81,12 @@ export function DataTableRefreshButton({
                 value={String(option.value)}
               >
                 {option.label === "Off"
-                  ? "Auto-refresh off"
-                  : `Every ${option.label}`}
+                  ? localize(language, "Auto-refresh off", "关闭自动刷新")
+                  : localize(
+                      language,
+                      `Every ${option.label}`,
+                      `每 ${option.label}`,
+                    )}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>

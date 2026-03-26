@@ -32,6 +32,8 @@ import {
 } from "@/src/components/ui/popover";
 
 import { StatusBadge } from "@/src/components/layouts/status-badge";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 import {
   LATEST_PROMPT_LABEL,
   PRODUCTION_LABEL,
@@ -49,6 +51,7 @@ export default function ProtectedLabelsSettings({
 }: {
   projectId: string;
 }) {
+  const { language } = useLanguage();
   const hasAccess = useHasProjectAccess({
     projectId,
     scope: "promptProtectedLabels:CUD",
@@ -108,12 +111,20 @@ export default function ProtectedLabelsSettings({
 
   return (
     <div>
-      <Header title="Protected Prompt Labels" />
+      <Header
+        title={localize(
+          language,
+          "Protected Prompt Labels",
+          "受保护的提示词标签",
+        )}
+      />
       <Card className="mb-4 p-3">
         <p className="mb-4 text-sm text-primary">
-          Protected labels can only be modified by users with admin or owner
-          access. This prevents other users from changing or removing these
-          labels from prompts.
+          {localize(
+            language,
+            "Protected labels can only be modified by users with admin or owner access. This prevents other users from changing or removing these labels from prompts.",
+            "受保护标签只能由具有管理员或所有者权限的用户修改。这可以防止其他用户更改或移除提示词上的这些标签。",
+          )}
         </p>
         <div className="mb-4 flex flex-wrap gap-2">
           {protectedLabels.map((label) => (
@@ -131,7 +142,11 @@ export default function ProtectedLabelsSettings({
                   onClick={() => {
                     if (
                       confirm(
-                        `Are you sure you want to remove the protected label "${label}"?`,
+                        localize(
+                          language,
+                          `Are you sure you want to remove the protected label "${label}"?`,
+                          `确定要移除受保护标签“${label}”吗？`,
+                        ),
                       )
                     ) {
                       removeProtectedLabel.mutate({ projectId, label });
@@ -167,7 +182,12 @@ export default function ProtectedLabelsSettings({
                           )}
                           disabled={!hasAccess || !hasEntitlement}
                         >
-                          {field.value || "Select or enter a label"}
+                          {field.value ||
+                            localize(
+                              language,
+                              "Select or enter a label",
+                              "选择或输入标签",
+                            )}
                           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </FormControl>
@@ -175,12 +195,18 @@ export default function ProtectedLabelsSettings({
                     <PopoverContent className="w-full p-0">
                       <Command>
                         <CommandInput
-                          placeholder="Search or enter a new label..."
+                          placeholder={localize(
+                            language,
+                            "Search or enter a new label...",
+                            "搜索或输入新标签...",
+                          )}
                           onValueChange={(value) => {
                             field.onChange(value);
                           }}
                         />
-                        <CommandEmpty>No label found</CommandEmpty>
+                        <CommandEmpty>
+                          {localize(language, "No label found", "未找到标签")}
+                        </CommandEmpty>
                         <CommandGroup>
                           {availableLabels.map((label) => (
                             <CommandItem
@@ -217,7 +243,7 @@ export default function ProtectedLabelsSettings({
               hasAccess={hasAccess}
               hasEntitlement={hasEntitlement}
             >
-              Add
+              {localize(language, "Add", "添加")}
             </ActionButton>
           </form>
         </Form>

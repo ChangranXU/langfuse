@@ -25,9 +25,12 @@ import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePos
 import { useQueryProject } from "@/src/features/projects/hooks";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { env } from "@/src/env.mjs";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function DeleteProjectButton() {
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
 
   //code for dynamic confirmation message
   const { project, organization } = useQueryProject();
@@ -37,7 +40,11 @@ export function DeleteProjectButton() {
 
   const formSchema = z.object({
     name: z.string().includes(confirmMessage, {
-      message: `Please confirm with "${confirmMessage}"`,
+      message: localize(
+        language,
+        `Please confirm with "${confirmMessage}"`,
+        `请输入 "${confirmMessage}" 以确认`,
+      ),
     }),
   });
 
@@ -75,16 +82,20 @@ export function DeleteProjectButton() {
     <Dialog>
       <DialogTrigger asChild>
         <Button variant="destructive-secondary" disabled={!hasAccess}>
-          Delete Project
+          {localize(language, "Delete Project", "删除项目")}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold">
-            Delete Project
+            {localize(language, "Delete Project", "删除项目")}
           </DialogTitle>
           <DialogDescription className=" ">
-            {`To confirm, type "${confirmMessage}" in the input box `}
+            {localize(
+              language,
+              `To confirm, type "${confirmMessage}" in the input box.`,
+              `要确认，请在输入框中输入 "${confirmMessage}"。`,
+            )}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -110,7 +121,7 @@ export function DeleteProjectButton() {
                 loading={deleteProject.isPending}
                 className="w-full"
               >
-                Delete project
+                {localize(language, "Delete project", "删除项目")}
               </Button>
             </DialogFooter>
           </form>

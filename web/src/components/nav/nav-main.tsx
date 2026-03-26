@@ -12,6 +12,7 @@ import Link from "next/link";
 import { type ReactNode } from "react";
 import { cn } from "@/src/utils/tailwind";
 import { type RouteGroup } from "@/src/components/layouts/routes";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 export type NavMainItem = {
   title: string;
@@ -59,13 +60,26 @@ export function NavMain({
     ungrouped: NavMainItem[];
   };
 }) {
+  const { t } = useLanguage();
+
+  const getGroupLabel = (group: RouteGroup) => {
+    switch (group) {
+      case "Observability":
+        return t("nav.routeGroup.observability");
+      case "Governance":
+        return t("nav.routeGroup.governance");
+      default:
+        return group;
+    }
+  };
+
   return (
     <>
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu>
             {items.ungrouped.map((item) => (
-              <SidebarMenuItem key={item.title}>
+              <SidebarMenuItem key={`${item.title}-${item.url}`}>
                 {item.menuNode || (
                   <SidebarMenuButton
                     asChild
@@ -88,11 +102,13 @@ export function NavMain({
       {items.grouped &&
         Object.entries(items.grouped).map(([group, items]) => (
           <SidebarGroup key={group}>
-            <SidebarGroupLabel>{group}</SidebarGroupLabel>
+            <SidebarGroupLabel>
+              {getGroupLabel(group as RouteGroup)}
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {items.map((item) => (
-                  <SidebarMenuItem key={item.title}>
+                  <SidebarMenuItem key={`${item.title}-${item.url}`}>
                     {item.menuNode || (
                       <SidebarMenuButton
                         asChild

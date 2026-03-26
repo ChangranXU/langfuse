@@ -1,6 +1,8 @@
 import { z } from "zod/v4";
 import { addMinutes, format } from "date-fns";
 import { type DateTrunc } from "@langfuse/shared/src/server";
+import { type AppLanguage } from "@/src/features/i18n/constants";
+import { localize } from "@/src/features/i18n/localize";
 
 interface TimeRangeDefinition {
   label: string;
@@ -283,6 +285,44 @@ export function getFullTimeRangeFromAbbreviated(
 
 export function getTimeRangeLabel(option: string): string {
   return TIME_RANGES[option as keyof typeof TIME_RANGES]?.label || option;
+}
+
+export function getLocalizedTimeRangeLabel(
+  option: string,
+  language: AppLanguage,
+): string {
+  switch (option) {
+    case "last5Minutes":
+      return localize(language, "Past 5 min", "过去 5 分钟");
+    case "last30Minutes":
+      return localize(language, "Past 30 min", "过去 30 分钟");
+    case "last1Hour":
+      return localize(language, "Past 1 hour", "过去 1 小时");
+    case "last3Hours":
+      return localize(language, "Past 3 hours", "过去 3 小时");
+    case "last6Hours":
+      return localize(language, "Past 6 hours", "过去 6 小时");
+    case "last1Day":
+      return localize(language, "Past 1 day", "过去 1 天");
+    case "last3Days":
+      return localize(language, "Past 3 days", "过去 3 天");
+    case "last7Days":
+      return localize(language, "Past 7 days", "过去 7 天");
+    case "last14Days":
+      return localize(language, "Past 14 days", "过去 14 天");
+    case "last30Days":
+      return localize(language, "Past 30 days", "过去 30 天");
+    case "last90Days":
+      return localize(language, "Past 90 days", "过去 90 天");
+    case "last1Year":
+      return localize(language, "Past 1 year", "过去 1 年");
+    case "allTime":
+      return localize(language, "All time", "全部时间");
+    case "custom":
+      return localize(language, "Custom", "自定义");
+    default:
+      return getTimeRangeLabel(option);
+  }
 }
 
 export const findClosestDashboardInterval = (

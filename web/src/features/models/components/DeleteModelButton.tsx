@@ -10,6 +10,8 @@ import { type GetModelResult } from "@/src/features/models/validation";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { api } from "@/src/utils/api";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export const DeleteModelButton = ({
   modelData,
@@ -23,6 +25,7 @@ export const DeleteModelButton = ({
   const [isOpen, setIsOpen] = useState(false);
   const utils = api.useUtils();
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
   const mut = api.models.delete.useMutation({
     onSuccess: () => {
       void utils.models.invalidate();
@@ -40,17 +43,25 @@ export const DeleteModelButton = ({
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          title="Delete model"
+          title={localize(language, "Delete model", "删除模型")}
           disabled={!hasAccess}
           className="flex items-center border-light-red"
         >
-          <span className="text-dark-red">Delete</span>
+          <span className="text-dark-red">
+            {localize(language, "Delete", "删除")}
+          </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent>
-        <h2 className="text-md mb-3 font-semibold">Please confirm</h2>
+        <h2 className="text-md mb-3 font-semibold">
+          {localize(language, "Please confirm", "请确认")}
+        </h2>
         <p className="mb-3 text-sm">
-          This action permanently deletes this model definition.
+          {localize(
+            language,
+            "This action permanently deletes this model definition.",
+            "此操作会永久删除该模型定义。",
+          )}
         </p>
         <div className="flex justify-end space-x-4">
           <Button
@@ -67,7 +78,7 @@ export const DeleteModelButton = ({
               setIsOpen(false);
             }}
           >
-            Delete Model
+            {localize(language, "Delete Model", "删除模型")}
           </Button>
         </div>
       </PopoverContent>

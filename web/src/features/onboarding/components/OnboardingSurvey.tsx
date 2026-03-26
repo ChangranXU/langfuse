@@ -8,9 +8,12 @@ import { useSurveyForm } from "../hooks/useSurveyForm";
 import { SurveyProgress } from "./SurveyProgress";
 import { SurveyStep } from "./SurveyStep";
 import type { SurveyFormData } from "../lib/surveyTypes";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function OnboardingSurvey() {
   const router = useRouter();
+  const { language } = useLanguage();
   const {
     form,
     state,
@@ -152,7 +155,7 @@ export function OnboardingSurvey() {
                   variant="ghost"
                   className="w-20"
                 >
-                  Skip
+                  {localize(language, "Skip", "跳过")}
                 </Button>
               ) : (
                 <Button
@@ -161,7 +164,9 @@ export function OnboardingSurvey() {
                   variant="default"
                   className="w-20"
                 >
-                  {isLastStep ? "Finish" : "Next"}
+                  {isLastStep
+                    ? localize(language, "Finish", "完成")
+                    : localize(language, "Next", "下一步")}
                 </Button>
               )}
 
@@ -179,7 +184,7 @@ export function OnboardingSurvey() {
                   onClick={goBack}
                   className="w-20"
                 >
-                  Back
+                  {localize(language, "Back", "返回")}
                 </Button>
               ) : (
                 <div className="w-20" />

@@ -19,6 +19,8 @@ import {
   type ErrorAnalysisModel,
   ErrorAnalysisModelSchema,
 } from "../types";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 function formatSummaryStatusTimestamp(value: Date | null | undefined): string {
   if (!value) return "n/a";
@@ -34,12 +36,15 @@ function FormattedAnalysisView(props: {
   rendered: ErrorAnalysisAnalyzeOutput["rendered"];
 }) {
   const { rendered } = props;
+  const { language } = useLanguage();
 
   return (
     <div className="flex flex-col gap-3 text-xs">
       {/* issue */}
       <div className="flex flex-col gap-1">
-        <div className="font-mono font-medium text-muted-foreground">issue</div>
+        <div className="font-mono font-medium text-muted-foreground">
+          {localize(language, "issue", "问题")}
+        </div>
         <div className="whitespace-pre-wrap break-words rounded-md border bg-background p-2">
           {rendered.issue}
         </div>
@@ -48,7 +53,7 @@ function FormattedAnalysisView(props: {
       {/* errorType */}
       <div className="flex flex-col gap-1">
         <div className="font-mono font-medium text-muted-foreground">
-          errorType
+          {localize(language, "errorType", "错误类型")}
         </div>
         {rendered.errorType ? (
           <div className="rounded-md border bg-background p-2">
@@ -63,7 +68,9 @@ function FormattedAnalysisView(props: {
               ) : null}
               {rendered.errorTypeFromList != null ? (
                 <span className="text-xs text-muted-foreground">
-                  {rendered.errorTypeFromList ? "catalog" : "generated"}
+                  {rendered.errorTypeFromList
+                    ? localize(language, "catalog", "目录")
+                    : localize(language, "generated", "生成")}
                 </span>
               ) : null}
             </div>
@@ -80,7 +87,11 @@ function FormattedAnalysisView(props: {
           </div>
         ) : (
           <div className="rounded-md border bg-background p-2 text-muted-foreground">
-            No error type classified yet. Click Analyze to generate one.
+            {localize(
+              language,
+              "No error type classified yet. Click Analyze to generate one.",
+              "尚未分类错误类型。点击“分析”生成。",
+            )}
           </div>
         )}
       </div>
@@ -88,7 +99,7 @@ function FormattedAnalysisView(props: {
       {/* rootCause */}
       <div className="flex flex-col gap-1">
         <div className="font-mono font-medium text-muted-foreground">
-          rootCause
+          {localize(language, "rootCause", "根本原因")}
         </div>
         <div className="whitespace-pre-wrap break-words rounded-md border bg-background p-2">
           {rendered.rootCause}
@@ -98,7 +109,7 @@ function FormattedAnalysisView(props: {
       {/* resolveNow */}
       <div className="flex flex-col gap-1">
         <div className="font-mono font-medium text-muted-foreground">
-          resolveNow
+          {localize(language, "resolveNow", "立即处理")}
         </div>
         <div className="flex flex-col gap-2">
           {rendered.resolveNow.length > 0 ? (
@@ -120,7 +131,11 @@ function FormattedAnalysisView(props: {
             })
           ) : (
             <div className="rounded-md border bg-background p-2 text-muted-foreground">
-              No immediate resolution steps returned.
+              {localize(
+                language,
+                "No immediate resolution steps returned.",
+                "未返回立即处理步骤。",
+              )}
             </div>
           )}
         </div>
@@ -129,7 +144,7 @@ function FormattedAnalysisView(props: {
       {/* preventionNextCall */}
       <div className="flex flex-col gap-1">
         <div className="font-mono font-medium text-muted-foreground">
-          preventionNextCall
+          {localize(language, "preventionNextCall", "下次调用预防")}
         </div>
         <div className="flex flex-col gap-2">
           {rendered.preventionNextCall.length > 0 ? (
@@ -151,7 +166,11 @@ function FormattedAnalysisView(props: {
             })
           ) : (
             <div className="rounded-md border bg-background p-2 text-muted-foreground">
-              No prevention steps returned.
+              {localize(
+                language,
+                "No prevention steps returned.",
+                "未返回预防步骤。",
+              )}
             </div>
           )}
         </div>
@@ -160,11 +179,13 @@ function FormattedAnalysisView(props: {
       {/* contextSufficient */}
       <div className="flex flex-col gap-1">
         <div className="font-mono font-medium text-muted-foreground">
-          contextSufficient
+          {localize(language, "contextSufficient", "上下文是否充足")}
         </div>
         <div className="rounded-md border bg-background p-2">
           <div className="font-mono text-xs">
-            {rendered.contextSufficient ? "true" : "false"}
+            {rendered.contextSufficient
+              ? localize(language, "true", "是")
+              : localize(language, "false", "否")}
           </div>
         </div>
       </div>
@@ -172,7 +193,7 @@ function FormattedAnalysisView(props: {
       {/* confidence */}
       <div className="flex flex-col gap-1">
         <div className="font-mono font-medium text-muted-foreground">
-          confidence
+          {localize(language, "confidence", "置信度")}
         </div>
         <div className="rounded-md border bg-background p-2">
           <div className="flex items-center gap-2">
@@ -194,7 +215,7 @@ function FormattedAnalysisView(props: {
       {/* relevantObservations */}
       <div className="flex flex-col gap-1">
         <div className="font-mono font-medium text-muted-foreground">
-          relevantObservations
+          {localize(language, "relevantObservations", "相关 Observations")}
         </div>
         <div className="flex flex-col gap-2">
           {rendered.relevantObservations.length > 0 ? (
@@ -211,7 +232,11 @@ function FormattedAnalysisView(props: {
             ))
           ) : (
             <div className="rounded-md border bg-background p-2 text-muted-foreground">
-              No relevant observations returned.
+              {localize(
+                language,
+                "No relevant observations returned.",
+                "未返回相关 observations。",
+              )}
             </div>
           )}
         </div>
@@ -226,6 +251,7 @@ export function ErrorAnalysisDropdown(props: {
   observationId: string;
   level: "ERROR" | "WARNING";
 }) {
+  const { language } = useLanguage();
   const models = useMemo<ErrorAnalysisModel[]>(
     () => [...ErrorAnalysisModelSchema.options] as ErrorAnalysisModel[],
     [],
@@ -310,15 +336,27 @@ export function ErrorAnalysisDropdown(props: {
   const summaryUpdateStatusText = useMemo(() => {
     if (!autoSettingsQuery.data?.enabled) return null;
     if (summaryUpdateStatusQuery.isPending) {
-      return "Summary sync status: checking...";
+      return localize(
+        language,
+        "Summary sync status: checking...",
+        "摘要同步状态：检查中...",
+      );
     }
     if (summaryUpdateStatusQuery.isError) {
-      return "Summary sync status: unavailable.";
+      return localize(
+        language,
+        "Summary sync status: unavailable.",
+        "摘要同步状态：不可用。",
+      );
     }
 
     const status = summaryUpdateStatusQuery.data;
     if (!status?.analysisUpdatedAt) {
-      return "Summary sync status: waiting for analysis record...";
+      return localize(
+        language,
+        "Summary sync status: waiting for analysis record...",
+        "摘要同步状态：等待分析记录...",
+      );
     }
 
     const batchSize = status.minNewAnalysesToUpdate ?? 1;
@@ -331,32 +369,63 @@ export function ErrorAnalysisDropdown(props: {
           : "";
 
     if (status.synced) {
-      return `Summary sync status: synced (summary updated ${formatSummaryStatusTimestamp(
-        status.summaryUpdatedAt ?? status.summaryCursorUpdatedAt,
-      )}).`;
+      return localize(
+        language,
+        `Summary sync status: synced (summary updated ${formatSummaryStatusTimestamp(
+          status.summaryUpdatedAt ?? status.summaryCursorUpdatedAt,
+        )}).`,
+        `摘要同步状态：已同步（摘要更新时间 ${formatSummaryStatusTimestamp(
+          status.summaryUpdatedAt ?? status.summaryCursorUpdatedAt,
+        )}）。`,
+      );
     }
 
     if (!status.summaryCursorUpdatedAt) {
       if (pendingCount > 0 && pendingCount < batchSize) {
-        return `Summary sync status: pending${pendingHint} (waiting to generate first summary).`;
+        return localize(
+          language,
+          `Summary sync status: pending${pendingHint} (waiting to generate first summary).`,
+          `摘要同步状态：待处理${pendingHint}（等待生成第一份摘要）。`,
+        );
       }
-      return `Summary sync status: pending${pendingHint} (summary has not been generated yet).`;
+      return localize(
+        language,
+        `Summary sync status: pending${pendingHint} (summary has not been generated yet).`,
+        `摘要同步状态：待处理${pendingHint}（摘要尚未生成）。`,
+      );
     }
 
     if (pendingCount > 0 && pendingCount < batchSize) {
-      return `Summary sync status: pending${pendingHint} (summary ${formatSummaryStatusTimestamp(
+      return localize(
+        language,
+        `Summary sync status: pending${pendingHint} (summary ${formatSummaryStatusTimestamp(
+          status.summaryCursorUpdatedAt,
+        )} is behind analysis ${formatSummaryStatusTimestamp(
+          status.analysisUpdatedAt,
+        )}).`,
+        `摘要同步状态：待处理${pendingHint}（摘要 ${formatSummaryStatusTimestamp(
+          status.summaryCursorUpdatedAt,
+        )} 落后于分析 ${formatSummaryStatusTimestamp(
+          status.analysisUpdatedAt,
+        )}）。`,
+      );
+    }
+
+    return localize(
+      language,
+      `Summary sync status: pending${pendingHint} (summary ${formatSummaryStatusTimestamp(
         status.summaryCursorUpdatedAt,
       )} is behind analysis ${formatSummaryStatusTimestamp(
         status.analysisUpdatedAt,
-      )}).`;
-    }
-
-    return `Summary sync status: pending${pendingHint} (summary ${formatSummaryStatusTimestamp(
-      status.summaryCursorUpdatedAt,
-    )} is behind analysis ${formatSummaryStatusTimestamp(
-      status.analysisUpdatedAt,
-    )}).`;
+      )}).`,
+      `摘要同步状态：待处理${pendingHint}（摘要 ${formatSummaryStatusTimestamp(
+        status.summaryCursorUpdatedAt,
+      )} 落后于分析 ${formatSummaryStatusTimestamp(
+        status.analysisUpdatedAt,
+      )}）。`,
+    );
   }, [
+    language,
     autoSettingsQuery.data?.enabled,
     summaryUpdateStatusQuery.data,
     summaryUpdateStatusQuery.isError,
@@ -397,21 +466,33 @@ export function ErrorAnalysisDropdown(props: {
   const pendingAutoMessage = useMemo(() => {
     if (!autoSettingsQuery.data?.enabled) {
       return {
-        text: "Click Analyze to generate a structured root cause analysis.",
+        text: localize(
+          language,
+          "Click Analyze to generate a structured root cause analysis.",
+          "点击“分析”以生成结构化根因分析。",
+        ),
         showSettingsLink: false,
       };
     }
 
     if (autoWaitMs < 15_000) {
       return {
-        text: "Auto-generation is enabled. Waiting for the report to appear...",
+        text: localize(
+          language,
+          "Auto-generation is enabled. Waiting for the report to appear...",
+          "已启用自动生成。正在等待报告出现...",
+        ),
         showSettingsLink: false,
       };
     }
 
     if (autoGenerationStatusQuery.isPending) {
       return {
-        text: "Auto-generation is enabled. Still waiting; checking worker status...",
+        text: localize(
+          language,
+          "Auto-generation is enabled. Still waiting; checking worker status...",
+          "已启用自动生成。仍在等待；正在检查 worker 状态...",
+        ),
         showSettingsLink: false,
       };
     }
@@ -478,6 +559,7 @@ export function ErrorAnalysisDropdown(props: {
         };
     }
   }, [
+    language,
     autoGenerationStatusQuery.data,
     autoGenerationStatusQuery.isError,
     autoGenerationStatusQuery.isPending,
@@ -534,9 +616,15 @@ export function ErrorAnalysisDropdown(props: {
     <div className="flex w-[420px] flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-col">
-          <div className="text-sm font-medium">LLM Debug Analysis</div>
+          <div className="text-sm font-medium">
+            {localize(language, "LLM Debug Analysis", "LLM 调试分析")}
+          </div>
           <div className="text-xs text-muted-foreground">
-            Analyzes this {props.level.toLowerCase()} using trace context.
+            {localize(
+              language,
+              `Analyzes this ${props.level.toLowerCase()} using trace context.`,
+              `使用 trace 上下文分析该 ${props.level.toLowerCase()}。`,
+            )}
           </div>
         </div>
       </div>
@@ -552,7 +640,9 @@ export function ErrorAnalysisDropdown(props: {
             }}
           >
             <SelectTrigger className="h-8">
-              <SelectValue placeholder="Select model" />
+              <SelectValue
+                placeholder={localize(language, "Select model", "选择模型")}
+              />
             </SelectTrigger>
             <SelectContent>
               {models.map((m) => (
@@ -571,7 +661,7 @@ export function ErrorAnalysisDropdown(props: {
             runAnalysis({ clearExisting: true });
           }}
         >
-          Analyze
+          {localize(language, "Analyze", "分析")}
         </Button>
         {result ? (
           <Button
@@ -582,21 +672,27 @@ export function ErrorAnalysisDropdown(props: {
               runAnalysis({ clearExisting: false });
             }}
           >
-            Regenerate
+            {localize(language, "Regenerate", "重新生成")}
           </Button>
         ) : null}
       </div>
 
       {errorMessage ? (
         <div className="rounded-md border bg-background p-2 text-xs">
-          <div className="font-medium text-destructive">Analysis failed</div>
+          <div className="font-medium text-destructive">
+            {localize(language, "Analysis failed", "分析失败")}
+          </div>
           <div className="mt-1 whitespace-pre-wrap text-muted-foreground">
             {errorMessage}
           </div>
           {showSettingsHint ? (
             <div className="mt-2">
               <Link className="text-primary underline" href={settingsHref}>
-                Go to Settings → LLM Connections
+                {localize(
+                  language,
+                  "Go to Settings → LLM Connections",
+                  "前往 设置 → LLM Connections",
+                )}
               </Link>
             </div>
           ) : null}
@@ -615,7 +711,7 @@ export function ErrorAnalysisDropdown(props: {
             >
               <TabsList className="h-fit p-0.5">
                 <TabsTrigger value="rendered" className="h-fit px-1 text-xs">
-                  Formatted
+                  {localize(language, "Formatted", "格式化")}
                 </TabsTrigger>
                 <TabsTrigger value="original" className="h-fit px-1 text-xs">
                   JSON
@@ -648,7 +744,11 @@ export function ErrorAnalysisDropdown(props: {
           {pendingAutoMessage.showSettingsLink ? (
             <div className="mt-1">
               <Link className="text-primary underline" href={settingsHref}>
-                Go to Settings → LLM Connections
+                {localize(
+                  language,
+                  "Go to Settings → LLM Connections",
+                  "前往 设置 → LLM Connections",
+                )}
               </Link>
             </div>
           ) : null}
@@ -671,10 +771,14 @@ export function ErrorAnalysisDropdown(props: {
                   });
                 }}
               >
-                Retry auto-generation
+                {localize(language, "Retry auto-generation", "重试自动生成")}
               </Button>
               <div className="text-[11px] text-muted-foreground">
-                Re-queues the worker job.
+                {localize(
+                  language,
+                  "Re-queues the worker job.",
+                  "重新将 worker 任务加入队列。",
+                )}
               </div>
             </div>
           ) : null}

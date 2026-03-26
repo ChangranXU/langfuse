@@ -15,10 +15,13 @@ import { VirtualizedList } from "./_shared/VirtualizedList";
 import { TraceSearchListItem } from "./TraceSearchListItem";
 import { Button } from "@/src/components/ui/button";
 import { XIcon } from "lucide-react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function TraceSearchList() {
   const { searchItems } = useTraceData();
   const { searchQuery, setSearchInputValue } = useSearch();
+  const { language } = useLanguage();
   const { selectedNodeId, setSelectedNodeId } = useSelection();
   const { handleHover } = useHandlePrefetchObservation();
 
@@ -42,9 +45,15 @@ export function TraceSearchList() {
     return (
       <div className="flex h-full flex-col items-center justify-center p-8 text-center">
         <div className="space-y-4">
-          <p className="text-muted-foreground">No results found</p>
+          <p className="text-muted-foreground">
+            {localize(language, "No results found", "未找到结果")}
+          </p>
           <p className="text-sm text-muted-foreground">
-            Try searching by type, title, or id
+            {localize(
+              language,
+              "Try searching by type, title, or id",
+              "尝试按类型、标题或 ID 搜索",
+            )}
           </p>
           <Button
             variant="outline"
@@ -52,7 +61,7 @@ export function TraceSearchList() {
             onClick={() => setSearchInputValue("")}
           >
             <XIcon className="mr-2 h-4 w-4" />
-            Clear search
+            {localize(language, "Clear search", "清除搜索")}
           </Button>
         </div>
       </div>

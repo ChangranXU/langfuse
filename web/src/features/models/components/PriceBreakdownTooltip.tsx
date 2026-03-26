@@ -12,6 +12,8 @@ import {
 import { usePriceUnitMultiplier } from "@/src/features/models/hooks/usePriceUnitMultiplier";
 import { getMaxDecimals } from "@/src/features/models/utils";
 import { type PriceUnit } from "@/src/features/models/validation";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export const PriceBreakdownTooltip = ({
   modelName,
@@ -26,6 +28,15 @@ export const PriceBreakdownTooltip = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const { priceUnitMultiplier } = usePriceUnitMultiplier();
+  const { language } = useLanguage();
+  const localizedPriceUnit =
+    priceUnit === "per unit"
+      ? localize(language, "per unit", "按单位")
+      : priceUnit === "per 1K units"
+        ? localize(language, "per 1K units", "每 1K 单位")
+        : priceUnit === "per 1M units"
+          ? localize(language, "per 1M units", "每 1M 单位")
+          : priceUnit;
 
   const maxDecimals = useMemo(
     () =>
@@ -42,7 +53,7 @@ export const PriceBreakdownTooltip = ({
   return (
     <>
       {Object.keys(prices).length === 0 ? (
-        <p>No prices</p>
+        <p>{localize(language, "No prices", "无价格")}</p>
       ) : Object.keys(prices).length <= (rowHeight === "m" ? 4 : 2) ? (
         <div className="grid w-full grid-cols-[2fr,3fr] gap-x-2">
           {Object.entries(prices).map(([type, price]) => (
@@ -74,20 +85,30 @@ export const PriceBreakdownTooltip = ({
               onClick={() => setIsOpen(!isOpen)}
             >
               <InfoIcon className="h-3 w-3" />
-              {Object.keys(prices).length} prices set
+              {localize(
+                language,
+                `${Object.keys(prices).length} prices set`,
+                `已设置 ${Object.keys(prices).length} 个价格`,
+              )}
             </TooltipTrigger>
             <TooltipContent className="min-w-[16rem] grow p-4">
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1">
-                  <span className="font-semibold">Price breakdown</span>
+                  <span className="font-semibold">
+                    {localize(language, "Price breakdown", "价格明细")}
+                  </span>
                   <span className="font-mono text-xs font-medium">
                     {modelName}
                   </span>
                 </div>
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between font-mono text-xs font-semibold">
-                    <span className="mr-4">Usage Type</span>
-                    <span>Price {priceUnit}</span>
+                    <span className="mr-4">
+                      {localize(language, "Usage Type", "用量类型")}
+                    </span>
+                    <span>
+                      {localize(language, "Price", "价格")} {localizedPriceUnit}
+                    </span>
                   </div>
                   {Object.entries(prices).map(([usageType, price]) => (
                     <div

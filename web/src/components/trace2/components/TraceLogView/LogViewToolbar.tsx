@@ -31,6 +31,8 @@ import {
   HoverCardTrigger,
 } from "@/src/components/ui/hover-card";
 import { cn } from "@/src/utils/tailwind";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export interface LogViewToolbarProps {
   /** Current search query */
@@ -92,6 +94,7 @@ export const LogViewToolbar = memo(function LogViewToolbar({
   isDownloadLoading = false,
 }: LogViewToolbarProps) {
   const [isCopied, setIsCopied] = useState(false);
+  const { language } = useLanguage();
 
   const handleCopyClick = () => {
     setIsCopied(true);
@@ -106,7 +109,7 @@ export const LogViewToolbar = memo(function LogViewToolbar({
         <HoverCard openDelay={200}>
           <HoverCardTrigger asChild>
             <span className="cursor-help rounded bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">
-              Large Trace
+              {localize(language, "Large Trace", "大型 Trace")}
             </span>
           </HoverCardTrigger>
           <HoverCardContent
@@ -114,15 +117,38 @@ export const LogViewToolbar = memo(function LogViewToolbar({
             className="w-72 text-sm"
             sideOffset={8}
           >
-            <p className="font-medium">Optimized for performance</p>
+            <p className="font-medium">
+              {localize(
+                language,
+                "Optimized for performance",
+                "已针对性能优化",
+              )}
+            </p>
             <p className="mt-1.5 text-muted-foreground">
-              This trace has {observationCount?.toLocaleString() ?? "many"}{" "}
-              observations. To keep things smooth:
+              {localize(
+                language,
+                `This trace has ${observationCount?.toLocaleString() ?? "many"} observations. To keep things smooth:`,
+                `该 Trace 包含 ${observationCount?.toLocaleString() ?? "很多"} 个观测。为保持流畅：`,
+              )}
             </p>
             <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-muted-foreground">
-              <li>Content loads as you scroll</li>
-              <li>JSON view is disabled</li>
-              <li>Download/copy includes I/O for cached observations only</li>
+              <li>
+                {localize(
+                  language,
+                  "Content loads as you scroll",
+                  "内容会在滚动时加载",
+                )}
+              </li>
+              <li>
+                {localize(language, "JSON view is disabled", "JSON 视图已禁用")}
+              </li>
+              <li>
+                {localize(
+                  language,
+                  "Download/copy includes I/O for cached observations only",
+                  "下载/复制仅包含已缓存观测的 I/O",
+                )}
+              </li>
             </ul>
           </HoverCardContent>
         </HoverCard>
@@ -135,7 +161,11 @@ export const LogViewToolbar = memo(function LogViewToolbar({
         <Command className="flex-1 rounded-none border-0 bg-transparent">
           <CommandInput
             showBorder={false}
-            placeholder="Search observations..."
+            placeholder={localize(
+              language,
+              "Search observations...",
+              "搜索观测...",
+            )}
             className="h-7 border-0 focus:ring-0"
             value={searchQuery}
             onValueChange={onSearchChange}
@@ -163,8 +193,8 @@ export const LogViewToolbar = memo(function LogViewToolbar({
                   indentDisabled
                     ? undefined
                     : indentEnabled
-                      ? "Hide indentation"
-                      : "Show indentation"
+                      ? localize(language, "Hide indentation", "隐藏缩进")
+                      : localize(language, "Show indentation", "显示缩进")
                 }
               >
                 <IndentIncrease className="h-3.5 w-3.5" />
@@ -172,9 +202,15 @@ export const LogViewToolbar = memo(function LogViewToolbar({
             </HoverCardTrigger>
             {indentDisabled && (
               <HoverCardContent className="w-56 text-sm" sideOffset={8}>
-                <p className="font-medium">Indentation unavailable</p>
+                <p className="font-medium">
+                  {localize(language, "Indentation unavailable", "缩进不可用")}
+                </p>
                 <p className="mt-1 text-muted-foreground">
-                  Disabled for deeply nested trees to maintain readability.
+                  {localize(
+                    language,
+                    "Disabled for deeply nested trees to maintain readability.",
+                    "为保持可读性，深层嵌套树结构下已禁用。",
+                  )}
                 </p>
               </HoverCardContent>
             )}
@@ -191,7 +227,11 @@ export const LogViewToolbar = memo(function LogViewToolbar({
               showMilliseconds && "bg-primary text-primary-foreground",
             )}
             onClick={onToggleMilliseconds}
-            title={showMilliseconds ? "Hide milliseconds" : "Show milliseconds"}
+            title={
+              showMilliseconds
+                ? localize(language, "Hide milliseconds", "隐藏毫秒")
+                : localize(language, "Show milliseconds", "显示毫秒")
+            }
           >
             <Timer className="h-3.5 w-3.5" />
           </Button>
@@ -222,10 +262,14 @@ export const LogViewToolbar = memo(function LogViewToolbar({
             </TooltipTrigger>
             <TooltipContent>
               {isVirtualized
-                ? "Disabled for large traces"
+                ? localize(
+                    language,
+                    "Disabled for large traces",
+                    "大型 Trace 已禁用",
+                  )
                 : allRowsExpanded
-                  ? "Collapse all"
-                  : "Expand all"}
+                  ? localize(language, "Collapse all", "折叠全部")
+                  : localize(language, "Expand all", "展开全部")}
             </TooltipContent>
           </Tooltip>
         )}
@@ -254,19 +298,28 @@ export const LogViewToolbar = memo(function LogViewToolbar({
                 </TooltipTrigger>
                 <TooltipContent>
                   {isDownloadLoading
-                    ? "Loading data..."
+                    ? localize(language, "Loading data...", "正在加载数据...")
                     : isDownloadCacheOnly
-                      ? "Copy as JSON (cache only)"
-                      : "Copy as JSON"}
+                      ? localize(
+                          language,
+                          "Copy as JSON (cache only)",
+                          "复制为 JSON（仅缓存）",
+                        )
+                      : localize(language, "Copy as JSON", "复制为 JSON")}
                 </TooltipContent>
               </Tooltip>
             </HoverCardTrigger>
             {isDownloadCacheOnly && !isDownloadLoading && (
               <HoverCardContent className="w-64 text-sm" sideOffset={8}>
-                <p className="font-medium">Cache-only mode</p>
+                <p className="font-medium">
+                  {localize(language, "Cache-only mode", "仅缓存模式")}
+                </p>
                 <p className="mt-1 text-muted-foreground">
-                  For large traces, only expanded observations include full I/O
-                  data.
+                  {localize(
+                    language,
+                    "For large traces, only expanded observations include full I/O data.",
+                    "对于大型 Trace，只有已展开的观测包含完整 I/O 数据。",
+                  )}
                 </p>
                 {loadedObservationCount !== undefined &&
                   observationCount !== undefined && (
@@ -274,7 +327,11 @@ export const LogViewToolbar = memo(function LogViewToolbar({
                       <span className="font-medium">
                         {loadedObservationCount} of {observationCount}
                       </span>{" "}
-                      observations loaded
+                      {localize(
+                        language,
+                        "observations loaded",
+                        "个观测已加载",
+                      )}
                     </p>
                   )}
               </HoverCardContent>
@@ -304,19 +361,28 @@ export const LogViewToolbar = memo(function LogViewToolbar({
                 </TooltipTrigger>
                 <TooltipContent>
                   {isDownloadLoading
-                    ? "Loading data..."
+                    ? localize(language, "Loading data...", "正在加载数据...")
                     : isDownloadCacheOnly
-                      ? "Download as JSON (cache only)"
-                      : "Download as JSON"}
+                      ? localize(
+                          language,
+                          "Download as JSON (cache only)",
+                          "下载为 JSON（仅缓存）",
+                        )
+                      : localize(language, "Download as JSON", "下载为 JSON")}
                 </TooltipContent>
               </Tooltip>
             </HoverCardTrigger>
             {isDownloadCacheOnly && !isDownloadLoading && (
               <HoverCardContent className="w-64 text-sm" sideOffset={8}>
-                <p className="font-medium">Cache-only mode</p>
+                <p className="font-medium">
+                  {localize(language, "Cache-only mode", "仅缓存模式")}
+                </p>
                 <p className="mt-1 text-muted-foreground">
-                  For large traces, only expanded observations include full I/O
-                  data.
+                  {localize(
+                    language,
+                    "For large traces, only expanded observations include full I/O data.",
+                    "对于大型 Trace，只有已展开的观测包含完整 I/O 数据。",
+                  )}
                 </p>
                 {loadedObservationCount !== undefined &&
                   observationCount !== undefined && (
@@ -324,7 +390,11 @@ export const LogViewToolbar = memo(function LogViewToolbar({
                       <span className="font-medium">
                         {loadedObservationCount} of {observationCount}
                       </span>{" "}
-                      observations loaded
+                      {localize(
+                        language,
+                        "observations loaded",
+                        "个观测已加载",
+                      )}
                     </p>
                   )}
               </HoverCardContent>

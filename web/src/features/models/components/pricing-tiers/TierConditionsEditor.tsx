@@ -20,6 +20,8 @@ import {
 } from "@/src/components/ui/select";
 import type { UseFormReturn } from "react-hook-form";
 import type { FormUpsertModel } from "../../validation";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type TierConditionsEditorProps = {
   tierIndex: number;
@@ -36,11 +38,12 @@ export function TierConditionsEditor({
     control: form.control,
     name: `pricingTiers.${tierIndex}.conditions`,
   });
+  const { language } = useLanguage();
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <FormLabel>Conditions</FormLabel>
+        <FormLabel>{localize(language, "Conditions", "条件")}</FormLabel>
         <Button
           type="button"
           variant="ghost"
@@ -55,14 +58,18 @@ export function TierConditionsEditor({
           }
         >
           <PlusCircle className="mr-1 h-4 w-4" />
-          Add Condition
+          {localize(language, "Add Condition", "添加条件")}
         </Button>
       </div>
 
       {fields.length === 0 && (
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          <strong>Warning:</strong> Non-default tiers require at least one
-          condition. This tier will fail validation.
+          <strong>{localize(language, "Warning:", "警告：")}</strong>{" "}
+          {localize(
+            language,
+            "Non-default tiers require at least one condition. This tier will fail validation.",
+            "非默认层级至少需要一个条件，否则该层级将无法通过校验。",
+          )}
         </div>
       )}
 
@@ -70,7 +77,11 @@ export function TierConditionsEditor({
         <div key={condition.id} className="space-y-3 rounded-lg border p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">
-              Condition {conditionIndex + 1}
+              {localize(
+                language,
+                `Condition ${conditionIndex + 1}`,
+                `条件 ${conditionIndex + 1}`,
+              )}
             </span>
             <Button
               type="button"
@@ -88,12 +99,22 @@ export function TierConditionsEditor({
             name={`pricingTiers.${tierIndex}.conditions.${conditionIndex}.usageDetailPattern`}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Usage Detail Pattern (Regex)</FormLabel>
+                <FormLabel>
+                  {localize(
+                    language,
+                    "Usage Detail Pattern (Regex)",
+                    "用量详情模式（正则）",
+                  )}
+                </FormLabel>
                 <FormControl>
                   <Input {...field} placeholder="^input" />
                 </FormControl>
                 <FormDescription>
-                  Match usage type keys (e.g., ^input, .*cache.*, output_tokens)
+                  {localize(
+                    language,
+                    "Match usage type keys (e.g., ^input, .*cache.*, output_tokens)",
+                    "匹配用量类型键（例如：^input、.*cache.*、output_tokens）",
+                  )}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -107,20 +128,40 @@ export function TierConditionsEditor({
               name={`pricingTiers.${tierIndex}.conditions.${conditionIndex}.operator`}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Operator</FormLabel>
+                  <FormLabel>
+                    {localize(language, "Operator", "操作符")}
+                  </FormLabel>
                   <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gt">&gt; (greater than)</SelectItem>
-                      <SelectItem value="gte">
-                        &gt;= (greater or equal)
+                      <SelectItem value="gt">
+                        {localize(language, "> (greater than)", ">（大于）")}
                       </SelectItem>
-                      <SelectItem value="lt">&lt; (less than)</SelectItem>
-                      <SelectItem value="lte">&lt;= (less or equal)</SelectItem>
-                      <SelectItem value="eq">= (equals)</SelectItem>
-                      <SelectItem value="neq">!= (not equals)</SelectItem>
+                      <SelectItem value="gte">
+                        {localize(
+                          language,
+                          ">= (greater or equal)",
+                          ">=（大于等于）",
+                        )}
+                      </SelectItem>
+                      <SelectItem value="lt">
+                        {localize(language, "< (less than)", "<（小于）")}
+                      </SelectItem>
+                      <SelectItem value="lte">
+                        {localize(
+                          language,
+                          "<= (less or equal)",
+                          "<=（小于等于）",
+                        )}
+                      </SelectItem>
+                      <SelectItem value="eq">
+                        {localize(language, "= (equals)", "=（等于）")}
+                      </SelectItem>
+                      <SelectItem value="neq">
+                        {localize(language, "!= (not equals)", "!=（不等于）")}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -133,7 +174,7 @@ export function TierConditionsEditor({
               name={`pricingTiers.${tierIndex}.conditions.${conditionIndex}.value`}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Value</FormLabel>
+                  <FormLabel>{localize(language, "Value", "数值")}</FormLabel>
                   <FormControl>
                     <Input
                       type="number"
@@ -161,7 +202,9 @@ export function TierConditionsEditor({
                     onCheckedChange={field.onChange}
                   />
                 </FormControl>
-                <FormLabel className="!mt-0">Case sensitive</FormLabel>
+                <FormLabel className="!mt-0">
+                  {localize(language, "Case sensitive", "区分大小写")}
+                </FormLabel>
               </FormItem>
             )}
           />

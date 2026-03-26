@@ -28,6 +28,8 @@ import {
 import { Button } from "@/src/components/ui/button";
 import { Dialog, DialogContent } from "@/src/components/ui/dialog";
 import { Input } from "@/src/components/ui/input";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 import { cn } from "@/src/utils/tailwind";
 
 type TraceGraphCanvasProps = {
@@ -73,6 +75,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
     allowFullscreen = true,
     whiteBackground = false,
   } = props;
+  const { language } = useLanguage();
   const [isHovering, setIsHovering] = useState(false);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const [searchStateByMode, setSearchStateByMode] = useState<
@@ -297,30 +300,30 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
         graphMode === "hierarchy" && node.metadataSummary
           ? [
               node.metadataSummary.core
-                ? `Core: ${truncateText(node.metadataSummary.core, 24)}`
+                ? `${localize(language, "Core", "核心")}: ${truncateText(node.metadataSummary.core, 24)}`
                 : null,
               node.metadataSummary.category
-                ? `Category: ${truncateText(node.metadataSummary.category, 24)}`
+                ? `${localize(language, "Category", "类别")}: ${truncateText(node.metadataSummary.category, 24)}`
                 : null,
               node.metadataSummary.instructionType
-                ? `Type: ${truncateText(node.metadataSummary.instructionType, 24)}`
+                ? `${localize(language, "Type", "类型")}: ${truncateText(node.metadataSummary.instructionType, 24)}`
                 : null,
               node.metadataSummary.policy?.authorityLabel
-                ? `Policy: ${truncateText(
+                ? `${localize(language, "Policy", "策略")}: ${truncateText(
                     `${node.metadataSummary.policy.authorityLabel}${node.metadataSummary.policy.hasBlock ? " (BLOCK)" : ""}`,
                     32,
                   )}`
                 : node.metadataSummary.policy?.hasBlock
-                  ? "Policy: BLOCK"
+                  ? `${localize(language, "Policy", "策略")}: BLOCK`
                   : null,
               node.metadataSummary.observationCount != null
-                ? `Obs: ${node.metadataSummary.observationCount} | Tools: ${node.metadataSummary.toolCount ?? 0}`
+                ? `${localize(language, "Obs", "观测")}: ${node.metadataSummary.observationCount} | ${localize(language, "Tools", "工具")}: ${node.metadataSummary.toolCount ?? 0}`
                 : null,
               (node.metadataSummary.errorCount ?? 0) > 0 ||
               (node.metadataSummary.warningCount ?? 0) > 0 ||
               (node.metadataSummary.policyViolationCount ?? 0) > 0 ||
               (node.metadataSummary.parserInconsistencyCount ?? 0) > 0
-                ? `Risk: E${node.metadataSummary.errorCount ?? 0} W${node.metadataSummary.warningCount ?? 0} V${node.metadataSummary.policyViolationCount ?? 0} P${node.metadataSummary.parserInconsistencyCount ?? 0}`
+                ? `${localize(language, "Risk", "风险")}: E${node.metadataSummary.errorCount ?? 0} W${node.metadataSummary.warningCount ?? 0} V${node.metadataSummary.policyViolationCount ?? 0} P${node.metadataSummary.parserInconsistencyCount ?? 0}`
                 : null,
             ].filter((line): line is string => Boolean(line))
           : [];
@@ -377,7 +380,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
       }
       return nodeData;
     });
-  }, [graphData.nodes, graphMode]);
+  }, [graphData.nodes, graphMode, language]);
 
   const options = useMemo(
     () => ({
@@ -606,13 +609,17 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
 
   useEffect(() => {
     setActiveSearchResultIndex(0);
-  }, [searchQuery]);
+  }, [searchQuery, setActiveSearchResultIndex]);
 
   useEffect(() => {
     if (searchResultNodeIds.length === 0) return;
     if (activeSearchResultIndex <= searchResultNodeIds.length - 1) return;
     setActiveSearchResultIndex(searchResultNodeIds.length - 1);
-  }, [searchResultNodeIds.length, activeSearchResultIndex]);
+  }, [
+    searchResultNodeIds.length,
+    activeSearchResultIndex,
+    setActiveSearchResultIndex,
+  ]);
 
   useEffect(() => {
     const normalizedQuery = normalizeSearchText(searchQuery);
@@ -669,7 +676,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
         return nextIndex;
       });
     },
-    [searchResultNodeIds.length],
+    [searchResultNodeIds.length, setActiveSearchResultIndex],
   );
 
   const toggleSearch = useCallback(() => {
@@ -867,7 +874,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
   if (!graphData.nodes.length) {
     return (
       <div className="flex h-full items-center justify-center">
-        No graph data available
+        {localize(language, "No graph data available", "没有可用的图数据")}
       </div>
     );
   }
@@ -895,14 +902,18 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                     event.preventDefault();
                     moveSearchSelection(event.shiftKey ? -1 : 1);
                   }}
-                  placeholder="Search node..."
+                  placeholder={localize(
+                    language,
+                    "Search node...",
+                    "搜索节点...",
+                  )}
                   className="h-8 min-w-0 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
                 />
                 <span className="min-w-12 text-center text-xs text-muted-foreground">
                   {searchQuery.trim().length === 0
-                    ? "Search"
+                    ? localize(language, "Search", "搜索")
                     : searchResultNodeIds.length === 0
-                      ? "No match"
+                      ? localize(language, "No match", "无匹配")
                       : `${activeSearchResultIndex + 1}/${searchResultNodeIds.length}`}
                 </span>
                 <Button
@@ -910,7 +921,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 p-1"
-                  title="Previous match"
+                  title={localize(language, "Previous match", "上一个匹配")}
                   disabled={searchResultNodeIds.length < 2}
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -920,7 +931,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 p-1"
-                  title="Next match"
+                  title={localize(language, "Next match", "下一个匹配")}
                   disabled={searchResultNodeIds.length < 2}
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -930,7 +941,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 p-1"
-                  title="Close search"
+                  title={localize(language, "Close search", "关闭搜索")}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -942,7 +953,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                 variant="ghost"
                 size="icon"
                 className="p-1.5 shadow-md dark:shadow-border"
-                title="Search nodes"
+                title={localize(language, "Search nodes", "搜索节点")}
               >
                 <Search className="h-4 w-4" />
               </Button>
@@ -951,7 +962,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                 variant="ghost"
                 size="icon"
                 className="p-1.5 shadow-md dark:shadow-border"
-                title="Zoom in"
+                title={localize(language, "Zoom in", "放大")}
               >
                 <ZoomIn className="h-4 w-4" />
               </Button>
@@ -960,7 +971,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                 variant="ghost"
                 size="icon"
                 className="p-1.5 shadow-md dark:shadow-border"
-                title="Zoom out"
+                title={localize(language, "Zoom out", "缩小")}
               >
                 <ZoomOut className="h-4 w-4" />
               </Button>
@@ -969,7 +980,7 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                 variant="ghost"
                 size="icon"
                 className="p-1.5 shadow-md dark:shadow-border"
-                title="Reset view"
+                title={localize(language, "Reset view", "重置视图")}
               >
                 <RotateCcw className="h-4 w-4" />
               </Button>
@@ -979,7 +990,11 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                   variant="ghost"
                   size="icon"
                   className="p-1.5 shadow-md dark:shadow-border"
-                  title="Open fullscreen graph"
+                  title={localize(
+                    language,
+                    "Open fullscreen graph",
+                    "打开全屏图表",
+                  )}
                 >
                   <Maximize2 className="h-4 w-4" />
                 </Button>
@@ -992,8 +1007,16 @@ export const TraceGraphCanvas: React.FC<TraceGraphCanvasProps> = (props) => {
                   className="p-1.5 shadow-md dark:shadow-border"
                   title={
                     graphMode === "hierarchy"
-                      ? "Switch to execution flow graph"
-                      : "Switch to hierarchy graph"
+                      ? localize(
+                          language,
+                          "Switch to execution flow graph",
+                          "切换到执行流图",
+                        )
+                      : localize(
+                          language,
+                          "Switch to hierarchy graph",
+                          "切换到层级图",
+                        )
                   }
                 >
                   <GitBranch className="h-4 w-4" />

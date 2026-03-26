@@ -2,6 +2,8 @@ import { api } from "@/src/utils/api";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
 import { showErrorToast } from "@/src/features/notifications/showErrorToast";
 import { type DefaultViewScope } from "@langfuse/shared/src/server";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 interface UseDefaultViewMutationsProps {
   tableName: string;
@@ -12,6 +14,7 @@ export function useDefaultViewMutations({
   tableName,
   projectId,
 }: UseDefaultViewMutationsProps) {
+  const { language } = useLanguage();
   const utils = api.useUtils();
 
   const setAsDefault = api.TableViewPresets.setAsDefault.useMutation({
@@ -22,12 +25,21 @@ export function useDefaultViewMutations({
       });
       const scopeLabel = variables.scope === "user" ? "your" : "project";
       showSuccessToast({
-        title: "Default view set",
-        description: `Set as ${scopeLabel} default`,
+        title: localize(language, "Default view set", "默认视图已设置"),
+        description: localize(
+          language,
+          `Set as ${scopeLabel} default`,
+          variables.scope === "user"
+            ? "已设为你的默认视图"
+            : "已设为项目默认视图",
+        ),
       });
     },
     onError: (error) => {
-      showErrorToast("Failed to set default", error.message);
+      showErrorToast(
+        localize(language, "Failed to set default", "设置默认值失败"),
+        error.message,
+      );
     },
   });
 
@@ -39,12 +51,21 @@ export function useDefaultViewMutations({
       });
       const scopeLabel = variables.scope === "user" ? "Your" : "Project";
       showSuccessToast({
-        title: "Default cleared",
-        description: `${scopeLabel} default view cleared`,
+        title: localize(language, "Default cleared", "默认值已清除"),
+        description: localize(
+          language,
+          `${scopeLabel} default view cleared`,
+          variables.scope === "user"
+            ? "你的默认视图已清除"
+            : "项目默认视图已清除",
+        ),
       });
     },
     onError: (error) => {
-      showErrorToast("Failed to clear default", error.message);
+      showErrorToast(
+        localize(language, "Failed to clear default", "清除默认值失败"),
+        error.message,
+      );
     },
   });
 

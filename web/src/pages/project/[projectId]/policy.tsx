@@ -33,6 +33,7 @@ import {
   type DataTablePeekViewProps,
 } from "@/src/components/table/peek";
 import { usePeekNavigation } from "@/src/components/table/peek/hooks/usePeekNavigation";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 type PolicyRegistryEntry = {
   name: string;
@@ -112,8 +113,6 @@ type PendingUnsavedAction = {
   url: string;
 };
 
-const UNSAVED_CHANGES_CONFIRMATION_MESSAGE =
-  "You have unsaved changes. Leave without saving?";
 const AUTO_REFRESH_INTERVAL_MS = 5000;
 
 function stableStringify(value: unknown) {
@@ -162,6 +161,7 @@ function buildPolicySectionPreview(params: {
 }
 
 export default function PolicyGovernancePage() {
+  const { t } = useLanguage();
   const router = useRouter();
   const projectId = router.query.projectId as string | undefined;
   const { isBetaEnabled } = useV4Beta();
@@ -280,7 +280,7 @@ export default function PolicyGovernancePage() {
         await utils.projects.getPolicyGovernanceSettings.invalidate({
           projectId: projectId ?? "",
         });
-        toast.success("Policy path saved");
+        toast.success(t("policy.pathSaved"));
       },
       onError: (error) => toast.error(error.message),
     });
@@ -314,7 +314,7 @@ export default function PolicyGovernancePage() {
     api.policyGovernance.savePolicyFiles.useMutation({
       onSuccess: async (data) => {
         applyLoadedPolicyData(data as LoadedPolicyData);
-        toast.success("Policy files saved");
+        toast.success(t("policy.filesSaved"));
       },
       onError: (error) => toast.error(error.message),
     });
@@ -443,12 +443,12 @@ export default function PolicyGovernancePage() {
       projectId
         ? {
             itemType: "TRACE",
-            customTitlePrefix: "Observation ID:",
+            customTitlePrefix: t("policy.observationIdPrefix"),
             children: <PeekViewObservationDetail projectId={projectId} />,
             ...peekNavigationProps,
           }
         : undefined,
-    [peekNavigationProps, projectId],
+    [peekNavigationProps, projectId, t],
   );
   const activeOpenAiConnection = useMemo(
     () =>
@@ -510,8 +510,7 @@ export default function PolicyGovernancePage() {
     savePolicyFilesMutation.isPending,
   ]);
 
-  const loadPathHint =
-    "/absolute/path/to/ArbiterOS-Kernel/arbiteros_kernel (or direct /policy.json)";
+  const loadPathHint = t("policy.pathHint");
 
   const onLoadPolicyFiles = () => {
     if (!projectId) return;
@@ -594,7 +593,7 @@ export default function PolicyGovernancePage() {
         [params.policyName]: {
           ...(prev[params.policyName] ?? {}),
           [params.section]:
-            error instanceof Error ? error.message : "Invalid JSON",
+            error instanceof Error ? error.message : t("policy.invalidJson"),
         },
       }));
     }
@@ -603,9 +602,7 @@ export default function PolicyGovernancePage() {
   const onGenerateProposal = async (policyName: string) => {
     if (!projectId || !loaded) return;
     if (hasSectionErrors) {
-      toast.error(
-        "Fix invalid JSON section drafts before generating a proposal.",
-      );
+      toast.error(t("policy.fixInvalidBeforeGenerate"));
       return;
     }
 
@@ -637,7 +634,7 @@ export default function PolicyGovernancePage() {
       });
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to generate proposal",
+        error instanceof Error ? error.message : t("policy.generateFailed"),
       );
     } finally {
       setProposalPolicyNameLoading(null);
@@ -660,9 +657,7 @@ export default function PolicyGovernancePage() {
     setSectionErrors({});
     setPendingProposal(null);
     setProposalBasePolicyJson(null);
-    toast.success(
-      "LLM proposal applied to draft. Review and save to write files.",
-    );
+    toast.success(t("policy.proposalAppliedToDraft"));
   };
 
   const proposalDiffPreview = useMemo(() => {
@@ -708,7 +703,7 @@ export default function PolicyGovernancePage() {
 
       if (hasUnsavedDraftChanges) {
         if (hasSectionErrors) {
-          toast.error("Please fix invalid JSON sections before saving.");
+          toast.error(t("policy.fixInvalidBeforeSave"));
           setIsUnsavedPromptBusy(false);
           return;
         }
@@ -747,6 +742,7 @@ export default function PolicyGovernancePage() {
     policyJsonDraft,
     policyRegistryDraft,
     executePendingUnsavedAction,
+    t,
   ]);
 
   const handleUnsavedDiscardAndContinue = useCallback(() => {
@@ -782,8 +778,7 @@ export default function PolicyGovernancePage() {
         return;
       }
 
-      const cancellationMessage =
-        "Route change aborted due to unsaved changes.";
+      const cancellationMessage = t("policy.routeChangeAborted");
       promptForUnsavedChanges({ type: "route_change", url });
       router.events.emit("routeChangeError", cancellationMessage, url, {
         shallow: false,
@@ -801,7 +796,7 @@ export default function PolicyGovernancePage() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       router.events.off("routeChangeStart", handleRouteChangeStart);
     };
-  }, [hasUnsavedChanges, promptForUnsavedChanges, router.events]);
+  }, [hasUnsavedChanges, promptForUnsavedChanges, router.events, t]);
 
   const llmConnectionLabel = activeOpenAiConnection
     ? activeOpenAiConnection.baseURL
@@ -818,18 +813,20 @@ export default function PolicyGovernancePage() {
   return (
     <Page
       headerProps={{
-        title: "Policy",
+        title: t("policy.pageTitle"),
       }}
       scrollable
     >
       <div className="space-y-4 p-3">
         <Card>
           <CardHeader>
-            <CardTitle>Policy source and live context</CardTitle>
+            <CardTitle>{t("policy.sourceAndContextTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="kernel-policy-path">Path</Label>
+              <Label htmlFor="kernel-policy-path">
+                {t("policy.pathLabel")}
+              </Label>
               <Input
                 id="kernel-policy-path"
                 placeholder={loadPathHint}
@@ -840,69 +837,61 @@ export default function PolicyGovernancePage() {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                Hint: set the `arbiteros_kernel` folder path (or direct path to
-                `policy.json` / `policy_registry.json`).
+                {t("policy.pathHintDescription")}
               </p>
               <p className="text-xs text-muted-foreground">
-                Production: the bundled Docker compose mounts your home
-                directory at the same absolute path, so local paths under home
-                usually work directly. Use `LANGFUSE_PATH_PREFIX_MAP` only for
-                custom mount layouts or paths outside your home directory.
+                {t("policy.productionHint")}
               </p>
               {policySettingsQuery.data?.kernelPolicyPathAbsolute ? (
                 <p className="text-xs text-muted-foreground">
-                  Saved path detected. Policy files auto-load from this path on
-                  page open.
+                  {t("policy.savedPathDetected")}
                 </p>
               ) : null}
               {loaded ? (
                 <p className="text-xs text-muted-foreground">
-                  This page checks the kernel policy files every 5 seconds and
-                  refreshes automatically when the source changes, unless you
-                  have unsaved edits open.
+                  {t("policy.autoRefreshInfo")}
                 </p>
               ) : null}
             </div>
             <div className="grid gap-3 md:grid-cols-4">
               <div className="rounded-lg border bg-muted/20 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  LLM connection
+                  {t("policy.llmConnection")}
                 </div>
                 <div className="mt-1 text-sm text-foreground">
                   {hasLLMConnectionAccess
-                    ? (llmConnectionLabel ??
-                      "No OpenAI-compatible connection configured.")
-                    : "Requires LLM connection read access."}
+                    ? (llmConnectionLabel ?? t("policy.noLlmConnection"))
+                    : t("policy.requiresLlmReadAccess")}
                 </div>
               </div>
               <div className="rounded-lg border bg-muted/20 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Error Analysis model
+                  {t("policy.errorAnalysisModel")}
                 </div>
                 <div className="mt-1 text-sm text-foreground">
-                  {configuredModelLabel ?? "Not configured"}
+                  {configuredModelLabel ?? t("policy.notConfigured")}
                 </div>
               </div>
               <div className="rounded-lg border bg-muted/20 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Last policy update
+                  {t("policy.lastPolicyUpdate")}
                 </div>
                 <div className="mt-1 text-sm text-foreground">
                   {policySettingsQuery.data?.lastPolicyUpdatedAt
                     ? new Date(
                         policySettingsQuery.data.lastPolicyUpdatedAt,
                       ).toLocaleString()
-                    : "No saved update timestamp yet"}
+                    : t("policy.noSavedUpdateTimestamp")}
                 </div>
               </div>
               <div className="rounded-lg border bg-muted/20 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Kernel source updated
+                  {t("policy.kernelSourceUpdated")}
                 </div>
                 <div className="mt-1 text-sm text-foreground">
                   {sourceLastModifiedLabel
                     ? new Date(sourceLastModifiedLabel).toLocaleString()
-                    : "Load policy files to inspect"}
+                    : t("policy.loadPolicyFilesToInspect")}
                 </div>
               </div>
             </div>
@@ -921,7 +910,7 @@ export default function PolicyGovernancePage() {
                   !hasUpdateAccess || savePolicySettingsMutation.isPending
                 }
               >
-                Save Path
+                {t("policy.savePath")}
               </Button>
               <Button
                 type="button"
@@ -929,7 +918,9 @@ export default function PolicyGovernancePage() {
                 onClick={onLoadPolicyFiles}
                 disabled={!projectId || isLoadPolicyFilesPending}
               >
-                {isLoadPolicyFilesPending ? "Loading..." : "Load Policy Files"}
+                {isLoadPolicyFilesPending
+                  ? t("policy.loading")
+                  : t("policy.loadPolicyFiles")}
               </Button>
               <Button
                 type="button"
@@ -938,13 +929,15 @@ export default function PolicyGovernancePage() {
                 disabled={!canSaveDraft}
               >
                 {savePolicyFilesMutation.isPending
-                  ? "Saving..."
-                  : "Save Policy Files"}
+                  ? t("policy.saving")
+                  : t("policy.savePolicyFiles")}
               </Button>
             </div>
             {loaded ? (
               <div className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">
-                <div>Resolved input: {loaded.resolvedPathInput}</div>
+                <div>
+                  {t("policy.resolvedInput")}: {loaded.resolvedPathInput}
+                </div>
                 <div>policy.json: {loaded.policyJsonPath}</div>
                 <div>policy_registry.json: {loaded.policyRegistryPath}</div>
               </div>
@@ -956,17 +949,10 @@ export default function PolicyGovernancePage() {
           <div className="space-y-4">
             {sourceChangedWhileEditing ? (
               <Alert>
-                <AlertTitle>Kernel policy files changed</AlertTitle>
+                <AlertTitle>{t("policy.kernelFilesChangedTitle")}</AlertTitle>
                 <AlertDescription className="space-y-3">
-                  <p>
-                    The source files in `ArbiterOS-Kernel` changed after this
-                    page was loaded. Reload to pull in the latest policy from
-                    disk.
-                  </p>
-                  <p>
-                    Reloading will replace your current unsaved draft on this
-                    page.
-                  </p>
+                  <p>{t("policy.kernelFilesChangedDescription")}</p>
+                  <p>{t("policy.reloadingReplacesDraft")}</p>
                   <div>
                     <Button
                       type="button"
@@ -975,8 +961,8 @@ export default function PolicyGovernancePage() {
                       disabled={isLoadPolicyFilesPending}
                     >
                       {isLoadPolicyFilesPending
-                        ? "Reloading..."
-                        : "Reload from Kernel"}
+                        ? t("policy.reloading")
+                        : t("policy.reloadFromKernel")}
                     </Button>
                   </div>
                 </AlertDescription>
@@ -1049,16 +1035,15 @@ export default function PolicyGovernancePage() {
                 disabled={!canSaveDraft}
               >
                 {savePolicyFilesMutation.isPending
-                  ? "Saving..."
-                  : "Save Policy Files"}
+                  ? t("policy.saving")
+                  : t("policy.savePolicyFiles")}
               </Button>
             </div>
           </div>
         ) : (
           <Card>
             <CardContent className="p-6 text-sm text-muted-foreground">
-              Save or load a kernel policy path above to render the policy
-              guide.
+              {t("policy.emptyState")}
             </CardContent>
           </Card>
         )}
@@ -1077,7 +1062,7 @@ export default function PolicyGovernancePage() {
         <AlertDialogContent className="max-w-6xl">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              LLM Policy Update Proposal: {pendingProposal?.policyName}
+              {t("policy.proposalDialogTitle")} {pendingProposal?.policyName}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingProposal?.summary}
@@ -1086,15 +1071,14 @@ export default function PolicyGovernancePage() {
           {proposalDiffPreview && proposalHasChanges ? (
             <div className="max-h-[70vh] space-y-3 overflow-y-auto">
               <p className="text-sm text-muted-foreground">
-                Showing only the `policy.json` sections for{" "}
-                {pendingProposal?.policyName}
+                {t("policy.showingSectionsFor")} {pendingProposal?.policyName}
                 {proposalDiffPreview.sections.length > 0
                   ? `: ${proposalDiffPreview.sections.join(", ")}`
                   : "."}
               </p>
               <DiffViewer
-                oldLabel="policy.json (current)"
-                newLabel="policy.json (proposal)"
+                oldLabel={t("policy.diffCurrent")}
+                newLabel={t("policy.diffProposal")}
                 oldSubLabel={pendingProposal?.policyName}
                 newSubLabel={pendingProposal?.policyName}
                 oldString={stableStringify(
@@ -1108,11 +1092,11 @@ export default function PolicyGovernancePage() {
           ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel>
-              {proposalHasChanges ? "Reject" : "Cancel"}
+              {proposalHasChanges ? t("policy.reject") : t("policy.cancel")}
             </AlertDialogCancel>
             {proposalHasChanges ? (
               <Button type="button" onClick={applyProposalToDraft}>
-                Apply to Draft
+                {t("policy.applyToDraft")}
               </Button>
             ) : null}
           </AlertDialogFooter>
@@ -1129,9 +1113,11 @@ export default function PolicyGovernancePage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("policy.unsavedChangesTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {UNSAVED_CHANGES_CONFIRMATION_MESSAGE}
+              {t("policy.unsavedChangesLeave")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1139,7 +1125,7 @@ export default function PolicyGovernancePage() {
               onClick={handleUnsavedCancel}
               disabled={isUnsavedPromptBusy}
             >
-              Stay
+              {t("policy.stay")}
             </AlertDialogCancel>
             <Button
               type="button"
@@ -1147,14 +1133,14 @@ export default function PolicyGovernancePage() {
               onClick={handleUnsavedDiscardAndContinue}
               disabled={isUnsavedPromptBusy}
             >
-              Discard and leave
+              {t("policy.discardAndLeave")}
             </Button>
             <Button
               type="button"
               onClick={() => void handleUnsavedSaveAndContinue()}
               disabled={isUnsavedPromptBusy}
             >
-              Save and leave
+              {t("policy.saveAndLeave")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

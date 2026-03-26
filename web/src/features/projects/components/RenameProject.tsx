@@ -19,11 +19,14 @@ import { LockIcon } from "lucide-react";
 import { useQueryProject } from "@/src/features/projects/hooks";
 import { useSession } from "next-auth/react";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export default function RenameProject() {
   const { update: updateSession } = useSession();
   const { project } = useQueryProject();
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
   const hasAccess = useHasProjectAccess({
     projectId: project?.id,
     scope: "project:update",
@@ -60,20 +63,31 @@ export default function RenameProject() {
 
   return (
     <div>
-      <Header title="Project Name" />
+      <Header title={localize(language, "Project Name", "项目名称")} />
       <Card className="mb-4 p-3">
         {form.getValues().name !== "" ? (
           <p className="mb-4 text-sm text-primary">
-            Your Project will be renamed from &quot;
+            {localize(
+              language,
+              'Your Project will be renamed from "',
+              '你的项目将从"',
+            )}
             {project?.name ?? ""}
-            &quot; to &quot;
-            <b>{form.watch().name}</b>&quot;.
+            {localize(language, '" to "', '" 重命名为 "')}
+            <b>{form.watch().name}</b>
+            {'"'}
+            {localize(language, ".", "。")}
           </p>
         ) : (
           <p className="mb-4 text-sm text-primary">
-            Your Project is currently named &quot;
+            {localize(
+              language,
+              'Your Project is currently named "',
+              '你的项目当前名称为"',
+            )}
             <b>{project?.name ?? ""}</b>
-            &quot;.
+            {'"'}
+            {localize(language, ".", "。")}
           </p>
         )}
         <Form {...form}>
@@ -96,7 +110,9 @@ export default function RenameProject() {
                         disabled={!hasAccess}
                       />
                       {!hasAccess && (
-                        <span title="No access">
+                        <span
+                          title={localize(language, "No access", "无访问权限")}
+                        >
                           <LockIcon className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-muted" />
                         </span>
                       )}
@@ -114,7 +130,7 @@ export default function RenameProject() {
                 disabled={form.getValues().name === "" || !hasAccess}
                 className="mt-4"
               >
-                Save
+                {localize(language, "Save", "保存")}
               </Button>
             )}
           </form>

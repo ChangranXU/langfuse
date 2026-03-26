@@ -10,6 +10,8 @@ import {
   DialogTitle,
 } from "@/src/components/ui/dialog";
 import DiffViewer from "@/src/components/DiffViewer";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type CorrectedOutputDiffDialogProps = {
   isOpen: boolean;
@@ -56,6 +58,8 @@ const formatOutputForDiff = (
 export const CorrectedOutputDiffDialog: React.FC<
   CorrectedOutputDiffDialogProps
 > = ({ isOpen, setIsOpen, actualOutput, correctedOutput, strictJsonMode }) => {
+  const { language } = useLanguage();
+
   // Format both outputs for comparison
   const formattedActualOutput = formatOutputForDiff(
     actualOutput,
@@ -74,9 +78,15 @@ export const CorrectedOutputDiffDialog: React.FC<
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent size="xl">
         <DialogHeader>
-          <DialogTitle>Output Correction Diff</DialogTitle>
+          <DialogTitle>
+            {localize(language, "Output Correction Diff", "输出修正对比")}
+          </DialogTitle>
           <DialogDescription>
-            Compare the original output with the corrected version
+            {localize(
+              language,
+              "Compare the original output with the corrected version",
+              "对比原始输出与修正后的版本",
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -84,9 +94,15 @@ export const CorrectedOutputDiffDialog: React.FC<
           {hasNoOriginalOutput ? (
             <div className="flex flex-col items-center justify-center p-8 text-center">
               <div className="text-muted-foreground">
-                <p className="text-lg font-medium">No original output</p>
+                <p className="text-lg font-medium">
+                  {localize(language, "No original output", "没有原始输出")}
+                </p>
                 <p className="mt-2 text-sm">
-                  There is no original output to compare with the correction.
+                  {localize(
+                    language,
+                    "There is no original output to compare with the correction.",
+                    "没有可与修正结果进行比较的原始输出。",
+                  )}
                 </p>
               </div>
             </div>
@@ -95,15 +111,17 @@ export const CorrectedOutputDiffDialog: React.FC<
               <DiffViewer
                 oldString={formattedActualOutput}
                 newString={formattedCorrectedOutput}
-                oldLabel="Original Output"
-                newLabel="Corrected Output"
+                oldLabel={localize(language, "Original Output", "原始输出")}
+                newLabel={localize(language, "Corrected Output", "修正输出")}
               />
             </div>
           )}
         </DialogBody>
 
         <DialogFooter>
-          <Button onClick={() => setIsOpen(false)}>Close</Button>
+          <Button onClick={() => setIsOpen(false)}>
+            {localize(language, "Close", "关闭")}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

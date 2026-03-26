@@ -2,6 +2,8 @@ import { PlusCircle, Trash2 } from "lucide-react";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { useState } from "react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type UsageDetailsEditorProps = {
   usageDetails: Record<string, number>;
@@ -17,6 +19,7 @@ export function UsageDetailsEditor({
   const [entries, setEntries] = useState<Array<{ key: string; value: number }>>(
     Object.entries(usageDetails).map(([key, value]) => ({ key, value })),
   );
+  const { language } = useLanguage();
 
   const handleUpdate = (newEntries: Array<{ key: string; value: number }>) => {
     setEntries(newEntries);
@@ -59,17 +62,22 @@ export function UsageDetailsEditor({
   return (
     <div className="space-y-4">
       <div>
-        <div className="pb-2 text-sm font-medium">Usage Details (optional)</div>
+        <div className="pb-2 text-sm font-medium">
+          {localize(language, "Usage Details (optional)", "用量详情（可选）")}
+        </div>
         <div className="text-sm text-muted-foreground">
-          Add usage details to test pricing tier matching. Leave empty to match
-          the default tier.
+          {localize(
+            language,
+            "Add usage details to test pricing tier matching. Leave empty to match the default tier.",
+            "添加用量详情以测试定价层级匹配。留空则匹配默认层级。",
+          )}
         </div>
       </div>
 
       {/* Template Buttons */}
       <div className="space-y-2">
         <div className="text-sm text-muted-foreground">
-          Prefill from template:
+          {localize(language, "Prefill from template:", "从模板预填充：")}
         </div>
         <div className="flex gap-2">
           <Button
@@ -106,14 +114,14 @@ export function UsageDetailsEditor({
       {entries.length > 0 ? (
         <div className="space-y-2 rounded-lg border p-3">
           <div className="grid grid-cols-[1fr,1fr,auto] gap-2 text-sm font-medium">
-            <div>Usage Type</div>
-            <div>Value</div>
+            <div>{localize(language, "Usage Type", "用量类型")}</div>
+            <div>{localize(language, "Value", "数值")}</div>
             <div className="w-10" />
           </div>
           {entries.map((entry, index) => (
             <div key={index} className="grid grid-cols-[1fr,1fr,auto] gap-2">
               <Input
-                placeholder="e.g. input"
+                placeholder={localize(language, "e.g. input", "例如：input")}
                 value={entry.key}
                 onChange={(e) => handleKeyChange(index, e.target.value)}
               />
@@ -145,7 +153,7 @@ export function UsageDetailsEditor({
         className="w-full"
       >
         <PlusCircle className="mr-2 h-4 w-4" />
-        Add Usage Type
+        {localize(language, "Add Usage Type", "添加用量类型")}
       </Button>
     </div>
   );

@@ -51,6 +51,8 @@ import {
   DataTableRefreshButton,
   type RefreshInterval,
 } from "@/src/components/table/data-table-refresh-button";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export interface MultiSelect {
   selectAll: boolean;
@@ -161,6 +163,26 @@ export function DataTableToolbar<TData, TValue>({
   const capture = usePostHogClientCapture();
   const { open: controlsPanelOpen, setOpen: setControlsPanelOpen } =
     useDataTableControls();
+  const { language } = useLanguage();
+  const metadataSearchFieldsLabel =
+    searchConfig?.metadataSearchFields?.join(", ");
+  const metadataDropdownLabel =
+    searchConfig?.customDropdownLabels?.metadata ??
+    localize(language, "IDs / Names", "ID / 名称");
+  const fullTextDropdownLabel =
+    searchConfig?.customDropdownLabels?.fullText ??
+    localize(language, "Full Text", "全文");
+  const searchPlaceholder = searchConfig
+    ? searchConfig.tableAllowsFullTextSearch
+      ? localize(language, "Search...", "搜索...")
+      : metadataSearchFieldsLabel
+        ? localize(
+            language,
+            `Search (${metadataSearchFieldsLabel})`,
+            `搜索（${metadataSearchFieldsLabel}）`,
+          )
+        : localize(language, "Search", "搜索")
+    : undefined;
 
   // Only show the toggle button when we're using the new sidebar
   const hasNewSidebar = !filterColumnDefinition && filterState !== undefined;
@@ -179,7 +201,13 @@ export function DataTableToolbar<TData, TValue>({
             ) : (
               <PanelLeftOpen className="h-4 w-4" />
             )}
-            <span>{controlsPanelOpen ? "Hide" : "Show"} filters</span>
+            <span>
+              {localize(
+                language,
+                controlsPanelOpen ? "Hide filters" : "Show filters",
+                controlsPanelOpen ? "隐藏筛选" : "显示筛选",
+              )}
+            </span>
             {filterState && filterState.length > 0 && (
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
                 {filterState.length}
@@ -210,11 +238,7 @@ export function DataTableToolbar<TData, TValue>({
               </Button>
               <Input
                 autoFocus
-                placeholder={
-                  searchConfig.tableAllowsFullTextSearch
-                    ? "Search..."
-                    : `Search (${searchConfig.metadataSearchFields?.join(", ")})`
-                }
+                placeholder={searchPlaceholder}
                 value={searchString}
                 onChange={(event) => {
                   const newValue = event.currentTarget.value;
@@ -244,10 +268,8 @@ export function DataTableToolbar<TData, TValue>({
                     <span className="flex items-center gap-1 truncate">
                       {searchConfig.tableAllowsFullTextSearch &&
                       (searchConfig.searchType ?? []).includes("content")
-                        ? (searchConfig.customDropdownLabels?.fullText ??
-                          "Full Text")
-                        : (searchConfig.customDropdownLabels?.metadata ??
-                          "IDs / Names")}
+                        ? fullTextDropdownLabel
+                        : metadataDropdownLabel}
                       <DocPopup
                         description={
                           searchConfig.tableAllowsFullTextSearch &&
@@ -255,15 +277,26 @@ export function DataTableToolbar<TData, TValue>({
                             "content",
                           ) ? (
                             <p className="text-xs font-normal text-primary">
-                              Searches in Input/Output and{" "}
-                              {searchConfig.metadataSearchFields?.join(", ")}.
-                              {!searchConfig.hidePerformanceWarning &&
-                                " For improved performance, please filter the table down."}
+                              {localize(
+                                language,
+                                `Searches in Input/Output and ${metadataSearchFieldsLabel ?? metadataDropdownLabel}.`,
+                                `搜索 Input/Output 以及 ${metadataSearchFieldsLabel ?? metadataDropdownLabel}。`,
+                              )}
+                              {!searchConfig.hidePerformanceWarning
+                                ? localize(
+                                    language,
+                                    " For improved performance, please filter the table down.",
+                                    " 为了获得更好的性能，请先缩小表格筛选范围。",
+                                  )
+                                : null}
                             </p>
                           ) : (
                             <p className="text-xs font-normal text-primary">
-                              Searches in{" "}
-                              {searchConfig.metadataSearchFields?.join(", ")}.
+                              {localize(
+                                language,
+                                `Searches in ${metadataSearchFieldsLabel ?? metadataDropdownLabel}.`,
+                                `搜索 ${metadataSearchFieldsLabel ?? metadataDropdownLabel}。`,
+                              )}
                             </p>
                           )
                         }
@@ -295,15 +328,13 @@ export function DataTableToolbar<TData, TValue>({
                     }}
                   >
                     <DropdownMenuRadioItem value="metadata">
-                      {searchConfig.customDropdownLabels?.metadata ??
-                        "IDs / Names"}
+                      {metadataDropdownLabel}
                     </DropdownMenuRadioItem>
                     <DropdownMenuRadioItem
                       value="metadata_fulltext"
                       disabled={!searchConfig.tableAllowsFullTextSearch}
                     >
-                      {searchConfig.customDropdownLabels?.fullText ??
-                        "Full Text"}
+                      {fullTextDropdownLabel}
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
@@ -330,8 +361,8 @@ export function DataTableToolbar<TData, TValue>({
         )}
         {environmentFilter && (
           <MultiSelectFilter
-            title="Environment"
-            label="Env"
+            title={localize(language, "Environment", "环境")}
+            label={localize(language, "Env", "环境")}
             values={environmentFilter.values}
             onValueChange={environmentFilter.onValueChange}
             options={environmentFilter.options}

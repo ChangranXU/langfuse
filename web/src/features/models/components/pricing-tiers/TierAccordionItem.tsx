@@ -19,6 +19,8 @@ import { TierPriceEditor } from "./TierPriceEditor";
 import { TierPrefillButtons } from "./TierPrefillButtons";
 import type { UseFormReturn, FieldArrayWithId } from "react-hook-form";
 import type { FormUpsertModel } from "../../validation";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type TierAccordionItemProps = {
   tier: FieldArrayWithId<FormUpsertModel, "pricingTiers", "id">;
@@ -37,6 +39,8 @@ export function TierAccordionItem({
   remove,
   isDefault,
 }: TierAccordionItemProps) {
+  const { language } = useLanguage();
+
   return (
     <AccordionItem
       value={`tier-${index}`}
@@ -46,9 +50,13 @@ export function TierAccordionItem({
         <div className="flex w-full items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="font-semibold">{tier.name}</span>
-            {isDefault && <Badge variant="secondary">Default</Badge>}
+            {isDefault && (
+              <Badge variant="secondary">
+                {localize(language, "Default", "默认")}
+              </Badge>
+            )}
             <span className="text-xs text-muted-foreground">
-              Priority: {tier.priority}
+              {localize(language, "Priority:", "优先级：")} {tier.priority}
             </span>
           </div>
           {!isDefault && (
@@ -74,7 +82,9 @@ export function TierAccordionItem({
           name={`pricingTiers.${index}.name`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Tier Name</FormLabel>
+              <FormLabel>
+                {localize(language, "Tier Name", "层级名称")}
+              </FormLabel>
               <FormControl>
                 <Input {...field} disabled={isDefault} />
               </FormControl>

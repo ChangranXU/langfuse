@@ -31,7 +31,6 @@ import { ItemBadge } from "@/src/components/ItemBadge";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { Tabs, TabsList, TabsTrigger } from "@/src/components/ui/tabs";
 import { Switch } from "@/src/components/ui/switch";
-import { useRouter } from "next/router";
 import { CopyIdsPopover } from "@/src/components/trace2/components/_shared/CopyIdsPopover";
 import { useJsonExpansion } from "@/src/components/trace2/contexts/JsonExpansionContext";
 import { type WithStringifiedMetadata } from "@/src/utils/clientSideDomainTypes";
@@ -39,6 +38,8 @@ import { useParsedObservation } from "@/src/hooks/useParsedObservation";
 import { useJsonBetaToggle } from "@/src/components/trace2/hooks/useJsonBetaToggle";
 import { getMostRecentCorrection } from "@/src/features/corrections/utils/getMostRecentCorrection";
 import { buildKernelObservationIoSourceMap } from "@/src/components/trace2/lib/observationIoSource";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export const ObservationPreview = ({
   observations,
@@ -63,7 +64,8 @@ export const ObservationPreview = ({
   showCommentButton?: boolean;
   precomputedCost: Decimal | undefined;
 }) => {
-  const [selectedTab, setSelectedTab] = useQueryParam(
+  const { language } = useLanguage();
+  const [, setSelectedTab] = useQueryParam(
     "view",
     withDefault(StringParam, "preview"),
   );
@@ -82,7 +84,6 @@ export const ObservationPreview = ({
 
   const isAuthenticatedAndProjectMember =
     useIsAuthenticatedAndProjectMember(projectId);
-  const router = useRouter();
   const {
     formattedExpansion,
     setFormattedFieldExpansion,
@@ -157,7 +158,10 @@ export const ObservationPreview = ({
 
   const totalCost = precomputedCost;
 
-  if (!preloadedObservation) return <div className="flex-1">Not found</div>;
+  if (!preloadedObservation)
+    return (
+      <div className="flex-1">{localize(language, "Not found", "未找到")}</div>
+    );
 
   return (
     <div className="col-span-2 flex h-full flex-1 flex-col overflow-hidden md:col-span-3">
@@ -172,8 +176,14 @@ export const ObservationPreview = ({
             </span>
             <CopyIdsPopover
               idItems={[
-                { id: preloadedObservation.traceId, name: "Trace ID" },
-                { id: preloadedObservation.id, name: "Observation ID" },
+                {
+                  id: preloadedObservation.traceId,
+                  name: localize(language, "Trace ID", "Trace ID"),
+                },
+                {
+                  id: preloadedObservation.id,
+                  name: localize(language, "Observation ID", "Observation ID"),
+                },
               ]}
             />
           </div>
@@ -214,7 +224,7 @@ export const ObservationPreview = ({
                 <Fragment>
                   {preloadedObservation.endTime ? (
                     <Badge variant="tertiary">
-                      Latency:{" "}
+                      {localize(language, "Latency:", "延迟：")}{" "}
                       {formatIntervalSeconds(
                         (preloadedObservation.endTime.getTime() -
                           preloadedObservation.startTime.getTime()) /
@@ -225,7 +235,11 @@ export const ObservationPreview = ({
 
                   {preloadedObservation.timeToFirstToken ? (
                     <Badge variant="tertiary">
-                      Time to first token:{" "}
+                      {localize(
+                        language,
+                        "Time to first token:",
+                        "首词元时间：",
+                      )}{" "}
                       {formatIntervalSeconds(
                         preloadedObservation.timeToFirstToken,
                       )}
@@ -234,7 +248,8 @@ export const ObservationPreview = ({
 
                   {preloadedObservation.environment ? (
                     <Badge variant="tertiary">
-                      Env: {preloadedObservation.environment}
+                      {localize(language, "Env:", "环境：")}{" "}
+                      {preloadedObservation.environment}
                     </Badge>
                   ) : null}
 
@@ -295,7 +310,8 @@ export const ObservationPreview = ({
                     })()}
                   {preloadedObservation.version ? (
                     <Badge variant="tertiary">
-                      Version: {preloadedObservation.version}
+                      {localize(language, "Version:", "版本：")}{" "}
+                      {preloadedObservation.version}
                     </Badge>
                   ) : undefined}
                   {preloadedObservation.model ? (
@@ -304,7 +320,11 @@ export const ObservationPreview = ({
                         <Link
                           href={`/project/${preloadedObservation.projectId}/settings/models/${preloadedObservation.internalModelId}`}
                           className="flex items-center"
-                          title="View model details"
+                          title={localize(
+                            language,
+                            "View model details",
+                            "查看模型详情",
+                          )}
                         >
                           <span className="truncate">
                             {preloadedObservation.model}
@@ -387,7 +407,9 @@ export const ObservationPreview = ({
         >
           {viewType === "detailed" && (
             <TabsBarList>
-              <TabsBarTrigger value="preview">Preview</TabsBarTrigger>
+              <TabsBarTrigger value="preview">
+                {localize(language, "Preview", "预览")}
+              </TabsBarTrigger>
               {isPrettyViewAvailable && (
                 <>
                   <Tabs
@@ -403,7 +425,7 @@ export const ObservationPreview = ({
                         value="pretty"
                         className="h-fit px-1 text-xs"
                       >
-                        Formatted
+                        {localize(language, "Formatted", "格式化")}
                       </TabsTrigger>
                       <TabsTrigger value="json" className="h-fit px-1 text-xs">
                         JSON
@@ -418,7 +440,7 @@ export const ObservationPreview = ({
                         onCheckedChange={handleBetaToggle}
                       />
                       <span className="text-xs text-muted-foreground">
-                        Beta
+                        {localize(language, "Beta", "测试版")}
                       </span>
                     </div>
                   )}
@@ -488,7 +510,7 @@ export const ObservationPreview = ({
                   preloadedObservation.level !== "POLICY_VIOLATION" && (
                     <PrettyJsonView
                       key={preloadedObservation.id + "-status"}
-                      title="Status Message"
+                      title={localize(language, "Status Message", "状态消息")}
                       json={preloadedObservation.statusMessage}
                       currentView={
                         currentView === "json-beta" ? "pretty" : currentView
@@ -500,7 +522,7 @@ export const ObservationPreview = ({
                 {observationWithIO?.metadata && (
                   <PrettyJsonView
                     key={observationWithIO.id + "-metadata"}
-                    title="Metadata"
+                    title={localize(language, "Metadata", "元数据")}
                     json={observationWithIO.metadata}
                     media={observationMedia.data?.filter(
                       (m) => m.field === "metadata",

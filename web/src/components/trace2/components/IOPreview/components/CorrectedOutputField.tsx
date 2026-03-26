@@ -17,6 +17,8 @@ import {
   HoverCardTrigger,
 } from "@/src/components/ui/hover-card";
 import Link from "next/link";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 interface CorrectedOutputFieldProps {
   projectId: string;
@@ -38,6 +40,7 @@ export function CorrectedOutputField({
   compact = false,
 }: CorrectedOutputFieldProps) {
   const hasAccess = useHasProjectAccess({ projectId, scope: "scores:CUD" });
+  const { language } = useLanguage();
 
   // JSON validation toggle (persisted in localStorage)
   const [strictJsonMode, setStrictJsonMode] = useLocalStorage(
@@ -166,7 +169,13 @@ export function CorrectedOutputField({
                   compact ? "text-xs" : "text-sm",
                 )}
               >
-                {compact ? "" : "Corrected Output (Beta)"}
+                {compact
+                  ? ""
+                  : localize(
+                      language,
+                      "Corrected Output (Beta)",
+                      "修正输出（测试版）",
+                    )}
               </span>
               <HoverCard>
                 <HoverCardTrigger asChild>
@@ -176,15 +185,18 @@ export function CorrectedOutputField({
                 </HoverCardTrigger>
                 <HoverCardContent className="w-80 text-xs" side="right">
                   <p>
-                    Corrected outputs allow you to save the expected output for
-                    a trace or observation. Learn more in the{" "}
+                    {localize(
+                      language,
+                      "Corrected outputs allow you to save the expected output for a trace or observation. Learn more in the",
+                      "修正输出允许你为 trace 或 observation 保存期望输出。更多信息请参阅",
+                    )}{" "}
                     <Link
                       href="https://langfuse.com/docs/observability/features/corrections"
                       target="_blank"
                       rel="noreferrer"
                       className="underline hover:text-foreground"
                     >
-                      documentation
+                      {localize(language, "documentation", "文档")}
                     </Link>
                     .
                   </p>
@@ -196,22 +208,32 @@ export function CorrectedOutputField({
                 {!isValidJson && isEditing && hasContent && (
                   <span className="mr-2 text-xs text-red-500">
                     {strictJsonMode
-                      ? "Invalid JSON - fix to save"
-                      : "Cannot save empty content"}
+                      ? localize(
+                          language,
+                          "Invalid JSON - fix to save",
+                          "JSON 无效，请修复后再保存",
+                        )
+                      : localize(
+                          language,
+                          "Cannot save empty content",
+                          "无法保存空内容",
+                        )}
                   </span>
                 )}
                 {isValidJson && saveStatus === "saving" && (
                   <div className="mr-2 flex items-center gap-1">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <span className="text-xs text-muted-foreground">
-                      Saving
+                      {localize(language, "Saving", "保存中")}
                     </span>
                   </div>
                 )}
                 {isValidJson && saveStatus === "saved" && (
                   <div className="mr-2 flex items-center gap-1">
                     <Check className="h-3 w-3" />
-                    <span className="text-xs text-muted-foreground">Saved</span>
+                    <span className="text-xs text-muted-foreground">
+                      {localize(language, "Saved", "已保存")}
+                    </span>
                   </div>
                 )}
                 {hasContent && (
@@ -221,7 +243,11 @@ export function CorrectedOutputField({
                       variant="ghost"
                       onClick={() => setIsDiffDialogOpen(true)}
                       className="hover:bg-border"
-                      title={"View diff between original and corrected output"}
+                      title={localize(
+                        language,
+                        "View diff between original and corrected output",
+                        "查看原始输出与修正输出的差异",
+                      )}
                     >
                       <FileDiff className="h-3 w-3" />
                     </Button>
@@ -232,7 +258,11 @@ export function CorrectedOutputField({
                         onClick={handleEdit}
                         disabled={!hasAccess}
                         className="hover:bg-border"
-                        title="Edit corrected output"
+                        title={localize(
+                          language,
+                          "Edit corrected output",
+                          "编辑修正输出",
+                        )}
                       >
                         <Pencil className="h-3 w-3" />
                       </Button>
@@ -243,7 +273,11 @@ export function CorrectedOutputField({
                       onClick={handleDeleteWithExitEdit}
                       disabled={!hasAccess}
                       className="hover:bg-border"
-                      title="Delete corrected output"
+                      title={localize(
+                        language,
+                        "Delete corrected output",
+                        "删除修正输出",
+                      )}
                     >
                       <Trash className="h-3 w-3" />
                     </Button>
@@ -257,7 +291,9 @@ export function CorrectedOutputField({
                   disabled={!isEditing}
                   className="scale-75"
                 />
-                <span className="text-xs text-muted-foreground">JSON</span>
+                <span className="text-xs text-muted-foreground">
+                  {localize(language, "JSON", "JSON")}
+                </span>
               </div>
             </div>
           </div>
@@ -270,7 +306,11 @@ export function CorrectedOutputField({
                 "w-full cursor-pointer rounded-md border px-3 py-4 text-center text-xs text-muted-foreground transition-colors hover:bg-muted/50",
               )}
             >
-              Click to add corrected output
+              {localize(
+                language,
+                "Click to add corrected output",
+                "点击添加修正输出",
+              )}
             </button>
           ) : isEditing ? (
             <CodeMirrorEditor
@@ -278,7 +318,11 @@ export function CorrectedOutputField({
               onChange={handleEditorChange}
               mode={strictJsonMode ? "json" : "text"}
               minHeight={200}
-              placeholder="Enter corrected output..."
+              placeholder={localize(
+                language,
+                "Enter corrected output...",
+                "输入修正输出...",
+              )}
               className="bg-accent-light-green"
             />
           ) : (

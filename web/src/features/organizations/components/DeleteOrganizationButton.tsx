@@ -26,9 +26,12 @@ import { useQueryOrganization } from "@/src/features/organizations/hooks";
 import { useHasOrganizationAccess } from "@/src/features/rbac/utils/checkOrganizationAccess";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast"; // Import success toast function
 import { env } from "@/src/env.mjs";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function DeleteOrganizationButton() {
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
 
   const organization = useQueryOrganization();
   const confirmMessage =
@@ -36,7 +39,11 @@ export function DeleteOrganizationButton() {
 
   const formSchema = z.object({
     name: z.string().includes(confirmMessage, {
-      message: `Please confirm with "${confirmMessage}"`,
+      message: localize(
+        language,
+        `Please confirm with "${confirmMessage}"`,
+        `请输入 "${confirmMessage}" 以确认`,
+      ),
     }),
   });
 
@@ -63,8 +70,12 @@ export function DeleteOrganizationButton() {
       });
       capture("organization_settings:delete_organization");
       showSuccessToast({
-        title: "Organization Deleted",
-        description: "The organization has been successfully deleted.",
+        title: localize(language, "Organization Deleted", "组织已删除"),
+        description: localize(
+          language,
+          "The organization has been successfully deleted.",
+          "组织已成功删除。",
+        ),
       });
       await new Promise((resolve) => setTimeout(resolve, 5000)); // Delay for 5 seconds
       window.location.href = env.NEXT_PUBLIC_BASE_PATH ?? "/"; // Browser reload to refresh jwt
@@ -77,18 +88,26 @@ export function DeleteOrganizationButton() {
     <Dialog>
       <DialogTrigger asChild>
         <Button variant="destructive-secondary" disabled={!hasAccess}>
-          Delete Organization
+          {localize(language, "Delete Organization", "删除组织")}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold">
-            Delete Organization
+            {localize(language, "Delete Organization", "删除组织")}
           </DialogTitle>
           <DialogDescription>
             {hasProjects
-              ? "You can only delete an organization if it has no projects associated with it. Please delete or transfer all projects first. Deleting projects may take a few minutes."
-              : `To confirm, type "${confirmMessage}" in the input box `}
+              ? localize(
+                  language,
+                  "You can only delete an organization if it has no projects associated with it. Please delete or transfer all projects first. Deleting projects may take a few minutes.",
+                  "只有在组织下没有关联项目时才可以删除组织。请先删除或转移所有项目。删除项目可能需要几分钟。",
+                )
+              : localize(
+                  language,
+                  `To confirm, type "${confirmMessage}" in the input box.`,
+                  `要确认，请在输入框中输入 "${confirmMessage}"。`,
+                )}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -117,7 +136,7 @@ export function DeleteOrganizationButton() {
                 disabled={hasProjects}
                 className="w-full"
               >
-                Delete Organization
+                {localize(language, "Delete Organization", "删除组织")}
               </Button>
             </DialogFooter>
           </form>

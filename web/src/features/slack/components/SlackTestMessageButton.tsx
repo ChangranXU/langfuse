@@ -5,6 +5,8 @@ import { api } from "@/src/utils/api";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
 import { showErrorToast } from "@/src/features/notifications/showErrorToast";
 import { type SlackChannel } from "./ChannelSelector";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 /**
  * Props for the SlackTestMessageButton component
@@ -50,17 +52,25 @@ export const SlackTestMessageButton: React.FC<SlackTestMessageButtonProps> = ({
   showText = true,
   hasAccess = true,
 }) => {
+  const { language } = useLanguage();
   // Test message mutation
   const testMessageMutation = api.slack.sendTestMessage.useMutation({
     onSuccess: () => {
       showSuccessToast({
-        title: "Test Message Sent",
-        description: "Test message sent successfully to the selected channel.",
+        title: localize(language, "Test Message Sent", "测试消息已发送"),
+        description: localize(
+          language,
+          "Test message sent successfully to the selected channel.",
+          "测试消息已成功发送到所选频道。",
+        ),
       });
       onSuccess?.();
     },
     onError: (error) => {
-      showErrorToast("Failed to Send Test Message", error.message);
+      showErrorToast(
+        localize(language, "Failed to Send Test Message", "发送测试消息失败"),
+        error.message,
+      );
       onError?.(new Error(error.message));
     },
   });
@@ -95,12 +105,20 @@ export const SlackTestMessageButton: React.FC<SlackTestMessageButtonProps> = ({
       {testMessageMutation.isPending ? (
         <>
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          {showText && <span>Sending...</span>}
+          {showText && (
+            <span>{localize(language, "Sending...", "发送中...")}</span>
+          )}
         </>
       ) : (
         <>
           <Zap className="h-4 w-4" />
-          {showText && <span>{buttonText}</span>}
+          {showText && (
+            <span>
+              {buttonText === "Send Test Message"
+                ? localize(language, "Send Test Message", "发送测试消息")
+                : buttonText}
+            </span>
+          )}
         </>
       )}
     </Button>

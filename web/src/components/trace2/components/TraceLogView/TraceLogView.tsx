@@ -52,6 +52,8 @@ import { useObservationIOLoadedCount } from "./useLogViewObservationIO";
 import { useLogViewPreferences } from "./useLogViewPreferences";
 import { useLogViewDownload } from "./useLogViewDownload";
 import { useLogViewColumns } from "./useLogViewColumns";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export interface TraceLogViewProps {
   traceId: string;
@@ -75,6 +77,7 @@ export const TraceLogView = ({
   projectId,
   currentView = "pretty",
 }: TraceLogViewProps) => {
+  const { language } = useLanguage();
   const { roots, observations, observationIoSourceById } = useTraceData();
   const { logViewMode, logViewTreeStyle } = useViewPreferences();
   const { formattedExpansion, setFormattedFieldExpansion } = useJsonExpansion();
@@ -299,7 +302,11 @@ export const TraceLogView = ({
       {hasNoObservations && (
         <div className="flex flex-1 items-center justify-center">
           <div className="text-sm text-muted-foreground">
-            No observations in this trace
+            {localize(
+              language,
+              "No observations in this trace",
+              "此 Trace 中没有观测",
+            )}
           </div>
         </div>
       )}
@@ -307,7 +314,11 @@ export const TraceLogView = ({
       {hasNoSearchResults && (
         <div className="flex flex-1 items-center justify-center">
           <div className="text-sm text-muted-foreground">
-            No observations match &quot;{searchQuery}&quot;
+            {localize(
+              language,
+              `No observations match "${searchQuery}"`,
+              `没有观测匹配“${searchQuery}”`,
+            )}
           </div>
         </div>
       )}

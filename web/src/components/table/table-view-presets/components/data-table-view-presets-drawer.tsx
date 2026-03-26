@@ -83,6 +83,8 @@ import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAcces
 import isEqual from "lodash/isEqual";
 import { useDefaultViewMutations } from "../hooks/useDefaultViewMutations";
 import { DropdownMenuSeparator } from "@/src/components/ui/dropdown-menu";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 /**
  * Prefix for system preset IDs. These are page-specific presets defined in code
@@ -161,6 +163,7 @@ export function TableViewPresetsDrawer({
   currentState,
   systemFilterPresets,
 }: TableViewPresetsDrawerProps) {
+  const { language } = useLanguage();
   const [searchQuery, setSearchQueryLocal] = useState("");
   const { tableName, projectId, controllers } = viewConfig;
   const { handleSetViewId, applyViewState, selectedViewId } = controllers;
@@ -212,11 +215,14 @@ export function TableViewPresetsDrawer({
       if (!isEqual(normalizedCurrent, normalizedPreset)) {
         return undefined;
       }
-      return systemPreset.name;
+      return systemPreset.id === SYSTEM_PRESETS.DEFAULT.id
+        ? localize(language, "My view (default)", "我的视图（默认）")
+        : systemPreset.name;
     }
     // Then check user presets
     return TableViewPresetsList?.find((v) => v.id === selectedViewId)?.name;
   }, [
+    language,
     selectedViewId,
     systemFilterPresets,
     TableViewPresetsList,
@@ -232,7 +238,11 @@ export function TableViewPresetsDrawer({
     currentName: form.watch("name"),
     allNames: allViewNames,
     form,
-    errorMessage: "View name already exists.",
+    errorMessage: localize(
+      language,
+      "View name already exists.",
+      "视图名称已存在。",
+    ),
   });
 
   const handleSelectView = async (viewId: string) => {
@@ -386,8 +396,12 @@ export function TableViewPresetsDrawer({
       });
     } else {
       showErrorToast(
-        "Failed to generate permalink",
-        "Please reach out to langfuse support and report this issue.",
+        localize(language, "Failed to generate permalink", "生成永久链接失败"),
+        localize(
+          language,
+          "Please reach out to langfuse support and report this issue.",
+          "请联系 langfuse 支持并报告此问题。",
+        ),
         "WARNING",
       );
     }
@@ -408,11 +422,23 @@ export function TableViewPresetsDrawer({
           <Button
             variant="outline"
             title={
-              selectedViewName ? `View: ${selectedViewName}` : "Saved Views"
+              selectedViewName
+                ? localize(
+                    language,
+                    `View: ${selectedViewName}`,
+                    `视图：${selectedViewName}`,
+                  )
+                : localize(language, "Saved Views", "已保存视图")
             }
           >
             <span>
-              {selectedViewName ? `View: ${selectedViewName}` : "Saved Views"}
+              {selectedViewName
+                ? localize(
+                    language,
+                    `View: ${selectedViewName}`,
+                    `视图：${selectedViewName}`,
+                  )
+                : localize(language, "Saved Views", "已保存视图")}
             </span>
             {selectedViewId ? (
               <ChevronDown className="ml-1 h-4 w-4" />
@@ -427,13 +453,17 @@ export function TableViewPresetsDrawer({
           <div className="mx-auto w-full">
             <DrawerHeader className="flex flex-row items-center justify-between rounded-sm bg-background px-3 py-1.5">
               <DrawerTitle className="flex flex-row items-center gap-1">
-                Saved Views{" "}
+                {localize(language, "Saved Views", "已保存视图")}{" "}
                 <a
                   href="https://github.com/orgs/langfuse/discussions/4657"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center"
-                  title="Saving table view presets is currently in beta. Click here to provide feedback!"
+                  title={localize(
+                    language,
+                    "Saving table view presets is currently in beta. Click here to provide feedback!",
+                    "保存表格视图预设当前处于测试阶段。点击此处提供反馈！",
+                  )}
                 ></a>
               </DrawerTitle>
               <DrawerClose asChild>
@@ -446,13 +476,23 @@ export function TableViewPresetsDrawer({
 
             <Command className="h-fit rounded-none border-none pb-1 shadow-none">
               <CommandInput
-                placeholder="Search saved views..."
+                placeholder={localize(
+                  language,
+                  "Search saved views...",
+                  "搜索已保存视图...",
+                )}
                 value={searchQuery}
                 onValueChange={setSearchQueryLocal}
                 className="h-9 border-none focus:ring-0"
               />
               <CommandList className="max-h-[calc(100vh-150px)]">
-                <CommandEmpty>No saved views found</CommandEmpty>
+                <CommandEmpty>
+                  {localize(
+                    language,
+                    "No saved views found",
+                    "未找到已保存视图",
+                  )}
+                </CommandEmpty>
                 <CommandGroup className="pb-0">
                   {/* System Preset: Langfuse Default - hidden when page-specific presets exist */}
                   {!systemFilterPresets?.length && (
@@ -465,14 +505,26 @@ export function TableViewPresetsDrawer({
                         "group mt-1 flex cursor-pointer items-center justify-between rounded-md p-2 transition-colors hover:bg-muted/50",
                         selectedViewId === null && "bg-muted",
                       )}
-                      title="Reflects your current table settings without applying any saved custom table views"
+                      title={localize(
+                        language,
+                        "Reflects your current table settings without applying any saved custom table views",
+                        "反映当前表格设置，不会应用任何已保存的自定义视图",
+                      )}
                     >
                       <div className="flex flex-col">
                         <span className="text-sm text-muted-foreground">
-                          {SYSTEM_PRESETS.DEFAULT.name}
+                          {localize(
+                            language,
+                            SYSTEM_PRESETS.DEFAULT.name,
+                            "我的视图（默认）",
+                          )}
                         </span>
                         <span className="w-fit pl-0 text-xs text-muted-foreground">
-                          Your working view
+                          {localize(
+                            language,
+                            "Your working view",
+                            "你当前的工作视图",
+                          )}
                         </span>
                       </div>
                     </CommandItem>
@@ -536,12 +588,20 @@ export function TableViewPresetsDrawer({
                             <span className="text-sm">{view.name}</span>
                             {isUserDefault && (
                               <Badge variant="secondary" className="text-xs">
-                                Your default
+                                {localize(
+                                  language,
+                                  "Your default",
+                                  "你的默认值",
+                                )}
                               </Badge>
                             )}
                             {isProjectDefault && (
                               <Badge variant="outline" className="text-xs">
-                                Project default
+                                {localize(
+                                  language,
+                                  "Project default",
+                                  "项目默认值",
+                                )}
                               </Badge>
                             )}
                           </div>
@@ -563,7 +623,11 @@ export function TableViewPresetsDrawer({
                               }}
                               disabled={!hasWriteAccess}
                             >
-                              Update view with current filters
+                              {localize(
+                                language,
+                                "Update view with current filters",
+                                "用当前筛选条件更新视图",
+                              )}
                             </Button>
                           )}
                         </div>
@@ -628,14 +692,14 @@ export function TableViewPresetsDrawer({
                                       ) : (
                                         <Lock className="mr-2 h-4 w-4" />
                                       )}
-                                      Rename
+                                      {localize(language, "Rename", "重命名")}
                                     </Button>
                                   </PopoverTrigger>
                                   <PopoverContent
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     <h2 className="text-md mb-3 font-semibold">
-                                      Edit
+                                      {localize(language, "Edit", "编辑")}
                                     </h2>
                                     <Form {...form}>
                                       <form
@@ -649,7 +713,13 @@ export function TableViewPresetsDrawer({
                                           name="name"
                                           render={({ field }) => (
                                             <FormItem>
-                                              <FormLabel>View name</FormLabel>
+                                              <FormLabel>
+                                                {localize(
+                                                  language,
+                                                  "View name",
+                                                  "视图名称",
+                                                )}
+                                              </FormLabel>
                                               <FormControl>
                                                 <Input
                                                   defaultValue={view.name}
@@ -671,7 +741,7 @@ export function TableViewPresetsDrawer({
                                               !!form.formState.errors.name
                                             }
                                           >
-                                            Save
+                                            {localize(language, "Save", "保存")}
                                           </Button>
                                         </div>
                                       </form>
@@ -694,9 +764,21 @@ export function TableViewPresetsDrawer({
                                 disabled={isSettingDefault}
                               >
                                 {isUserDefault ? (
-                                  <>Remove as my default</>
+                                  <>
+                                    {localize(
+                                      language,
+                                      "Remove as my default",
+                                      "移除我的默认值",
+                                    )}
+                                  </>
                                 ) : (
-                                  <>Set as my default</>
+                                  <>
+                                    {localize(
+                                      language,
+                                      "Set as my default",
+                                      "设为我的默认值",
+                                    )}
+                                  </>
                                 )}
                               </DropdownMenuItem>
                               {/* Set as project default - requires write access */}
@@ -713,9 +795,21 @@ export function TableViewPresetsDrawer({
                                 disabled={!hasWriteAccess || isSettingDefault}
                               >
                                 {isProjectDefault ? (
-                                  <>Remove as project default</>
+                                  <>
+                                    {localize(
+                                      language,
+                                      "Remove as project default",
+                                      "移除项目默认值",
+                                    )}
+                                  </>
                                 ) : (
-                                  <>Set as project default</>
+                                  <>
+                                    {localize(
+                                      language,
+                                      "Set as project default",
+                                      "设为项目默认值",
+                                    )}
+                                  </>
                                 )}
                                 {!hasWriteAccess && (
                                   <Lock className="ml-auto h-4 w-4" />
@@ -727,7 +821,11 @@ export function TableViewPresetsDrawer({
                                   itemId={view.id}
                                   projectId={projectId}
                                   scope="TableViewPresets:CUD"
-                                  entityToDeleteName="saved view"
+                                  entityToDeleteName={localize(
+                                    language,
+                                    "saved view",
+                                    "已保存视图",
+                                  )}
                                   executeDeleteMutation={async () => {
                                     await handleDeleteView(view.id);
                                   }}
@@ -752,7 +850,10 @@ export function TableViewPresetsDrawer({
                             <Avatar className="h-6 w-6">
                               <AvatarImage
                                 src={view.createdByUser?.image ?? undefined}
-                                alt={view.createdByUser?.name ?? "User Avatar"}
+                                alt={
+                                  view.createdByUser?.name ??
+                                  localize(language, "User Avatar", "用户头像")
+                                }
                               />
                               <AvatarFallback className="bg-tertiary">
                                 {view.createdByUser?.name
@@ -785,7 +886,7 @@ export function TableViewPresetsDrawer({
                 className="w-full justify-start px-1"
               >
                 <Plus className="mr-2 h-4 w-4" />
-                Create Custom View
+                {localize(language, "Create Custom View", "创建自定义视图")}
               </Button>
             </div>
           </div>
@@ -804,7 +905,13 @@ export function TableViewPresetsDrawer({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Save Current Table View</DialogTitle>
+            <DialogTitle>
+              {localize(
+                language,
+                "Save Current Table View",
+                "保存当前表格视图",
+              )}
+            </DialogTitle>
           </DialogHeader>
           <Form {...form}>
             <form
@@ -817,7 +924,9 @@ export function TableViewPresetsDrawer({
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>View name</FormLabel>
+                      <FormLabel>
+                        {localize(language, "View name", "视图名称")}
+                      </FormLabel>
                       <FormControl>
                         <Input {...field} />
                       </FormControl>
@@ -827,18 +936,38 @@ export function TableViewPresetsDrawer({
                 />
 
                 <div className="mt-4 text-sm text-muted-foreground">
-                  <p>This will save the current:</p>
+                  <p>
+                    {localize(
+                      language,
+                      "This will save the current:",
+                      "这将保存当前的：",
+                    )}
+                  </p>
                   <ul className="mt-2 list-disc pl-5">
                     <li>
-                      Column arrangement ({currentState.columnOrder.length}{" "}
-                      columns)
+                      {localize(
+                        language,
+                        `Column arrangement (${currentState.columnOrder.length} columns)`,
+                        `列布局（${currentState.columnOrder.length} 列）`,
+                      )}
                     </li>
-                    <li>Filters ({currentState.filters.length} active)</li>
                     <li>
-                      Sort order ({formatOrderBy(currentState.orderBy)}{" "}
-                      criteria)
+                      {localize(
+                        language,
+                        `Filters (${currentState.filters.length} active)`,
+                        `筛选条件（${currentState.filters.length} 个已激活）`,
+                      )}
                     </li>
-                    {currentState.searchQuery && <li>Search term</li>}
+                    <li>
+                      {localize(
+                        language,
+                        `Sort order (${formatOrderBy(currentState.orderBy)} criteria)`,
+                        `排序方式（${formatOrderBy(currentState.orderBy)} 条规则）`,
+                      )}
+                    </li>
+                    {currentState.searchQuery && (
+                      <li>{localize(language, "Search term", "搜索词")}</li>
+                    )}
                   </ul>
                 </div>
               </DialogBody>
@@ -848,7 +977,7 @@ export function TableViewPresetsDrawer({
                   variant="outline"
                   onClick={() => setIsCreateDialogOpen(false)}
                 >
-                  Cancel
+                  {localize(language, "Cancel", "取消")}
                 </Button>
                 <Button
                   type="submit"
@@ -859,7 +988,9 @@ export function TableViewPresetsDrawer({
                   }
                 >
                   {!hasWriteAccess && <Lock className="mr-2 h-4 w-4" />}
-                  {createMutation.isPending ? "Saving..." : "Save View"}
+                  {createMutation.isPending
+                    ? localize(language, "Saving...", "保存中...")
+                    : localize(language, "Save View", "保存视图")}
                 </Button>
               </DialogFooter>
             </form>

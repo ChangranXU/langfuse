@@ -47,6 +47,8 @@ import {
 } from "@/src/components/ui/collapsible";
 import { Checkbox } from "@/src/components/ui/checkbox";
 import { Separator } from "@/src/components/ui/separator";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 interface DataTableColumnVisibilityFilterProps<TData, TValue> {
   columns: LangfuseColumnDef<TData, TValue>[];
@@ -97,6 +99,7 @@ function ColumnVisibilityListItem<TData, TValue>({
   isOrderable?: boolean;
 }) {
   const isFixedPosition = column.isFixedPosition ?? false;
+  const { language } = useLanguage();
   const { attributes, isDragging, listeners, setNodeRef, transform } =
     useSortable({
       id: column.accessorKey,
@@ -139,9 +142,17 @@ function ColumnVisibilityListItem<TData, TValue>({
           )}
           title={
             !column.enableHiding
-              ? "This column may not be hidden"
+              ? localize(
+                  language,
+                  "This column may not be hidden",
+                  "此列不可隐藏",
+                )
               : isFixedPosition
-                ? "This column is fixed in position and cannot be hidden"
+                ? localize(
+                    language,
+                    "This column is fixed in position and cannot be hidden",
+                    "此列位置固定，无法隐藏",
+                  )
                 : undefined
           }
         >
@@ -163,7 +174,11 @@ function ColumnVisibilityListItem<TData, TValue>({
           {...listeners}
           variant="ghost"
           size="xs"
-          title="Drag and drop to reorder columns"
+          title={localize(
+            language,
+            "Drag and drop to reorder columns",
+            "拖拽以重新排序列",
+          )}
           className="invisible group-hover:visible"
         >
           <Menu className="h-3 w-3" />
@@ -190,6 +205,7 @@ function GroupVisibilityHeader<TData, TValue>({
   children: React.ReactNode;
   toggleAll: () => void;
 }) {
+  const { language } = useLanguage();
   const { attributes, isDragging, listeners, setNodeRef, transform } =
     useSortable({
       id: column.accessorKey,
@@ -232,7 +248,11 @@ function GroupVisibilityHeader<TData, TValue>({
                 {...listeners}
                 variant="ghost"
                 size="xs"
-                title="Drag and drop to reorder columns"
+                title={localize(
+                  language,
+                  "Drag and drop to reorder columns",
+                  "拖拽以重新排序列",
+                )}
                 className="opacity-0 transition-opacity group-hover:opacity-100"
               >
                 <Menu className="h-3 w-3" />
@@ -248,8 +268,8 @@ function GroupVisibilityHeader<TData, TValue>({
               }}
             >
               {groupVisibleCount === groupTotalCount
-                ? "Deselect All"
-                : "Select All"}
+                ? localize(language, "Deselect All", "取消全选")
+                : localize(language, "Select All", "全选")}
             </Button>
             {isOpen ? (
               <ChevronDown className="h-4 w-4" />
@@ -298,6 +318,7 @@ export function DataTableColumnVisibilityFilter<TData, TValue>({
   setColumnOrder,
 }: DataTableColumnVisibilityFilterProps<TData, TValue>) {
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
   const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>(
     {},
   );
@@ -401,8 +422,11 @@ export function DataTableColumnVisibilityFilter<TData, TValue>({
     >
       <Drawer modal={false}>
         <DrawerTrigger asChild>
-          <Button variant="outline" title="Show/hide columns">
-            <span>Columns</span>
+          <Button
+            variant="outline"
+            title={localize(language, "Show/hide columns", "显示或隐藏列")}
+          >
+            <span>{localize(language, "Columns", "列")}</span>
             <div className="ml-1 rounded-sm bg-input px-1 text-xs">{`${count}/${total}`}</div>
           </Button>
         </DrawerTrigger>
@@ -410,7 +434,9 @@ export function DataTableColumnVisibilityFilter<TData, TValue>({
           <div className="mx-auto w-full overflow-y-auto md:max-h-full">
             <div className="sticky top-0 z-10">
               <DrawerHeader className="flex flex-row items-center justify-between rounded-sm bg-background px-3 py-2">
-                <DrawerTitle>Column Visibility</DrawerTitle>
+                <DrawerTitle>
+                  {localize(language, "Column Visibility", "列显示")}
+                </DrawerTitle>
                 <div className="flex flex-row gap-2">
                   <Button
                     variant="outline"
@@ -421,7 +447,7 @@ export function DataTableColumnVisibilityFilter<TData, TValue>({
                       setColumnVisibility(defaultColumnVisibility);
                     }}
                   >
-                    Restore Defaults
+                    {localize(language, "Restore Defaults", "恢复默认设置")}
                   </Button>
                   <DrawerClose asChild>
                     <Button variant="outline" size="icon">
@@ -447,8 +473,16 @@ export function DataTableColumnVisibilityFilter<TData, TValue>({
                   >
                     <span className="text-sm font-medium">
                       {count === total
-                        ? "Deselect All Columns"
-                        : "Select All Columns"}
+                        ? localize(
+                            language,
+                            "Deselect All Columns",
+                            "取消所有列的选择",
+                          )
+                        : localize(
+                            language,
+                            "Select All Columns",
+                            "选择所有列",
+                          )}
                     </span>
                     <div className="ml-1 rounded-sm bg-input px-1 text-xs">{`${count}/${total}`}</div>
                   </Button>

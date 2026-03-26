@@ -1,3 +1,6 @@
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
+
 type Accuracy = "day" | "hour" | "minute" | "second" | "millisecond";
 
 export const formatLocalIsoDate = (
@@ -42,6 +45,7 @@ export const LocalIsoDate = ({
   accuracy?: Accuracy;
   className?: string;
 }) => {
+  const { language } = useLanguage();
   if (!(date instanceof Date) || isNaN(date.getTime())) {
     return null;
   }
@@ -50,7 +54,10 @@ export const LocalIsoDate = ({
   const utcDateString = formatLocalIsoDate(date, true, "millisecond");
 
   return (
-    <span title={`UTC: ${utcDateString}`} className={className}>
+    <span
+      title={`${localize(language, "UTC", "协调世界时")}: ${utcDateString}`}
+      className={className}
+    >
       {localDateString}
     </span>
   );

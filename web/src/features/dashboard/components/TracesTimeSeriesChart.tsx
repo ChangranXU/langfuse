@@ -17,6 +17,7 @@ import {
 } from "@/src/features/query";
 import { Chart } from "@/src/features/widgets/chart-library/Chart";
 import { timeSeriesToDataPoints } from "@/src/features/dashboard/lib/chart-data-adapters";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 export const TracesAndObservationsTimeSeriesChart = ({
   className,
@@ -37,6 +38,7 @@ export const TracesAndObservationsTimeSeriesChart = ({
   isLoading?: boolean;
   metricsVersion?: ViewVersion;
 }) => {
+  const { t } = useLanguage();
   const isV2 = metricsVersion === "v2";
 
   const tracesQuery: QueryType = {
@@ -75,7 +77,7 @@ export const TracesAndObservationsTimeSeriesChart = ({
           ts: new Date(item.time_dimension as any).getTime(),
           values: [
             {
-              label: "Traces",
+              label: t("dashboard.traces.traces"),
               value: Number(item.count_count),
             },
           ],
@@ -152,31 +154,35 @@ export const TracesAndObservationsTimeSeriesChart = ({
   const data = isV2
     ? [
         {
-          tabTitle: "Observations by Level",
+          tabTitle: t("dashboard.traces.observationsByLevel"),
           data: transformedObservations,
           totalMetric: totalObservations,
-          metricDescription: `Observations tracked`,
+          metricDescription: t("dashboard.traces.observationsTracked"),
         },
       ]
     : [
         {
-          tabTitle: "Traces",
+          tabTitle: t("dashboard.traces.traces"),
           data: transformedTraces,
           totalMetric: total,
-          metricDescription: `Traces tracked`,
+          metricDescription: t("dashboard.traces.tracesTracked"),
         },
         {
-          tabTitle: "Observations by Level",
+          tabTitle: t("dashboard.traces.observationsByLevel"),
           data: transformedObservations,
           totalMetric: totalObservations,
-          metricDescription: `Observations tracked`,
+          metricDescription: t("dashboard.traces.observationsTracked"),
         },
       ];
 
   return (
     <DashboardCard
       className={className}
-      title={isV2 ? "Observations by time" : "Traces by time"}
+      title={
+        isV2
+          ? t("dashboard.traces.observationsByTime")
+          : t("dashboard.traces.tracesByTime")
+      }
       isLoading={
         isLoading || observations.isPending || (!isV2 && traces.isPending)
       }
@@ -216,7 +222,7 @@ export const TracesAndObservationsTimeSeriesChart = ({
                       observations.isPending ||
                       (!isV2 && traces.isPending)
                     }
-                    description="Traces contain details about LLM applications and can be created using the SDK."
+                    description={t("dashboard.traces.noData")}
                     href="https://langfuse.com/docs/observability/overview"
                   />
                 )}

@@ -42,6 +42,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/router";
 
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 import { PricingSection } from "./pricing-tiers/PricingSection";
 
 type UpsertModelDialogProps =
@@ -72,6 +74,7 @@ export const UpsertModelFormDialog = (({
   const [formError, setFormError] = useState<string | null>(null);
   const utils = api.useUtils();
   const [open, setOpen] = useState(false);
+  const { language } = useLanguage();
 
   // Initialize form default values
   const defaultValues: FormUpsertModel = useMemo(() => {
@@ -204,8 +207,22 @@ export const UpsertModelFormDialog = (({
       form.reset();
       setOpen(false);
       showSuccessToast({
-        title: `Model ${props.action === "edit" ? "updated" : "created"}`,
-        description: `The model '${upsertedModel.modelName}' has been successfully ${props.action === "edit" ? "updated" : "created"}. New generations will use these model prices.`,
+        title:
+          props.action === "edit"
+            ? localize(language, "Model updated", "模型已更新")
+            : localize(language, "Model created", "模型已创建"),
+        description:
+          props.action === "edit"
+            ? localize(
+                language,
+                `The model '${upsertedModel.modelName}' has been successfully updated. New generations will use these model prices.`,
+                `模型“${upsertedModel.modelName}”已成功更新。新的 generations 将使用这些模型价格。`,
+              )
+            : localize(
+                language,
+                `The model '${upsertedModel.modelName}' has been successfully created. New generations will use these model prices.`,
+                `模型“${upsertedModel.modelName}”已成功创建。新的 generations 将使用这些模型价格。`,
+              ),
       });
       router.push(
         `/project/${props.projectId}/settings/models/${upsertedModel.id}`,
@@ -284,8 +301,8 @@ export const UpsertModelFormDialog = (({
         className={props.className}
         title={
           props.action === "create"
-            ? "Create model definition"
-            : "Edit model definition"
+            ? localize(language, "Create model definition", "创建模型定义")
+            : localize(language, "Edit model definition", "编辑模型定义")
         }
       >
         {children}
@@ -294,17 +311,21 @@ export const UpsertModelFormDialog = (({
         <DialogHeader>
           <DialogTitle>
             {props.action === "create"
-              ? "Create Model"
+              ? localize(language, "Create Model", "创建模型")
               : props.action === "clone"
-                ? "Clone Model"
-                : "Edit Model"}
+                ? localize(language, "Clone Model", "克隆模型")
+                : localize(language, "Edit Model", "编辑模型")}
           </DialogTitle>
           {props.action === "edit" && (
             <DialogDescription>{props.modelData.modelName}</DialogDescription>
           )}
           {props.action === "create" && (
             <DialogDescription>
-              Create a new model configuration to track generation costs.
+              {localize(
+                language,
+                "Create a new model configuration to track generation costs.",
+                "创建新的模型配置以跟踪 generation 成本。",
+              )}
             </DialogDescription>
           )}
         </DialogHeader>
@@ -320,11 +341,15 @@ export const UpsertModelFormDialog = (({
                 disabled={props.action === "edit"}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Model Name</FormLabel>
+                    <FormLabel>
+                      {localize(language, "Model Name", "模型名称")}
+                    </FormLabel>
                     <FormDescription>
-                      The name of the model. This will be used to reference the
-                      model in the API. You can track price changes of models by
-                      using the same name and match pattern.
+                      {localize(
+                        language,
+                        "The name of the model. This will be used to reference the model in the API. You can track price changes of models by using the same name and match pattern.",
+                        "模型名称。该名称将在 API 中用于引用模型。你可以通过使用相同的名称和匹配模式来追踪模型价格变化。",
+                      )}
                     </FormDescription>
                     <FormControl>
                       <Input {...field} />
@@ -338,12 +363,15 @@ export const UpsertModelFormDialog = (({
                 name="matchPattern"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Match pattern</FormLabel>
+                    <FormLabel>
+                      {localize(language, "Match pattern", "匹配模式")}
+                    </FormLabel>
                     <FormDescription>
-                      Regular expression (Postgres syntax) to match ingested
-                      generations (model attribute) to this model definition.
-                      For an exact, case-insensitive match to a model name, use
-                      the expression: (?i)^(modelname)$
+                      {localize(
+                        language,
+                        "Regular expression (Postgres syntax) to match ingested generations (model attribute) to this model definition. For an exact, case-insensitive match to a model name, use the expression: (?i)^(modelname)$",
+                        "用于将摄取的 generations（model 属性）匹配到此模型定义的正则表达式（Postgres 语法）。若要对模型名称进行精确且不区分大小写的匹配，请使用表达式：(?i)^(modelname)$",
+                      )}
                     </FormDescription>
                     <FormControl>
                       <Input {...field} />
@@ -366,7 +394,9 @@ export const UpsertModelFormDialog = (({
                 name="tokenizerId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tokenizer</FormLabel>
+                    <FormLabel>
+                      {localize(language, "Tokenizer", "Tokenizer")}
+                    </FormLabel>
                     <Select
                       onValueChange={(tokenizerId) => {
                         field.onChange(tokenizerId);
@@ -378,7 +408,13 @@ export const UpsertModelFormDialog = (({
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a unit" />
+                          <SelectValue
+                            placeholder={localize(
+                              language,
+                              "Select a unit",
+                              "选择单位",
+                            )}
+                          />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -390,18 +426,19 @@ export const UpsertModelFormDialog = (({
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      Optionally, Langfuse can tokenize the input and output of
-                      a generation if no unit counts are ingested. This is
-                      useful for e.g. streamed OpenAI completions. For details
-                      on the supported tokenizers, see the{" "}
+                      {localize(
+                        language,
+                        "Optionally, Langfuse can tokenize the input and output of a generation if no unit counts are ingested. This is useful for e.g. streamed OpenAI completions. For details on the supported tokenizers, see the",
+                        "可选地，当未摄取单位计数时，Langfuse 可以对 generation 的输入和输出进行分词。这对于流式 OpenAI completions 等场景很有帮助。有关支持的 tokenizer 详情，请参阅",
+                      )}{" "}
                       <Link
                         href="https://langfuse.com/docs/model-usage-and-cost"
                         className="underline"
                         target="_blank"
                       >
-                        docs
+                        {localize(language, "docs", "文档")}
                       </Link>
-                      .
+                      {localize(language, ".", "。")}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -413,23 +450,32 @@ export const UpsertModelFormDialog = (({
                   name="tokenizerConfig"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Tokenizer Config</FormLabel>
+                      <FormLabel>
+                        {localize(
+                          language,
+                          "Tokenizer Config",
+                          "Tokenizer 配置",
+                        )}
+                      </FormLabel>
                       <CodeMirrorEditor
                         mode="json"
                         value={field.value ?? "{}"}
                         onChange={field.onChange}
                       />
                       <FormDescription>
-                        The config for the tokenizer. Required for openai. See
-                        the{" "}
+                        {localize(
+                          language,
+                          "The config for the tokenizer. Required for openai. See the",
+                          "Tokenizer 的配置。openai 为必填。请参阅",
+                        )}{" "}
                         <Link
                           href="https://langfuse.com/docs/model-usage-and-cost"
                           className="underline"
                           target="_blank"
                         >
-                          docs
+                          {localize(language, "docs", "文档")}
                         </Link>{" "}
-                        for details.
+                        {localize(language, "for details.", "了解详情。")}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -444,17 +490,20 @@ export const UpsertModelFormDialog = (({
                 variant="outline"
                 onClick={() => setOpen(false)}
               >
-                Cancel
+                {localize(language, "Cancel", "取消")}
               </Button>
 
               <Button type="submit" loading={upsertModelMutation.isPending}>
-                Submit
+                {localize(language, "Submit", "提交")}
               </Button>
             </DialogFooter>
           </form>
           {formError ? (
             <p className="my-2 text-center text-sm font-medium text-destructive">
-              <span className="font-semibold">Error:</span> {formError}
+              <span className="font-semibold">
+                {localize(language, "Error:", "错误：")}
+              </span>{" "}
+              {formError}
             </p>
           ) : null}
         </Form>

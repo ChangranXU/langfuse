@@ -100,6 +100,8 @@ import {
 import Link from "next/link";
 import { Button } from "@/src/components/ui/button";
 import { BulkErrorAnalysisButton } from "@/src/features/error-analysis/components/BulkErrorAnalysisButton";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export type ObservationsTableRow = {
   // Shown by default
@@ -248,6 +250,7 @@ export default function ObservationsTable({
   initialPolicyTypeFilter,
   omittedColumns,
 }: ObservationsTableProps) {
+  const { language } = useLanguage();
   const router = useRouter();
   const { viewId } = router.query;
   const utils = api.useUtils();
@@ -346,7 +349,7 @@ export default function ObservationsTable({
   );
   const rowHeight = hideControls ? "s" : storedRowHeight;
 
-  const [inputFilterState, setInputFilterState] = useQueryFilterState(
+  const [inputFilterState] = useQueryFilterState(
     // If the user loads saved table view presets, we should not apply the default type filter
     !viewId && !disableDefaultTypeFilter
       ? [
@@ -848,11 +851,23 @@ export default function ObservationsTable({
   const addToQueueMutation = api.annotationQueueItems.createMany.useMutation({
     onSuccess: (data) => {
       showSuccessToast({
-        title: "Observations added to queue",
-        description: `Selected observations will be added to queue "${data.queueName}". This may take a minute.`,
+        title: localize(
+          language,
+          "Observations added to queue",
+          "Observations 已加入队列",
+        ),
+        description: localize(
+          language,
+          `Selected observations will be added to queue "${data.queueName}". This may take a minute.`,
+          `选中的 observations 将被加入队列 "${data.queueName}"。这可能需要一分钟。`,
+        ),
         link: {
           href: `/project/${projectId}/annotation-queues/${data.queueId}`,
-          text: `View queue "${data.queueName}"`,
+          text: localize(
+            language,
+            `View queue "${data.queueName}"`,
+            `查看队列 "${data.queueName}"`,
+          ),
         },
       });
     },
@@ -915,9 +930,13 @@ export default function ObservationsTable({
     {
       id: ActionId.ObservationAddToAnnotationQueue,
       type: BatchActionType.Create,
-      label: "Add to Annotation Queue",
-      description: "Add selected observations to an annotation queue.",
-      targetLabel: "Annotation Queue",
+      label: localize(language, "Add to Annotation Queue", "加入标注队列"),
+      description: localize(
+        language,
+        "Add selected observations to an annotation queue.",
+        "将选中的 observations 加入标注队列。",
+      ),
+      targetLabel: localize(language, "Annotation Queue", "标注队列"),
       execute: handleAddToAnnotationQueue,
       accessCheck: {
         scope: "annotationQueues:CUD",
@@ -926,8 +945,12 @@ export default function ObservationsTable({
     {
       id: ActionId.ObservationAddToDataset,
       type: BatchActionType.Create,
-      label: "Add to Dataset",
-      description: "Add selected observations to a dataset",
+      label: localize(language, "Add to Dataset", "加入数据集"),
+      description: localize(
+        language,
+        "Add selected observations to a dataset",
+        "将选中的 observations 加入数据集",
+      ),
       customDialog: true,
       accessCheck: {
         scope: "datasets:CUD",
@@ -1001,7 +1024,7 @@ export default function ObservationsTable({
     {
       accessorKey: "startTime",
       id: "startTime",
-      header: "Start Time",
+      header: localize(language, "Start Time", "开始时间"),
       size: 150,
       enableHiding: true,
       enableSorting,
@@ -1013,7 +1036,7 @@ export default function ObservationsTable({
     {
       accessorKey: "type",
       id: "type",
-      header: "Type",
+      header: localize(language, "Type", "类型"),
       size: 50,
       enableSorting,
       cell: ({ row }) => {
@@ -1028,7 +1051,7 @@ export default function ObservationsTable({
     {
       accessorKey: "name",
       id: "name",
-      header: "Name",
+      header: localize(language, "Name", "名称"),
       size: 150,
       enableSorting,
       cell: ({ row }) => {
@@ -1038,7 +1061,7 @@ export default function ObservationsTable({
     },
     {
       accessorKey: "input",
-      header: "Input",
+      header: localize(language, "Input", "输入"),
       id: "input",
       size: 220,
       cell: ({ row }) => {
@@ -1060,7 +1083,7 @@ export default function ObservationsTable({
     {
       accessorKey: "output",
       id: "output",
-      header: "Output",
+      header: localize(language, "Output", "输出"),
       size: 220,
       cell: ({ row }) => {
         const observationId: string = row.getValue("id");
@@ -1084,17 +1107,25 @@ export default function ObservationsTable({
       header: replaceLevelWithPolicyType
         ? () => (
             <div className="flex items-center gap-1">
-              <span>Policy type</span>
+              <span>{localize(language, "Policy type", "策略类型")}</span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-5 gap-1 px-1 text-[10px] font-normal"
-                    aria-label="Filter by policy type"
+                    aria-label={localize(
+                      language,
+                      "Filter by policy type",
+                      "按策略类型筛选",
+                    )}
                     title={selectedPolicyType ?? undefined}
                   >
-                    <span>{selectedPolicyType ? "filtered" : "all"}</span>
+                    <span>
+                      {selectedPolicyType
+                        ? localize(language, "filtered", "已筛选")
+                        : localize(language, "all", "全部")}
+                    </span>
                     <ChevronDown className="h-3 w-3 opacity-70" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -1106,7 +1137,7 @@ export default function ObservationsTable({
                     onClick={() => setSelectedPolicyType(null)}
                     className="flex items-center justify-between gap-2"
                   >
-                    <span>All</span>
+                    <span>{localize(language, "All", "全部")}</span>
                     {!selectedPolicyType ? <Check className="h-3 w-3" /> : null}
                   </DropdownMenuItem>
                   {policyTypeDropdownOptions.map((option) => (
@@ -1128,16 +1159,22 @@ export default function ObservationsTable({
         : replaceLevelWithErrorType
           ? () => (
               <div className="flex items-center gap-1">
-                <span>Type</span>
+                <span>{localize(language, "Type", "类型")}</span>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
                       size="sm"
                       className="h-5 gap-1 px-1 text-[10px] font-normal"
-                      aria-label="Filter by error type"
+                      aria-label={localize(
+                        language,
+                        "Filter by error type",
+                        "按错误类型筛选",
+                      )}
                     >
-                      <span>{selectedErrorType ?? "all"}</span>
+                      <span>
+                        {selectedErrorType ?? localize(language, "all", "全部")}
+                      </span>
                       <ChevronDown className="h-3 w-3 opacity-70" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -1149,7 +1186,7 @@ export default function ObservationsTable({
                       onClick={() => setSelectedErrorType(null)}
                       className="flex items-center justify-between gap-2"
                     >
-                      <span>All</span>
+                      <span>{localize(language, "All", "全部")}</span>
                       {!selectedErrorType ? (
                         <Check className="h-3 w-3" />
                       ) : null}
@@ -1248,7 +1285,7 @@ export default function ObservationsTable({
     },
     {
       accessorKey: "statusMessage",
-      header: "Status Message",
+      header: localize(language, "Status Message", "状态消息"),
       id: "statusMessage",
       size: 150,
       headerTooltip: {
@@ -1262,7 +1299,7 @@ export default function ObservationsTable({
     {
       accessorKey: "latency",
       id: "latency",
-      header: "Latency",
+      header: localize(language, "Latency", "延迟"),
       size: 100,
       cell: ({ row }) => {
         const latency: number | undefined = row.getValue("latency");
@@ -1275,7 +1312,7 @@ export default function ObservationsTable({
     },
     {
       accessorKey: "totalCost",
-      header: "Total Cost",
+      header: localize(language, "Total Cost", "总成本"),
       id: "totalCost",
       size: 120,
       cell: ({ row }) => {
@@ -1300,7 +1337,7 @@ export default function ObservationsTable({
     {
       accessorKey: "toolDefinitions",
       id: "toolDefinitions",
-      header: "Available Tools",
+      header: localize(language, "Available Tools", "可用工具"),
       size: 120,
       enableHiding: true,
       enableSorting,
@@ -1315,7 +1352,7 @@ export default function ObservationsTable({
     {
       accessorKey: "toolCalls",
       id: "toolCalls",
-      header: "Tool Calls",
+      header: localize(language, "Tool Calls", "工具调用"),
       size: 100,
       enableHiding: true,
       enableSorting,
@@ -1330,7 +1367,7 @@ export default function ObservationsTable({
     {
       accessorKey: "timeToFirstToken",
       id: "timeToFirstToken",
-      header: "Time to First Token",
+      header: localize(language, "Time to First Token", "首词元时间"),
       size: 150,
       enableHiding: true,
       enableSorting,
@@ -1347,7 +1384,7 @@ export default function ObservationsTable({
     },
     {
       accessorKey: "tokens",
-      header: "Tokens",
+      header: localize(language, "Tokens", "词元"),
       id: "tokens",
       size: 150,
       cell: ({ row }) => {
@@ -1479,7 +1516,7 @@ export default function ObservationsTable({
     },
     {
       accessorKey: "metadata",
-      header: "Metadata",
+      header: localize(language, "Metadata", "元数据"),
       size: 300,
       headerTooltip: {
         description: "Add metadata to traces to track additional information.",
@@ -1554,7 +1591,7 @@ export default function ObservationsTable({
     {
       accessorKey: "traceId",
       id: "traceId",
-      header: "Trace ID",
+      header: localize(language, "Trace ID", "Trace ID"),
       size: 100,
       cell: ({ row }) => {
         const value = row.getValue("traceId");
@@ -1602,7 +1639,7 @@ export default function ObservationsTable({
         {
           accessorKey: "tokensPerSecond",
           id: "tokensPerSecond",
-          header: "Tokens per second",
+          header: localize(language, "Tokens per second", "每秒词元"),
           size: 200,
           cell: ({ row }: { row: Row<ObservationsTableRow> }) => {
             const latency: number | undefined = row.getValue("latency");
@@ -1627,7 +1664,7 @@ export default function ObservationsTable({
         {
           accessorKey: "inputTokens",
           id: "inputTokens",
-          header: "Input Tokens",
+          header: localize(language, "Input Tokens", "输入词元"),
           size: 100,
           enableHiding: true,
           defaultHidden: true,
@@ -1644,7 +1681,7 @@ export default function ObservationsTable({
         {
           accessorKey: "outputTokens",
           id: "outputTokens",
-          header: "Output Tokens",
+          header: localize(language, "Output Tokens", "输出词元"),
           size: 100,
           enableHiding: true,
           defaultHidden: true,
@@ -1661,7 +1698,7 @@ export default function ObservationsTable({
         {
           accessorKey: "totalTokens",
           id: "totalTokens",
-          header: "Total Tokens",
+          header: localize(language, "Total Tokens", "总词元"),
           size: 100,
           enableHiding: true,
           defaultHidden: true,
@@ -1792,12 +1829,16 @@ export default function ObservationsTable({
     if (hideControls) return undefined;
     return {
       itemType: "TRACE",
-      customTitlePrefix: "Observation ID:",
+      customTitlePrefix: localize(
+        language,
+        "Observation ID:",
+        "Observation ID：",
+      ),
       detailNavigationKey: "observations",
       children: <PeekViewObservationDetail projectId={projectId} />,
       ...peekNavigationProps,
     };
-  }, [projectId, peekNavigationProps, hideControls]);
+  }, [language, projectId, peekNavigationProps, hideControls]);
 
   const rows: ObservationsTableRow[] = useMemo(() => {
     return generations.isSuccess
@@ -2063,7 +2104,12 @@ export default function ObservationsTable({
             columns={effectiveColumns}
             filterState={queryFilter.filterState}
             searchConfig={{
-              metadataSearchFields: ["ID", "Name", "Trace Name", "Model"],
+              metadataSearchFields: [
+                localize(language, "ID", "ID"),
+                localize(language, "Name", "名称"),
+                localize(language, "Trace Name", "Trace 名称"),
+                localize(language, "Model", "模型"),
+              ],
               updateQuery: setSearchQuery,
               currentQuery: searchQuery ?? undefined,
               searchType,

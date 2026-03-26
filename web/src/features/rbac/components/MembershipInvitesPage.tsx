@@ -15,6 +15,8 @@ import { type Organization, type Role } from "@langfuse/shared";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import Header from "@/src/components/layouts/header";
 import useSessionStorage from "@/src/components/useSessionStorage";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export type tmp = Organization;
 export type InvitesTableRow = {
@@ -38,6 +40,7 @@ export function MembershipInvitesPage({
   orgId: string;
   projectId?: string;
 }) {
+  const { language } = useLanguage();
   const paginationKey = projectId
     ? `projectInvites_${projectId}_pagination`
     : `orgInvites_${orgId}_pagination`;
@@ -99,17 +102,17 @@ export function MembershipInvitesPage({
     {
       accessorKey: "email",
       id: "email",
-      header: "Email",
+      header: localize(language, "Email", "邮箱"),
     },
     {
       accessorKey: "orgRole",
       id: "orgRole",
-      header: "Organization Role",
+      header: localize(language, "Organization Role", "组织角色"),
     },
     {
       accessorKey: "createdAt",
       id: "createdAt",
-      header: "Invited On",
+      header: localize(language, "Invited On", "邀请时间"),
       cell: ({ row }) => {
         const value = row.getValue("createdAt") as InvitesTableRow["createdAt"];
         return value ? new Date(value).toLocaleString() : undefined;
@@ -120,14 +123,14 @@ export function MembershipInvitesPage({
           {
             accessorKey: "projectRole",
             id: "projectRole",
-            header: "Project Role",
+            header: localize(language, "Project Role", "项目角色"),
           },
         ]
       : []),
     {
       accessorKey: "invitedByUser",
       id: "invitedByUser",
-      header: "Invited By",
+      header: localize(language, "Invited By", "邀请人"),
       cell: ({ row }) => {
         const invitedByUser = row.getValue(
           "invitedByUser",
@@ -138,7 +141,7 @@ export function MembershipInvitesPage({
             <Avatar className="h-7 w-7">
               <AvatarImage
                 src={image ?? undefined}
-                alt={name ?? "User Avatar"}
+                alt={name ?? localize(language, "User Avatar", "用户头像")}
               />
               <AvatarFallback>
                 {name
@@ -158,7 +161,7 @@ export function MembershipInvitesPage({
     {
       accessorKey: "meta",
       id: "meta",
-      header: "Actions",
+      header: localize(language, "Actions", "操作"),
       cell: ({ row }) => {
         const { inviteId } = row.getValue("meta") as InvitesTableRow["meta"];
         return hasCudAccess ? (
@@ -166,7 +169,13 @@ export function MembershipInvitesPage({
             <button
               onClick={() => {
                 if (
-                  confirm("Are you sure you want to cancel this invitation?")
+                  confirm(
+                    localize(
+                      language,
+                      "Are you sure you want to cancel this invitation?",
+                      "确定要取消这条邀请吗？",
+                    ),
+                  )
                 ) {
                   mutDeleteInvite.mutate({ inviteId, orgId });
                 }
@@ -207,7 +216,7 @@ export function MembershipInvitesPage({
   return (
     <>
       {/* Header included in order to hide it when there are not invites yet */}
-      <Header title="Membership Invites" />
+      <Header title={localize(language, "Membership Invites", "成员邀请")} />
       <DataTableToolbar columns={columns} />
       <DataTable
         tableName={"membershipInvites"}

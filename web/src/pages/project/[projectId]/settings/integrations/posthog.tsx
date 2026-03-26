@@ -45,10 +45,13 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { type z } from "zod/v4";
 import { Info, ExternalLink } from "lucide-react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export default function PosthogIntegrationSettings() {
   const router = useRouter();
   const projectId = router.query.projectId as string;
+  const { language } = useLanguage();
 
   const hasAccess = useHasProjectAccess({
     projectId,
@@ -71,40 +74,46 @@ export default function PosthogIntegrationSettings() {
   return (
     <ContainerPage
       headerProps={{
-        title: "PostHog Integration",
+        title: localize(language, "PostHog Integration", "PostHog 集成"),
         breadcrumb: [
-          { name: "Settings", href: `/project/${projectId}/settings` },
+          {
+            name: localize(language, "Settings", "设置"),
+            href: `/project/${projectId}/settings`,
+          },
         ],
         actionButtonsLeft: <>{status && <StatusBadge type={status} />}</>,
         actionButtonsRight: (
           <Button asChild variant="secondary">
             <Link href="https://langfuse.com/integrations/analytics/posthog">
-              Integration Docs ↗
+              {localize(language, "Integration Docs ↗", "集成文档 ↗")}
             </Link>
           </Button>
         ),
       }}
     >
       <p className="mb-4 text-sm text-primary">
-        We have teamed up with{" "}
+        {localize(language, "We have teamed up with", "我们已与")}{" "}
         <Link href="https://posthog.com" className="underline">
           PostHog
         </Link>{" "}
-        (OSS product analytics) to make Langfuse events/metrics available in
-        your PostHog dashboards. Upon activation, all historical data from your
-        project will be synced. After the initial sync, new data is
-        automatically synced every hour to keep your PostHog dashboards up to
-        date.
+        {localize(
+          language,
+          "(OSS product analytics) to make Langfuse events/metrics available in your PostHog dashboards. Upon activation, all historical data from your project will be synced. After the initial sync, new data is automatically synced every hour to keep your PostHog dashboards up to date.",
+          "（开源产品分析平台）合作，将 Langfuse 事件/指标同步到你的 PostHog 仪表板中。启用后，你项目中的全部历史数据都会被同步。首次同步完成后，新数据将每小时自动同步一次，以确保你的 PostHog 仪表板保持最新。",
+        )}
       </p>
       {!hasAccess && (
         <p className="text-sm">
-          You current role does not grant you access to these settings, please
-          reach out to your project admin or owner.
+          {localize(
+            language,
+            "Your current role does not grant you access to these settings, please reach out to your project admin or owner.",
+            "你当前的角色无权访问这些设置，请联系你的项目管理员或所有者。",
+          )}
         </p>
       )}
       {hasAccess && (
         <>
-          <Header title="Configuration" />
+          <Header title={localize(language, "Configuration", "配置")} />
           <Card className="p-3">
             <PostHogLogo className="mb-4 w-36 text-foreground" />
             <PostHogIntegrationSettings
@@ -117,12 +126,15 @@ export default function PosthogIntegrationSettings() {
       )}
       {state.data?.enabled && (
         <>
-          <Header title="Status" className="mt-8" />
+          <Header
+            title={localize(language, "Status", "状态")}
+            className="mt-8"
+          />
           <p className="text-sm text-primary">
-            Data synced until:{" "}
+            {localize(language, "Data synced until:", "数据同步至：")}{" "}
             {state.data?.lastSyncAt
               ? new Date(state.data.lastSyncAt).toLocaleString()
-              : "Never (pending)"}
+              : localize(language, "Never (pending)", "从未（等待中）")}
           </p>
         </>
       )}
@@ -141,6 +153,59 @@ const PostHogIntegrationSettings = ({
 }) => {
   const capture = usePostHogClientCapture();
   const { isBetaEnabled } = useV4Beta();
+  const { language } = useLanguage();
+  const getLocalizedExportSourceLabel = (
+    value: AnalyticsIntegrationExportSource,
+  ) => {
+    switch (value) {
+      case AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS:
+        return localize(
+          language,
+          "Traces and observations (legacy)",
+          "Traces 与 observations（旧版）",
+        );
+      case AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS_EVENTS:
+        return localize(
+          language,
+          "Traces and observations (legacy) and enriched observations",
+          "Traces 与 observations（旧版）以及增强 observations",
+        );
+      case AnalyticsIntegrationExportSource.EVENTS:
+        return localize(
+          language,
+          "Enriched observations (recommended)",
+          "增强 observations（推荐）",
+        );
+      default:
+        return value;
+    }
+  };
+  const getLocalizedExportSourceDescription = (
+    value: AnalyticsIntegrationExportSource,
+  ) => {
+    switch (value) {
+      case AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS:
+        return localize(
+          language,
+          "Export traces, observations and scores. This is the legacy behavior prior to tracking traces and observations in separate tables. It is recommended to use the enriched observations option instead.",
+          "导出 traces、observations 和 scores。这是将 traces 和 observations 分表跟踪之前的旧版行为。建议改用增强 observations 选项。",
+        );
+      case AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS_EVENTS:
+        return localize(
+          language,
+          "Export traces, observations, scores and enriched observations. This exports both the legacy data source (traces, observations) and the new one (enriched observations) and essentially exports duplicate data. Therefore, it should only be used to migrate existing integrations to the new recommended enriched observations and check validity of the data for downstream consumers of the export data.",
+          "导出 traces、observations、scores 和增强 observations。此选项会同时导出旧数据源（traces、observations）和新数据源（增强 observations），本质上会导出重复数据。因此，它仅适用于将现有集成迁移到推荐的增强 observations，并校验下游使用方的数据有效性。",
+        );
+      case AnalyticsIntegrationExportSource.EVENTS:
+        return localize(
+          language,
+          "Export enriched observations and scores. This is the recommended data source for integrations and will be the default for new integrations.",
+          "导出增强 observations 和 scores。这是推荐用于集成的数据源，也将成为新集成的默认选项。",
+        );
+      default:
+        return "";
+    }
+  };
   const posthogForm = useForm({
     resolver: zodResolver(posthogIntegrationFormSchema),
     defaultValues: {
@@ -200,13 +265,18 @@ const PostHogIntegrationSettings = ({
           name="posthogHostname"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Posthog Hostname</FormLabel>
+              <FormLabel>
+                {localize(language, "PostHog Hostname", "PostHog 主机名")}
+              </FormLabel>
               <FormControl>
                 <Input {...field} />
               </FormControl>
               <FormDescription>
-                US region: https://us.posthog.com; EU region:
-                https://eu.posthog.com
+                {localize(
+                  language,
+                  "US region: https://us.posthog.com; EU region: https://eu.posthog.com",
+                  "美国区域：https://us.posthog.com；欧盟区域：https://eu.posthog.com",
+                )}
               </FormDescription>
               <FormMessage />
             </FormItem>
@@ -217,7 +287,13 @@ const PostHogIntegrationSettings = ({
           name="posthogProjectApiKey"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Posthog Project API Key</FormLabel>
+              <FormLabel>
+                {localize(
+                  language,
+                  "PostHog Project API Key",
+                  "PostHog 项目 API 密钥",
+                )}
+              </FormLabel>
               <FormControl>
                 <PasswordInput {...field} />
               </FormControl>
@@ -232,7 +308,7 @@ const PostHogIntegrationSettings = ({
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="flex items-center gap-1.5 pt-2">
-                  Export Source
+                  {localize(language, "Export Source", "导出来源")}
                   <Tooltip>
                     <TooltipTrigger>
                       <Info className="h-3.5 w-3.5 text-muted-foreground" />
@@ -243,9 +319,11 @@ const PostHogIntegrationSettings = ({
                     >
                       {EXPORT_SOURCE_OPTIONS.map((option) => (
                         <div key={option.value} className="space-y-0.5">
-                          <div className="font-medium">{option.label}</div>
+                          <div className="font-medium">
+                            {getLocalizedExportSourceLabel(option.value)}
+                          </div>
                           <div className="text-xs text-muted-foreground">
-                            {option.description}
+                            {getLocalizedExportSourceDescription(option.value)}
                           </div>
                         </div>
                       ))}
@@ -256,7 +334,11 @@ const PostHogIntegrationSettings = ({
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary hover:underline"
                         >
-                          For further information see
+                          {localize(
+                            language,
+                            "For further information see",
+                            "更多信息请参阅",
+                          )}
                           <ExternalLink className="h-3 w-3" />
                         </a>
                       </div>
@@ -266,20 +348,29 @@ const PostHogIntegrationSettings = ({
                 <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select data to export" />
+                      <SelectValue
+                        placeholder={localize(
+                          language,
+                          "Select data to export",
+                          "选择要导出的数据",
+                        )}
+                      />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
                     {EXPORT_SOURCE_OPTIONS.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
-                        {option.label}
+                        {getLocalizedExportSourceLabel(option.value)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <FormDescription>
-                  Choose which data sources to export to PostHog. Scores are
-                  always included.
+                  {localize(
+                    language,
+                    "Choose which data sources to export to PostHog. Scores are always included.",
+                    "选择要导出到 PostHog 的数据源。Scores 始终会包含在内。",
+                  )}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -291,7 +382,7 @@ const PostHogIntegrationSettings = ({
           name="enabled"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Enabled</FormLabel>
+              <FormLabel>{localize(language, "Enabled", "启用")}</FormLabel>
               <FormControl>
                 <Switch
                   id="posthog-integration-enabled"
@@ -313,7 +404,7 @@ const PostHogIntegrationSettings = ({
           onClick={posthogForm.handleSubmit(onSubmit)}
           disabled={isLoading}
         >
-          Save
+          {localize(language, "Save", "保存")}
         </Button>
         <Button
           variant="ghost"
@@ -322,13 +413,17 @@ const PostHogIntegrationSettings = ({
           onClick={() => {
             if (
               confirm(
-                "Are you sure you want to reset the PostHog integration for this project?",
+                localize(
+                  language,
+                  "Are you sure you want to reset the PostHog integration for this project?",
+                  "确定要重置此项目的 PostHog 集成吗？",
+                ),
               )
             )
               mutDelete.mutate({ projectId });
           }}
         >
-          Reset
+          {localize(language, "Reset", "重置")}
         </Button>
       </div>
     </Form>

@@ -4,6 +4,8 @@ import { Slack } from "lucide-react";
 import { api } from "@/src/utils/api";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
 import { showErrorToast } from "@/src/features/notifications/showErrorToast";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 /**
  * Props for the SlackConnectButton component
@@ -43,6 +45,7 @@ export const SlackConnectButton: React.FC<SlackConnectButtonProps> = ({
   onError,
   showText = true,
 }) => {
+  const { language } = useLanguage();
   const [isConnecting, setIsConnecting] = useState(false);
   const popupRef = useRef<Window | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -79,9 +82,16 @@ export const SlackConnectButton: React.FC<SlackConnectButtonProps> = ({
   // Handle connect button click
   const handleConnect = async () => {
     if (!integrationStatus?.installUrl) {
-      const errorMessage = "Install URL not available. Please try again.";
+      const errorMessage = localize(
+        language,
+        "Install URL not available. Please try again.",
+        "安装 URL 不可用，请重试。",
+      );
       onError?.(new Error(errorMessage));
-      showErrorToast("Connection Failed", errorMessage);
+      showErrorToast(
+        localize(language, "Connection Failed", "连接失败"),
+        errorMessage,
+      );
       return;
     }
 
@@ -96,7 +106,13 @@ export const SlackConnectButton: React.FC<SlackConnectButtonProps> = ({
       );
 
       if (!popup) {
-        throw new Error("Popup blocked. Please allow popups and try again.");
+        throw new Error(
+          localize(
+            language,
+            "Popup blocked. Please allow popups and try again.",
+            "弹窗被阻止。请允许弹窗后重试。",
+          ),
+        );
       }
 
       // Store popup reference
@@ -114,8 +130,12 @@ export const SlackConnectButton: React.FC<SlackConnectButtonProps> = ({
           setIsConnecting(false);
 
           showSuccessToast({
-            title: "Slack Connected",
-            description: `Successfully connected to ${event.data.teamName}.`,
+            title: localize(language, "Slack Connected", "Slack 已连接"),
+            description: localize(
+              language,
+              `Successfully connected to ${event.data.teamName}.`,
+              `已成功连接到 ${event.data.teamName}。`,
+            ),
           });
 
           onSuccess?.();
@@ -132,7 +152,10 @@ export const SlackConnectButton: React.FC<SlackConnectButtonProps> = ({
           popup.close();
           setIsConnecting(false);
 
-          showErrorToast("Connection Failed", event.data.error);
+          showErrorToast(
+            localize(language, "Connection Failed", "连接失败"),
+            event.data.error,
+          );
           onError?.(new Error(event.data.error));
 
           // Clean up event listener and interval
@@ -169,9 +192,14 @@ export const SlackConnectButton: React.FC<SlackConnectButtonProps> = ({
     } catch (error) {
       setIsConnecting(false);
       const errorMessage =
-        error instanceof Error ? error.message : "Failed to connect to Slack";
+        error instanceof Error
+          ? error.message
+          : localize(language, "Failed to connect to Slack", "连接 Slack 失败");
       onError?.(new Error(errorMessage));
-      showErrorToast("Connection Failed", errorMessage);
+      showErrorToast(
+        localize(language, "Connection Failed", "连接失败"),
+        errorMessage,
+      );
     }
   };
 
@@ -184,7 +212,15 @@ export const SlackConnectButton: React.FC<SlackConnectButtonProps> = ({
       className="flex items-center gap-2"
     >
       <Slack className="h-4 w-4" />
-      {showText && <span>{isConnecting ? "Connecting..." : buttonText}</span>}
+      {showText && (
+        <span>
+          {isConnecting
+            ? localize(language, "Connecting...", "连接中...")
+            : buttonText === "Connect Slack"
+              ? localize(language, "Connect Slack", "连接 Slack")
+              : buttonText}
+        </span>
+      )}
     </Button>
   );
 };

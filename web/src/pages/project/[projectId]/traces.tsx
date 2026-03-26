@@ -8,6 +8,8 @@ import { TracesOnboarding } from "@/src/components/onboarding/TracesOnboarding";
 import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import ObservationsEventsTable from "@/src/features/events/components/EventsTable";
 import { useQueryProject } from "@/src/features/projects/hooks";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export default function Traces() {
   const router = useRouter();
@@ -15,6 +17,21 @@ export default function Traces() {
   const { isBetaEnabled } = useV4Beta();
   const [, setQueryParams] = useQueryParams({ viewMode: StringParam });
   const { project } = useQueryProject();
+  const { language } = useLanguage();
+
+  const tracingTitle = localize(language, "Tracing", "追踪");
+  const docsLabel = localize(language, "docs", "文档");
+  const tracingHelpPrefix = localize(
+    language,
+    "A trace represents a single function/api invocation. Traces contain observations. See ",
+    "Trace 表示一次单独的函数/API 调用，其中包含 observations。查看",
+  );
+  const tracingHelpSuffix = localize(language, " to learn more.", "了解更多。");
+  const tracingHelpText = localize(
+    language,
+    "A trace represents a single function/api invocation. Traces contain observations.",
+    "Trace 表示一次单独的函数/API 调用，其中包含 observations。",
+  );
 
   // Clear viewMode query when beta is turned off (e.g. from sidebar)
   useEffect(() => {
@@ -47,10 +64,13 @@ export default function Traces() {
     return (
       <Page
         headerProps={{
-          title: "Tracing",
+          title: tracingTitle,
           help: {
-            description:
-              "A trace represents a single function/api invocation. Traces contain observations. See [docs](https://langfuse.com/docs/observability/data-model) to learn more.",
+            description: `${tracingHelpText} ${localize(
+              language,
+              "See docs to learn more.",
+              "查看文档了解更多。",
+            )}`,
             href: "https://langfuse.com/docs/observability/data-model",
           },
         }}
@@ -64,12 +84,11 @@ export default function Traces() {
   return (
     <Page
       headerProps={{
-        title: "Tracing",
+        title: tracingTitle,
         help: {
           description: (
             <>
-              A trace represents a single function/api invocation. Traces
-              contain observations. See{" "}
+              {tracingHelpPrefix}
               <a
                 href="https://langfuse.com/docs/observability/data-model"
                 target="_blank"
@@ -77,9 +96,9 @@ export default function Traces() {
                 className="underline decoration-primary/30 hover:decoration-primary"
                 onClick={(e) => e.stopPropagation()}
               >
-                docs
+                {docsLabel}
               </a>{" "}
-              to learn more.
+              {tracingHelpSuffix}
             </>
           ),
           href: "https://langfuse.com/docs/observability/data-model",

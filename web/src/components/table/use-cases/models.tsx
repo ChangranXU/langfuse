@@ -32,7 +32,8 @@ import { ActionButton } from "@/src/components/ActionButton";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { SettingsTableCard } from "@/src/components/layouts/settings-table-card";
-
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 export type ModelTableRow = {
   modelId: string;
   maintainer: string;
@@ -44,26 +45,10 @@ export type ModelTableRow = {
   serverResponse: GetModelResult;
 };
 
-const modelConfigDescriptions = {
-  modelName:
-    "Standardized model name. Generations are assigned to this model name if they match the `matchPattern` upon ingestion.",
-  matchPattern:
-    "Regex pattern to match `model` parameter of generations to model pricing",
-  startDate:
-    "Date to start pricing model. If not set, model is active unless a more recent version exists.",
-  prices: "Prices per usage type",
-  tokenizerId:
-    "Tokenizer used for this model to calculate token counts if none are ingested. Pick from list of supported tokenizers.",
-  config:
-    "Some tokenizers require additional configuration (e.g. openai tiktoken). See docs for details.",
-  maintainer:
-    "Maintainer of the model. Langfuse managed models can be cloned, user managed models can be edited and deleted. To supersede a Langfuse managed model, set the custom model name to the Langfuse model name.",
-  lastUsed: "Start time of the latest generation using this model",
-} as const;
-
 export default function ModelTable({ projectId }: { projectId: string }) {
   const router = useRouter();
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
   const [paginationState, setPaginationState] = usePaginationState(0, 50, {
     page: "pageIndex",
     limit: "pageSize",
@@ -106,12 +91,62 @@ export default function ModelTable({ projectId }: { projectId: string }) {
     projectId,
     scope: "models:CUD",
   });
+  const localizedPriceUnit = (() => {
+    switch (priceUnit) {
+      case "per unit":
+        return localize(language, "per unit", "按单位");
+      case "per 1K units":
+        return localize(language, "per 1K units", "每 1K 单位");
+      case "per 1M units":
+        return localize(language, "per 1M units", "每 1M 单位");
+      default:
+        return priceUnit;
+    }
+  })();
+  const modelConfigDescriptions = {
+    modelName: localize(
+      language,
+      "Standardized model name. Generations are assigned to this model name if they match the `matchPattern` upon ingestion.",
+      "标准化模型名称。摄取时如果 generation 匹配 `matchPattern`，则会被归入该模型名称。",
+    ),
+    matchPattern: localize(
+      language,
+      "Regex pattern to match `model` parameter of generations to model pricing",
+      "用于将 generation 的 `model` 参数匹配到模型定价的正则表达式",
+    ),
+    startDate: localize(
+      language,
+      "Date to start pricing model. If not set, model is active unless a more recent version exists.",
+      "模型定价开始生效的日期。若未设置，则除非存在更新版本，否则模型始终有效。",
+    ),
+    prices: localize(language, "Prices per usage type", "按用量类型计价"),
+    tokenizerId: localize(
+      language,
+      "Tokenizer used for this model to calculate token counts if none are ingested. Pick from list of supported tokenizers.",
+      "当未摄取 token 计数时，用于计算该模型 token 数量的 tokenizer。请从支持的 tokenizer 列表中选择。",
+    ),
+    config: localize(
+      language,
+      "Some tokenizers require additional configuration (e.g. openai tiktoken). See docs for details.",
+      "部分 tokenizer 需要额外配置（例如 OpenAI tiktoken）。详情请参阅文档。",
+    ),
+    maintainer: localize(
+      language,
+      "Maintainer of the model. Langfuse managed models can be cloned, user managed models can be edited and deleted. To supersede a Langfuse managed model, set the custom model name to the Langfuse model name.",
+      "模型维护者。Langfuse 维护的模型可被克隆，用户维护的模型可被编辑和删除。若要覆盖 Langfuse 维护的模型，请将自定义模型名称设置为对应的 Langfuse 模型名称。",
+    ),
+    lastUsed: localize(
+      language,
+      "Start time of the latest generation using this model",
+      "最近一次使用该模型的 generation 开始时间",
+    ),
+  } as const;
 
   const columns: LangfuseColumnDef<ModelTableRow>[] = [
     {
       accessorKey: "modelName",
       id: "modelName",
-      header: "Model Name",
+      header: localize(language, "Model Name", "模型名称"),
       headerTooltip: {
         description: modelConfigDescriptions.modelName,
       },
@@ -127,7 +162,7 @@ export default function ModelTable({ projectId }: { projectId: string }) {
     {
       accessorKey: "maintainer",
       id: "maintainer",
-      header: "Maintainer",
+      header: localize(language, "Maintainer", "维护者"),
       headerTooltip: {
         description: modelConfigDescriptions.maintainer,
       },
@@ -145,7 +180,9 @@ export default function ModelTable({ projectId }: { projectId: string }) {
                 )}
               </TooltipTrigger>
               <TooltipContent>
-                {isLangfuse ? "Langfuse maintained" : "User maintained"}
+                {isLangfuse
+                  ? localize(language, "Langfuse maintained", "Langfuse 维护")
+                  : localize(language, "User maintained", "用户维护")}
               </TooltipContent>
             </Tooltip>
           </div>
@@ -158,7 +195,7 @@ export default function ModelTable({ projectId }: { projectId: string }) {
       headerTooltip: {
         description: modelConfigDescriptions.matchPattern,
       },
-      header: "Match Pattern",
+      header: localize(language, "Match Pattern", "匹配模式"),
       size: 200,
       cell: ({ row }) => {
         const value: string = row.getValue("matchPattern");
@@ -174,7 +211,9 @@ export default function ModelTable({ projectId }: { projectId: string }) {
       header: () => {
         return (
           <div className="flex items-center gap-2">
-            <span>Prices {priceUnit}</span>
+            <span>
+              {localize(language, "Prices", "价格")} {localizedPriceUnit}
+            </span>
             <PriceUnitSelector />
           </div>
         );
@@ -198,7 +237,7 @@ export default function ModelTable({ projectId }: { projectId: string }) {
     {
       accessorKey: "tokenizerId",
       id: "tokenizerId",
-      header: "Tokenizer",
+      header: localize(language, "Tokenizer", "Tokenizer"),
       headerTooltip: {
         description: modelConfigDescriptions.tokenizerId,
       },
@@ -208,7 +247,7 @@ export default function ModelTable({ projectId }: { projectId: string }) {
     {
       accessorKey: "config",
       id: "config",
-      header: "Tokenizer Configuration",
+      header: localize(language, "Tokenizer Configuration", "Tokenizer 配置"),
       headerTooltip: {
         description: modelConfigDescriptions.config,
       },
@@ -225,7 +264,7 @@ export default function ModelTable({ projectId }: { projectId: string }) {
     {
       accessorKey: "lastUsed",
       id: "lastUsed",
-      header: "Last used",
+      header: localize(language, "Last used", "最近使用"),
       headerTooltip: {
         description: modelConfigDescriptions.lastUsed,
       },
@@ -239,7 +278,7 @@ export default function ModelTable({ projectId }: { projectId: string }) {
     },
     {
       accessorKey: "actions",
-      header: "Actions",
+      header: localize(language, "Actions", "操作"),
       size: 120,
       cell: ({ row }) => {
         return row.original.maintainer !== "Langfuse" ? (
@@ -320,7 +359,7 @@ export default function ModelTable({ projectId }: { projectId: string }) {
                 hasAccess={hasWriteAccess}
                 onClick={() => capture("models:new_form_open")}
               >
-                Add Model Definition
+                {localize(language, "Add Model Definition", "添加模型定义")}
               </ActionButton>
             </UpsertModelFormDialog>
           </>

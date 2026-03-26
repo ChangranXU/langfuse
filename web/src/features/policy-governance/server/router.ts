@@ -37,6 +37,10 @@ import { mapLegacyUiTableFilterToView } from "@/src/features/query/dashboardUiTa
 import { executeQuery } from "@/src/features/query/server/queryExecutor";
 import { readFile, stat, writeFile } from "fs/promises";
 import { basename, dirname, isAbsolute, join } from "path";
+import {
+  applyLanguageInstructionToMessages,
+  getLanguageFromCookieHeader,
+} from "@/src/features/i18n/server";
 
 const PolicyRegistryEntrySchema = z.object({
   name: z.string().trim().min(1),
@@ -1086,6 +1090,7 @@ export const policyGovernanceRouter = createTRPCRouter({
     .input(GeneratePolicyBeginnerSummaryInputSchema)
     .output(GeneratePolicyBeginnerSummaryOutputSchema)
     .mutation(async ({ input, ctx }) => {
+      const language = getLanguageFromCookieHeader(ctx.headers.cookie);
       throwIfNoProjectAccess({
         session: ctx.session,
         projectId: input.projectId,
@@ -1204,7 +1209,11 @@ export const policyGovernanceRouter = createTRPCRouter({
       try {
         rawResult = await fetchLLMCompletion({
           llmConnection: parsedKey.data,
-          messages,
+          messages: applyLanguageInstructionToMessages({
+            messages,
+            language,
+            mode: "structured",
+          }),
           modelParams: {
             provider: parsedKey.data.provider,
             adapter: LLMAdapter.OpenAI,
@@ -1219,7 +1228,11 @@ export const policyGovernanceRouter = createTRPCRouter({
         try {
           rawResult = await fetchLLMCompletion({
             llmConnection: parsedKey.data,
-            messages,
+            messages: applyLanguageInstructionToMessages({
+              messages,
+              language,
+              mode: "structured",
+            }),
             modelParams: {
               provider: parsedKey.data.provider,
               adapter: LLMAdapter.OpenAI,
@@ -1272,6 +1285,7 @@ export const policyGovernanceRouter = createTRPCRouter({
     .input(GeneratePolicyUpdateProposalInputSchema)
     .output(GeneratePolicyUpdateProposalOutputSchema)
     .mutation(async ({ input, ctx }) => {
+      const language = getLanguageFromCookieHeader(ctx.headers.cookie);
       throwIfNoProjectAccess({
         session: ctx.session,
         projectId: input.projectId,
@@ -1404,7 +1418,11 @@ export const policyGovernanceRouter = createTRPCRouter({
       try {
         rawResult = await fetchLLMCompletion({
           llmConnection: parsedKey.data,
-          messages,
+          messages: applyLanguageInstructionToMessages({
+            messages,
+            language,
+            mode: "structured",
+          }),
           modelParams: {
             provider: parsedKey.data.provider,
             adapter: LLMAdapter.OpenAI,
@@ -1419,7 +1437,11 @@ export const policyGovernanceRouter = createTRPCRouter({
         try {
           rawResult = await fetchLLMCompletion({
             llmConnection: parsedKey.data,
-            messages,
+            messages: applyLanguageInstructionToMessages({
+              messages,
+              language,
+              mode: "structured",
+            }),
             modelParams: {
               provider: parsedKey.data.provider,
               adapter: LLMAdapter.OpenAI,

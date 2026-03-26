@@ -18,6 +18,8 @@ import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePos
 import { LoaderCircle } from "lucide-react";
 import { Input } from "@/src/components/ui/input";
 import { useEffect, useState } from "react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 interface DataTablePaginationProps<TData> {
   table: Table<TData>;
@@ -35,6 +37,8 @@ export function DataTablePagination<TData>({
   canJumpPages = true,
 }: DataTablePaginationProps<TData>) {
   const capture = usePostHogClientCapture();
+  const { language } = useLanguage();
+  const isChinese = language === "zh-CN";
 
   const currentPage = table.getState().pagination.pageIndex + 1;
   const [inputState, setInputState] = useState<number | string>(currentPage);
@@ -83,10 +87,10 @@ export function DataTablePagination<TData>({
       <div className="flex flex-wrap items-center space-x-6 lg:space-x-8">
         <div className="flex items-center space-x-2">
           <p className="whitespace-nowrap text-sm font-medium md:hidden">
-            Rows
+            {localize(language, "Rows", "行")}
           </p>
           <p className="hidden whitespace-nowrap text-sm font-medium md:block">
-            Rows per page
+            {localize(language, "Rows per page", "每页行数")}
           </p>
           <Select
             value={`${table.getState().pagination.pageSize}`}
@@ -112,7 +116,7 @@ export function DataTablePagination<TData>({
         <div className="flex items-center justify-center gap-1 whitespace-nowrap text-sm font-medium">
           {table.getPageCount() !== -1 ? (
             <>
-              Page
+              {localize(language, "Page", "第")}
               {canJumpPages && (
                 <Input
                   type="number"
@@ -138,22 +142,32 @@ export function DataTablePagination<TData>({
                 />
               )}
               {!canJumpPages && <span>{currentPage}</span>}
+              {isChinese && <span>{localize(language, "page", "页")}</span>}
             </>
           ) : (
-            `Page ${currentPage}`
+            localize(language, `Page ${currentPage}`, `第 ${currentPage} 页`)
           )}
           {!hideTotalCount && (
             <>
               {pageCount !== -1 ? (
-                <span>of {pageCount}</span>
+                <span>
+                  {isChinese
+                    ? ` ${localize(language, "of", "共")} ${pageCount} ${localize(language, "pages", "页")}`
+                    : ` ${localize(language, "of", "共")} ${pageCount}`}
+                </span>
               ) : (
                 <span>
-                  of{" "}
+                  {isChinese
+                    ? `${localize(language, "of", "共")} `
+                    : `${localize(language, "of", "共")} `}
                   {isLoading ? (
                     <LoaderCircle className="ml-1 inline-block h-3 w-3 animate-spin text-muted-foreground" />
                   ) : (
                     1
                   )}
+                  {isChinese && !isLoading
+                    ? ` ${localize(language, "pages", "页")}`
+                    : ""}
                 </span>
               )}
             </>
@@ -173,7 +187,9 @@ export function DataTablePagination<TData>({
               }}
               disabled={!table.getCanPreviousPage()}
             >
-              <span className="sr-only">Go to first page</span>
+              <span className="sr-only">
+                {localize(language, "Go to first page", "转到第一页")}
+              </span>
               <ChevronsLeft className="h-4 w-4" />
             </Button>
           )}
@@ -188,7 +204,9 @@ export function DataTablePagination<TData>({
             }}
             disabled={!table.getCanPreviousPage()}
           >
-            <span className="sr-only">Go to previous page</span>
+            <span className="sr-only">
+              {localize(language, "Go to previous page", "转到上一页")}
+            </span>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button
@@ -202,7 +220,9 @@ export function DataTablePagination<TData>({
             }}
             disabled={!table.getCanNextPage() || pageCount === -1}
           >
-            <span className="sr-only">Go to next page</span>
+            <span className="sr-only">
+              {localize(language, "Go to next page", "转到下一页")}
+            </span>
             <ChevronRight className="h-4 w-4" />
           </Button>
           {canJumpPages && (
@@ -217,7 +237,9 @@ export function DataTablePagination<TData>({
               }}
               disabled={!table.getCanNextPage() || pageCount === -1}
             >
-              <span className="sr-only">Go to last page</span>
+              <span className="sr-only">
+                {localize(language, "Go to last page", "转到最后一页")}
+              </span>
               <ChevronsRight className="h-4 w-4" />
             </Button>
           )}

@@ -8,21 +8,29 @@ import { SurveyName } from "@prisma/client";
 import { useSession } from "next-auth/react";
 import { showErrorToast } from "@/src/features/notifications/showErrorToast";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export function useSurveyForm() {
   const [state, dispatch] = useReducer(surveyReducer, initialSurveyState);
   const { data: session } = useSession();
+  const { language } = useLanguage();
   const createSurveyMutation = api.surveys.create.useMutation({
     onSuccess: () => {
       showSuccessToast({
-        title: "Survey submitted",
-        description: "Thank you for your feedback!",
+        title: localize(language, "Survey submitted", "问卷已提交"),
+        description: localize(
+          language,
+          "Thank you for your feedback!",
+          "感谢你的反馈！",
+        ),
       });
     },
     onError: (error) => {
       showErrorToast(
-        "Failed to submit survey",
-        error.message || "Please try again later.",
+        localize(language, "Failed to submit survey", "提交问卷失败"),
+        error.message ||
+          localize(language, "Please try again later.", "请稍后再试。"),
       );
     },
   });

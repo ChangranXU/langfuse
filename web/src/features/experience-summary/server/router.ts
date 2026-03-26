@@ -29,6 +29,10 @@ import {
   type ExperienceSummaryJson,
 } from "../types";
 import { rewriteAbsolutePathFromPrefixMappings } from "@/src/features/file-paths/server/absolutePathPrefixMap";
+import {
+  applyLanguageInstructionToMessages,
+  getLanguageFromCookieHeader,
+} from "@/src/features/i18n/server";
 
 function safeStringify(value: unknown): string {
   try {
@@ -446,6 +450,7 @@ export const experienceSummaryRouter = createTRPCRouter({
     .input(ExperienceSummaryGenerateInputSchema)
     .output(ExperienceSummaryGenerateOutputSchema)
     .mutation(async ({ input, ctx }) => {
+      const language = getLanguageFromCookieHeader(ctx.headers.cookie);
       throwIfNoProjectAccess({
         session: ctx.session,
         projectId: input.projectId,
@@ -567,7 +572,11 @@ export const experienceSummaryRouter = createTRPCRouter({
       try {
         raw = await fetchLLMCompletion({
           llmConnection: parsedKey.data,
-          messages,
+          messages: applyLanguageInstructionToMessages({
+            messages,
+            language,
+            mode: "structured",
+          }),
           modelParams: {
             provider: parsedKey.data.provider,
             adapter: LLMAdapter.OpenAI,

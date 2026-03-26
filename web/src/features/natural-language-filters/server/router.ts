@@ -21,12 +21,17 @@ import { randomBytes } from "crypto";
 import { throwIfNoProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { BEDROCK_USE_DEFAULT_CREDENTIALS } from "@langfuse/shared";
 import { encrypt } from "@langfuse/shared/encryption";
+import {
+  applyLanguageInstructionToMessages,
+  getLanguageFromCookieHeader,
+} from "@/src/features/i18n/server";
 
 export const naturalLanguageFilterRouter = createTRPCRouter({
   createCompletion: protectedProjectProcedure
     .input(CreateNaturalLanguageFilterCompletion)
     .mutation(async ({ input, ctx }) => {
       try {
+        const language = getLanguageFromCookieHeader(ctx.headers.cookie);
         throwIfNoProjectAccess({
           session: ctx.session,
           projectId: input.projectId,
@@ -117,10 +122,14 @@ export const naturalLanguageFilterRouter = createTRPCRouter({
         const modelParams = getDefaultModelParams();
 
         const llmCompletion = await fetchLLMCompletion({
-          messages: messages.map((m: ChatMessage) => ({
-            ...m,
-            type: ChatMessageType.PublicAPICreated,
-          })),
+          messages: applyLanguageInstructionToMessages({
+            messages: messages.map((m: ChatMessage) => ({
+              ...m,
+              type: ChatMessageType.PublicAPICreated,
+            })),
+            language,
+            mode: "structured",
+          }),
           modelParams,
           llmConnection: {
             secretKey: encrypt(BEDROCK_USE_DEFAULT_CREDENTIALS),

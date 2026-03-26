@@ -5,6 +5,8 @@ import { FormLabel } from "@/src/components/ui/form";
 import { PricePreview } from "../PricePreview";
 import type { UseFormReturn } from "react-hook-form";
 import type { FormUpsertModel } from "../../validation";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 type TierPriceEditorProps = {
   tierIndex: number;
@@ -20,18 +22,23 @@ export function TierPriceEditor({
   isDefault,
 }: TierPriceEditorProps) {
   const prices = form.watch(`pricingTiers.${tierIndex}.prices`) || {};
+  const { language } = useLanguage();
 
   return (
     <div className="space-y-3">
-      <FormLabel>Prices</FormLabel>
+      <FormLabel>{localize(language, "Prices", "价格")}</FormLabel>
       <div className="grid grid-cols-2 gap-1 text-sm text-muted-foreground">
-        <span>Usage type</span>
-        <span>Price</span>
+        <span>{localize(language, "Usage type", "用量类型")}</span>
+        <span>{localize(language, "Price", "价格")}</span>
       </div>
       {Object.entries(prices).map(([key, value]) => (
         <div key={key} className="grid grid-cols-2 gap-1">
           <Input
-            placeholder="Key (e.g. input, output)"
+            placeholder={localize(
+              language,
+              "Key (e.g. input, output)",
+              "键（例如：input、output）",
+            )}
             value={key}
             disabled={!isDefault}
             onChange={(e) => {
@@ -53,7 +60,7 @@ export function TierPriceEditor({
           <div className="flex gap-1">
             <Input
               type="number"
-              placeholder="Price per unit"
+              placeholder={localize(language, "Price per unit", "每单位价格")}
               value={value as number}
               step="0.000001"
               onChange={(e) => {
@@ -67,7 +74,7 @@ export function TierPriceEditor({
               <Button
                 type="button"
                 variant="outline"
-                title="Remove price"
+                title={localize(language, "Remove price", "移除价格")}
                 size="icon"
                 onClick={() => {
                   const newPrices = { ...prices };
@@ -101,7 +108,7 @@ export function TierPriceEditor({
           className="flex items-center gap-1"
         >
           <PlusCircle className="h-4 w-4" />
-          <span>Add Price</span>
+          <span>{localize(language, "Add Price", "添加价格")}</span>
         </Button>
       )}
       <PricePreview prices={prices} />

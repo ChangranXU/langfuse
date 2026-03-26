@@ -47,6 +47,7 @@ import {
 } from "@/src/features/experience-summary/types";
 import { ExperienceSummaryView } from "@/src/features/experience-summary/components/ExperienceSummaryView";
 import { buildExperienceCopyAllText } from "@/src/features/experience-summary/utils";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 function downloadJson(params: { data: unknown; filename: string }) {
   const blob = new Blob([JSON.stringify(params.data, null, 2)], {
@@ -74,10 +75,6 @@ type PendingUnsavedAction =
   | { type: "leave_editing" }
   | { type: "switch_view"; nextView: SummaryView }
   | { type: "route_change"; url: string };
-const UNSAVED_CHANGES_CONFIRMATION_MESSAGE =
-  "You have unsaved changes. Leave without saving?";
-const LEAVE_EDITING_CONFIRMATION_MESSAGE =
-  "You have unsaved changes. Leave editing without saving?";
 
 function parseEditExperienceIndex(value: string): number | null {
   const match = /^experience-(\d+)$/.exec(value);
@@ -114,6 +111,7 @@ function parseCsv(value: string): string[] {
 }
 
 export default function ExperienceSummaryPage() {
+  const { t } = useLanguage();
   const router = useRouter();
   const utils = api.useUtils();
   const projectId = router.query.projectId as string | undefined;
@@ -159,7 +157,7 @@ export default function ExperienceSummaryPage() {
 
   const generate = api.experienceSummary.generate.useMutation({
     onSuccess: async () => {
-      toast.success("Experience summary updated");
+      toast.success(t("summary.updated"));
       await Promise.allSettled([
         utils.experienceSummary.get.invalidate({
           projectId: projectId ?? "",
@@ -183,7 +181,7 @@ export default function ExperienceSummaryPage() {
       setExpandedEditExperienceValues([]);
       setPendingScrollTargetId(null);
       setIsEditing(false);
-      toast.success("Experience summary saved");
+      toast.success(t("summary.saved"));
       await Promise.allSettled([
         utils.experienceSummary.get.invalidate({
           projectId: projectId ?? "",
@@ -200,7 +198,7 @@ export default function ExperienceSummaryPage() {
 
   const writeMarkdown = api.experienceSummary.writeMarkdown.useMutation({
     onSuccess: ({ path }) => {
-      toast.success(`Summary written to ${path}`);
+      toast.success(`${t("summary.writtenTo")} ${path}`);
     },
     onError: (err) => {
       toast.error(err.message);
@@ -239,7 +237,9 @@ export default function ExperienceSummaryPage() {
     if (!projectId || !editDraft) return false;
     const parsed = ExperienceSummaryJsonSchema.safeParse(editDraft);
     if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Invalid summary payload");
+      toast.error(
+        parsed.error.issues[0]?.message ?? t("summary.invalidPayload"),
+      );
       return false;
     }
     try {
@@ -479,8 +479,7 @@ export default function ExperienceSummaryPage() {
         return;
       }
 
-      const cancellationMessage =
-        "Route change aborted due to unsaved changes.";
+      const cancellationMessage = t("summary.routeChangeAborted");
       promptForUnsavedChanges({ type: "route_change", url });
       router.events.emit("routeChangeError", cancellationMessage, url, {
         shallow: false,
@@ -498,7 +497,7 @@ export default function ExperienceSummaryPage() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       router.events.off("routeChangeStart", handleRouteChangeStart);
     };
-  }, [hasUnsavedChanges, promptForUnsavedChanges, router.events]);
+  }, [hasUnsavedChanges, promptForUnsavedChanges, router.events, t]);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -559,13 +558,13 @@ export default function ExperienceSummaryPage() {
 
   const unsavedPromptDescription =
     pendingUnsavedAction?.type === "route_change"
-      ? UNSAVED_CHANGES_CONFIRMATION_MESSAGE
-      : LEAVE_EDITING_CONFIRMATION_MESSAGE;
+      ? t("summary.unsavedChangesLeave")
+      : t("summary.unsavedChangesLeaveEditing");
 
   return (
     <Page
       headerProps={{
-        title: "Governance",
+        title: t("summary.pageTitle"),
       }}
       scrollable
       withPadding
@@ -582,7 +581,7 @@ export default function ExperienceSummaryPage() {
               }}
             >
               <SelectTrigger className="h-8 w-[180px]">
-                <SelectValue placeholder="Select model" />
+                <SelectValue placeholder={t("summary.selectModel")} />
               </SelectTrigger>
               <SelectContent>
                 {models.map((m) => (
@@ -608,7 +607,7 @@ export default function ExperienceSummaryPage() {
                 });
               }}
             >
-              Generate (full)
+              {t("summary.generateFull")}
             </Button>
             <Button
               variant="outline"
@@ -617,9 +616,9 @@ export default function ExperienceSummaryPage() {
               disabled={!canRunIncremental}
               title={
                 !hasIncrementalStatus
-                  ? "Checking incremental status..."
+                  ? t("summary.checkingIncrementalStatus")
                   : isIncrementalUpToDate
-                    ? "Summary is already up to date."
+                    ? t("summary.alreadyUpToDate")
                     : undefined
               }
               onClick={() => {
@@ -632,7 +631,7 @@ export default function ExperienceSummaryPage() {
                 });
               }}
             >
-              Update (incremental)
+              {t("summary.updateIncremental")}
             </Button>
           </div>
 
@@ -647,7 +646,7 @@ export default function ExperienceSummaryPage() {
                 writeMarkdown.mutate({ projectId });
               }}
             >
-              Insert markdown path
+              {t("summary.insertMarkdownPath")}
             </Button>
             <Button
               variant="outline"
@@ -661,7 +660,7 @@ export default function ExperienceSummaryPage() {
               }}
             >
               <Settings className="mr-1 h-3.5 w-3.5" />
-              Settings
+              {t("summary.settings")}
             </Button>
             <Button
               variant="outline"
@@ -670,10 +669,10 @@ export default function ExperienceSummaryPage() {
               onClick={async () => {
                 if (!summary) return;
                 await copyTextToClipboard(buildExperienceCopyAllText(summary));
-                toast.success("Copied all prompt lines");
+                toast.success(t("summary.copiedAllPromptLines"));
               }}
             >
-              Copy all
+              {t("summary.copyAll")}
             </Button>
             <Button
               variant="outline"
@@ -685,17 +684,17 @@ export default function ExperienceSummaryPage() {
                   data: summary,
                   filename: `experience-summary-${projectId}.json`,
                 });
-                toast.success("Downloaded JSON");
+                toast.success(t("summary.downloadedJson"));
               }}
             >
-              Download JSON
+              {t("summary.downloadJson")}
             </Button>
           </div>
         </div>
 
         {getQuery.isLoading ? (
           <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
-            Loading…
+            {t("summary.loading")}
           </div>
         ) : getQuery.error ? (
           <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
@@ -704,7 +703,7 @@ export default function ExperienceSummaryPage() {
         ) : summary ? (
           <div className="rounded-md border bg-background p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-medium">Summary</div>
+              <div className="text-sm font-medium">{t("summary.title")}</div>
               <div className="flex flex-wrap items-center gap-2">
                 {isEditing ? (
                   <>
@@ -721,7 +720,7 @@ export default function ExperienceSummaryPage() {
                         void saveEditedSummary();
                       }}
                     >
-                      Save
+                      {t("summary.save")}
                     </Button>
                     <Button
                       variant="outline"
@@ -729,7 +728,7 @@ export default function ExperienceSummaryPage() {
                       disabled={!summary || updateSummary.isPending}
                       onClick={discardEditedSummary}
                     >
-                      Discard
+                      {t("summary.discard")}
                     </Button>
                   </>
                 ) : null}
@@ -753,13 +752,13 @@ export default function ExperienceSummaryPage() {
                       value="formatted"
                       className="h-fit px-1 text-xs"
                     >
-                      Formatted
+                      {t("summary.tabFormatted")}
                     </TabsTrigger>
                     <TabsTrigger value="json" className="h-fit px-1 text-xs">
-                      JSON
+                      {t("summary.tabJson")}
                     </TabsTrigger>
                     <TabsTrigger value="raw" className="h-fit px-1 text-xs">
-                      Raw JSON
+                      {t("summary.tabRawJson")}
                     </TabsTrigger>
                   </TabsList>
                 </Tabs>
@@ -772,15 +771,18 @@ export default function ExperienceSummaryPage() {
                   <div className="space-y-4">
                     <Card>
                       <CardHeader>
-                        <CardTitle className="text-base">Prompt pack</CardTitle>
+                        <CardTitle className="text-base">
+                          {t("summary.promptPack")}
+                        </CardTitle>
                         <CardDescription>
-                          Paste these lines into your prompt to reduce recurring
-                          errors.
+                          {t("summary.promptPackDescription")}
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <div className="space-y-1">
-                          <Label htmlFor="prompt-pack-title">Title</Label>
+                          <Label htmlFor="prompt-pack-title">
+                            {t("summary.promptPackTitle")}
+                          </Label>
                           <Input
                             id="prompt-pack-title"
                             value={editDraft.promptPack.title}
@@ -797,7 +799,7 @@ export default function ExperienceSummaryPage() {
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="prompt-pack-lines">
-                            Lines (one per line)
+                            {t("summary.promptPackLines")}
                           </Label>
                           <Textarea
                             id="prompt-pack-lines"
@@ -818,19 +820,21 @@ export default function ExperienceSummaryPage() {
                     </Card>
 
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-medium">Experiences</div>
+                      <div className="text-sm font-medium">
+                        {t("summary.experiences")}
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={addExperience}
                       >
-                        Add experience
+                        {t("summary.addExperience")}
                       </Button>
                     </div>
 
                     {editDraft.experiences.length === 0 ? (
                       <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
-                        No experiences yet. Add one to start editing.
+                        {t("summary.noExperiencesYet")}
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -852,7 +856,7 @@ export default function ExperienceSummaryPage() {
                                   <div className="flex flex-wrap items-center gap-2">
                                     <CardTitle className="text-base">
                                       {experience.key ||
-                                        `Experience ${index + 1}`}
+                                        `${t("summary.experience")} ${index + 1}`}
                                     </CardTitle>
                                     {experience.relatedErrorTypes?.length ? (
                                       <div className="flex flex-wrap items-center gap-1">
@@ -896,7 +900,9 @@ export default function ExperienceSummaryPage() {
                                       )
                                     }
                                   >
-                                    {isExpanded ? "Collapse" : "Expand"}
+                                    {isExpanded
+                                      ? t("summary.collapse")
+                                      : t("summary.expand")}
                                     <ChevronDown
                                       className={cn(
                                         "ml-1 h-3.5 w-3.5 transition-transform",
@@ -911,7 +917,7 @@ export default function ExperienceSummaryPage() {
                                     !isExpanded && "line-clamp-2",
                                   )}
                                 >
-                                  {experience.when || "No context yet."}
+                                  {experience.when || t("summary.noContextYet")}
                                 </CardDescription>
                               </CardHeader>
                               <Collapsible
@@ -931,7 +937,7 @@ export default function ExperienceSummaryPage() {
                                 <CollapsibleContent>
                                   <CardContent className="space-y-4 text-sm">
                                     <div className="space-y-1">
-                                      <Label>Key (snake_case)</Label>
+                                      <Label>{t("summary.fieldKey")}</Label>
                                       <Input
                                         value={experience.key}
                                         onChange={(e) =>
@@ -952,7 +958,7 @@ export default function ExperienceSummaryPage() {
                                       />
                                     </div>
                                     <div className="space-y-1">
-                                      <Label>When</Label>
+                                      <Label>{t("summary.fieldWhen")}</Label>
                                       <Textarea
                                         rows={3}
                                         value={experience.when}
@@ -976,7 +982,7 @@ export default function ExperienceSummaryPage() {
                                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                       <div className="space-y-1">
                                         <Label>
-                                          Keywords (comma separated)
+                                          {t("summary.fieldKeywords")}
                                         </Label>
                                         <Input
                                           value={toCsv(experience.keywords)}
@@ -1005,7 +1011,7 @@ export default function ExperienceSummaryPage() {
                                       </div>
                                       <div className="space-y-1">
                                         <Label>
-                                          Related error types (comma separated)
+                                          {t("summary.fieldRelatedErrorTypes")}
                                         </Label>
                                         <Input
                                           value={toCsv(
@@ -1040,7 +1046,7 @@ export default function ExperienceSummaryPage() {
                                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                       <div>
                                         <div className="text-xs font-medium text-muted-foreground">
-                                          Possible problems
+                                          {t("summary.possibleProblems")}
                                         </div>
                                         <Textarea
                                           className="mt-2"
@@ -1070,7 +1076,7 @@ export default function ExperienceSummaryPage() {
                                       </div>
                                       <div>
                                         <div className="text-xs font-medium text-muted-foreground">
-                                          Avoidance and notes
+                                          {t("summary.avoidanceAndNotes")}
                                         </div>
                                         <Textarea
                                           className="mt-2"
@@ -1102,7 +1108,7 @@ export default function ExperienceSummaryPage() {
 
                                     <div>
                                       <div className="text-xs font-medium text-muted-foreground">
-                                        Prompt additions
+                                        {t("summary.promptAdditions")}
                                       </div>
                                       <Textarea
                                         className="mt-2"
@@ -1151,7 +1157,7 @@ export default function ExperienceSummaryPage() {
                                           );
                                         }}
                                       >
-                                        Remove experience
+                                        {t("summary.removeExperience")}
                                       </Button>
                                     </div>
                                   </CardContent>
@@ -1159,10 +1165,12 @@ export default function ExperienceSummaryPage() {
                               </Collapsible>
                               {!isExpanded ? (
                                 <div className="px-6 pb-4 text-xs text-muted-foreground">
-                                  {experience.possibleProblems.length} problems,{" "}
-                                  {experience.avoidanceAndNotes.length} notes,{" "}
-                                  {experience.promptAdditions.length} prompt
-                                  additions.
+                                  {experience.possibleProblems.length}{" "}
+                                  {t("summary.problems")},{" "}
+                                  {experience.avoidanceAndNotes.length}{" "}
+                                  {t("summary.notes")},{" "}
+                                  {experience.promptAdditions.length}{" "}
+                                  {t("summary.promptAdditionsCount")}
                                 </div>
                               ) : null}
                             </Card>
@@ -1173,7 +1181,7 @@ export default function ExperienceSummaryPage() {
                   </div>
                 ) : (
                   <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
-                    No editable summary payload available.
+                    {t("summary.noEditablePayload")}
                   </div>
                 )
               ) : view === "formatted" ? (
@@ -1197,8 +1205,7 @@ export default function ExperienceSummaryPage() {
           </div>
         ) : (
           <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
-            No experience summary yet. Run Analyze on some ERROR/WARNING
-            observations to create ErrorAnalysis records, then click Generate.
+            {t("summary.noSummaryYet")}
           </div>
         )}
       </div>
@@ -1215,7 +1222,9 @@ export default function ExperienceSummaryPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("summary.unsavedChangesTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {unsavedPromptDescription}
             </AlertDialogDescription>
@@ -1226,14 +1235,14 @@ export default function ExperienceSummaryPage() {
               disabled={isUnsavedPromptBusy}
               onClick={handleUnsavedCancel}
             >
-              Cancel
+              {t("summary.cancel")}
             </Button>
             <Button
               variant="outline"
               disabled={isUnsavedPromptBusy}
               onClick={handleUnsavedDiscardAndContinue}
             >
-              Discard
+              {t("summary.discard")}
             </Button>
             <Button
               variant="secondary"
@@ -1243,7 +1252,7 @@ export default function ExperienceSummaryPage() {
                 void handleUnsavedSaveAndContinue();
               }}
             >
-              Save
+              {t("summary.save")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

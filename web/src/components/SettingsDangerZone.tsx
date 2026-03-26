@@ -1,5 +1,7 @@
 import Header from "@/src/components/layouts/header";
 import React from "react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 export const SettingsDangerZone: React.FC<{
   items: {
@@ -8,9 +10,11 @@ export const SettingsDangerZone: React.FC<{
     button: React.ReactNode;
   }[];
 }> = ({ items }) => {
+  const { language } = useLanguage();
+
   return (
     <div className="space-y-3">
-      <Header title="Danger Zone" />
+      <Header title={localize(language, "Danger Zone", "危险区域")} />
       <div className="rounded-lg border">
         {items.map((item, index) => (
           <div

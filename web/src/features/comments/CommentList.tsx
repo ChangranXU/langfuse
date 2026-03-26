@@ -51,6 +51,8 @@ import { MENTION_USER_PREFIX } from "@/src/features/comments/lib/mentionParser";
 import { type SelectionData } from "./contexts/InlineCommentSelectionContext";
 import { Badge } from "@/src/components/ui/badge";
 import { useTheme } from "next-themes";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
+import { localize } from "@/src/features/i18n/localize";
 
 // IO field background colors - same as IOPreviewJSON.tsx
 const IO_FIELD_COLORS = {
@@ -100,6 +102,7 @@ export function CommentList({
   pendingSelection?: SelectionData | null;
   onSelectionUsed?: () => void;
 }) {
+  const { language } = useLanguage();
   const session = useSession();
   const router = useRouter();
   const { resolvedTheme } = useTheme();
@@ -478,7 +481,7 @@ export function CommentList({
       >
         <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin text-muted-foreground" />
         <span className="text-sm text-muted-foreground opacity-60">
-          Loading comments...
+          {localize(language, "Loading comments...", "正在加载评论...")}
         </span>
       </div>
     );
@@ -493,20 +496,30 @@ export function CommentList({
     >
       {cardView && (
         <div className="flex-shrink-0 border-b px-2 py-1 text-sm font-medium">
-          Comments ({comments.data?.length ?? 0})
+          {localize(
+            language,
+            `Comments (${comments.data?.length ?? 0})`,
+            `评论（${comments.data?.length ?? 0}）`,
+          )}
         </div>
       )}
       <div className="flex min-h-0 flex-1 flex-col">
         {!cardView && (
           <div className="flex-shrink-0 border-b">
             <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-              <div className="text-sm font-medium">Comments</div>
+              <div className="text-sm font-medium">
+                {localize(language, "Comments", "评论")}
+              </div>
               <div className="relative max-w-xs flex-1">
                 <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   ref={searchInputRef}
                   type="text"
-                  placeholder="Search comments..."
+                  placeholder={localize(
+                    language,
+                    "Search comments...",
+                    "搜索评论...",
+                  )}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="h-7 pl-7 pr-7 text-xs"
@@ -539,9 +552,21 @@ export function CommentList({
             <div className="px-2 pb-1 text-xs text-muted-foreground">
               {searchQuery.trim()
                 ? filteredComments && filteredComments.length > 0
-                  ? `Showing ${filteredComments.length} of ${comments.data?.length ?? 0} comments`
-                  : "No comments match your search"
-                : `${comments.data?.length ?? 0} comments`}
+                  ? localize(
+                      language,
+                      `Showing ${filteredComments.length} of ${comments.data?.length ?? 0} comments`,
+                      `显示 ${comments.data?.length ?? 0} 条评论中的 ${filteredComments.length} 条`,
+                    )
+                  : localize(
+                      language,
+                      "No comments match your search",
+                      "没有匹配搜索内容的评论",
+                    )
+                : localize(
+                    language,
+                    `${comments.data?.length ?? 0} comments`,
+                    `${comments.data?.length ?? 0} 条评论`,
+                  )}
             </div>
           </div>
         )}
@@ -621,7 +646,11 @@ export function CommentList({
                           align="start"
                           className="px-2 py-1 text-xs"
                         >
-                          The location of the text commented on
+                          {localize(
+                            language,
+                            "The location of the text commented on",
+                            "被评论文本的位置",
+                          )}
                         </TooltipContent>
                       </Tooltip>
                     )}
@@ -668,12 +697,16 @@ export function CommentList({
                       type="button"
                       size="icon-xs"
                       variant="ghost"
-                      title="Delete comment"
+                      title={localize(language, "Delete comment", "删除评论")}
                       loading={deleteCommentMutation.isPending}
                       onClick={() => {
                         if (
                           confirm(
-                            "Are you sure you want to delete this comment?",
+                            localize(
+                              language,
+                              "Are you sure you want to delete this comment?",
+                              "确定要删除这条评论吗？",
+                            ),
                           )
                         )
                           deleteCommentMutation.mutateAsync({
@@ -696,9 +729,17 @@ export function CommentList({
         {hasWriteAccess && (
           <>
             <div className="relative ml-2.5 mr-4 mt-2 flex flex-row items-center justify-between text-xs text-muted-foreground">
-              <span className="sr-only">New comment</span>
+              <span className="sr-only">
+                {localize(language, "New comment", "新评论")}
+              </span>
               <span></span>
-              <span>Markdown and @-mentions support</span>
+              <span>
+                {localize(
+                  language,
+                  "Markdown and @-mentions support",
+                  "支持 Markdown 和 @ 提及",
+                )}
+              </span>
             </div>
             <div className="relative mb-2 ml-2 mr-3 mt-0.5 min-h-[70px] flex-shrink-0 rounded-lg border border-border/60 pt-1">
               {/* Visually hidden header for accessibility */}
@@ -713,7 +754,11 @@ export function CommentList({
                         <div>
                           <FormControl>
                             <Textarea
-                              placeholder="Add a comment..."
+                              placeholder={localize(
+                                language,
+                                "Add a comment...",
+                                "添加评论...",
+                              )}
                               {...field}
                               ref={(el) => {
                                 if (textareaRef.current !== el) {
@@ -773,7 +818,11 @@ export function CommentList({
                           type="submit"
                           size="icon-xs"
                           variant="outline"
-                          title="Submit comment"
+                          title={localize(
+                            language,
+                            "Submit comment",
+                            "提交评论",
+                          )}
                           loading={createCommentMutation.isPending}
                           onClick={() => {
                             form.handleSubmit(onSubmit)();
@@ -789,7 +838,9 @@ export function CommentList({
                         className="w-auto p-2"
                       >
                         <div className="flex items-center gap-2 text-sm">
-                          <span>Send comment</span>
+                          <span>
+                            {localize(language, "Send comment", "发送评论")}
+                          </span>
                           <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
                             <span className="text-xs">⌘</span>Enter
                           </kbd>

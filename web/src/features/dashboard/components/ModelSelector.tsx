@@ -19,6 +19,7 @@ import { type FilterState } from "@langfuse/shared";
 import { type ViewVersion } from "@/src/features/query";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 
 export const ModelSelectorPopover = ({
   allModels,
@@ -35,6 +36,7 @@ export const ModelSelectorPopover = ({
   isAllSelected: boolean;
   handleSelectAll: () => void;
 }) => {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
 
   return (
@@ -52,8 +54,13 @@ export const ModelSelectorPopover = ({
       </PopoverTrigger>
       <PopoverContent className="w-56 p-0">
         <InputCommand>
-          <InputCommandInput placeholder="Search models..." variant="bottom" />
-          <InputCommandEmpty>No model found.</InputCommandEmpty>
+          <InputCommandInput
+            placeholder={t("dashboard.modelSelector.searchPlaceholder")}
+            variant="bottom"
+          />
+          <InputCommandEmpty>
+            {t("dashboard.modelSelector.noModelFound")}
+          </InputCommandEmpty>
           <InputCommandGroup>
             <InputCommandItem onSelect={handleSelectAll}>
               <Check
@@ -63,7 +70,9 @@ export const ModelSelectorPopover = ({
                 )}
               />
               <span>
-                <p className="font-semibold">Select All</p>
+                <p className="font-semibold">
+                  {t("dashboard.modelSelector.selectAll")}
+                </p>
               </span>
             </InputCommandItem>
             <InputCommandSeparator className="my-1" />
@@ -88,7 +97,7 @@ export const ModelSelectorPopover = ({
                     )}
                   />
                   {!model.model || model.model === "" ? (
-                    <i>none</i>
+                    <i>{t("dashboard.modelSelector.none")}</i>
                   ) : (
                     model.model
                   )}
@@ -109,6 +118,7 @@ export const useModelSelection = (
   toTimestamp: Date,
   metricsVersion?: ViewVersion,
 ) => {
+  const { t } = useLanguage();
   const allModels = getAllModels(
     projectId,
     globalFilterState,
@@ -123,8 +133,8 @@ export const useModelSelection = (
   const isAllSelected = selectedModels.length === allModels.length;
 
   const buttonText = isAllSelected
-    ? "All models"
-    : `${selectedModels.length} selected`;
+    ? t("dashboard.modelSelector.allModels")
+    : `${selectedModels.length} ${t("dashboard.modelSelector.selectedSuffix")}`;
 
   const handleSelectAll = () => {
     setSelectedModels(isAllSelected ? [] : [...allModels.map((m) => m.model)]);
