@@ -61,6 +61,7 @@ export function SpanContent({
 
   // Use pre-computed cost from the TreeNode
   const totalCost = node.totalCost;
+  const displayLevel = node.effectiveLevel ?? node.level;
 
   const duration =
     node.endTime && node.startTime
@@ -124,17 +125,18 @@ export function SpanContent({
 
             {/* Level badge */}
             {node.type !== "TRACE" &&
-              node.level &&
-              node.level !== "DEFAULT" && (
+              displayLevel &&
+              displayLevel !== "DEFAULT" && (
                 <div className="flex">
                   <span
                     className={cn(
                       "rounded-sm p-0.5 text-xs",
-                      LevelColors[node.level as keyof typeof LevelColors]?.bg,
-                      LevelColors[node.level as keyof typeof LevelColors]?.text,
+                      LevelColors[displayLevel as keyof typeof LevelColors]?.bg,
+                      LevelColors[displayLevel as keyof typeof LevelColors]
+                        ?.text,
                     )}
                   >
-                    {node.level}
+                    {displayLevel}
                   </span>
                 </div>
               )}

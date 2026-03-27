@@ -159,13 +159,13 @@ function clickhouseHistogramToChartData(
   };
 }
 
-const PolicyConfirmationStateSchema = z.enum(["ask", "accepted", "rejected"]);
+const HumanPolicyConfirmationStateSchema = z.enum(["accepted", "rejected"]);
 
-function resolvePolicyConfirmationResetTimestamp(
+function resolvePolicyConfirmationResetTimestamps(
   metadata: unknown,
-): Date | null {
+): Map<string, Date> {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return null;
+    return new Map();
   }
 
   const policyGovernance = (metadata as Record<string, unknown>)
@@ -175,20 +175,40 @@ function resolvePolicyConfirmationResetTimestamp(
     typeof policyGovernance !== "object" ||
     Array.isArray(policyGovernance)
   ) {
-    return null;
+    return new Map();
   }
 
-  const rawLastUpdated = (policyGovernance as Record<string, unknown>)
-    .lastPolicyUpdatedAt;
-  if (
-    typeof rawLastUpdated !== "string" ||
-    rawLastUpdated.trim().length === 0
-  ) {
-    return null;
+  const rawResets = (policyGovernance as Record<string, unknown>)
+    .policyConfirmationResetTimestamps;
+  if (!rawResets || typeof rawResets !== "object" || Array.isArray(rawResets)) {
+    return new Map();
   }
 
-  const parsed = new Date(rawLastUpdated);
-  return Number.isFinite(parsed.getTime()) ? parsed : null;
+  return new Map(
+    Object.entries(rawResets).flatMap(([policyName, value]) => {
+      if (typeof value !== "string" || value.trim().length === 0) {
+        return [];
+      }
+
+      const parsed = new Date(value);
+      if (!Number.isFinite(parsed.getTime())) {
+        return [];
+      }
+
+      return [[policyName, parsed] as const];
+    }),
+  );
+}
+
+function getEffectivePolicyConfirmationFromTimestamp(params: {
+  fromTimestamp: Date;
+  policyName: string;
+  resetTimestamps: Map<string, Date>;
+}): Date {
+  const resetTimestamp = params.resetTimestamps.get(params.policyName);
+  return resetTimestamp && resetTimestamp > params.fromTimestamp
+    ? resetTimestamp
+    : params.fromTimestamp;
 }
 
 async function getPolicyConfirmationCountsByState(params: {
@@ -196,8 +216,9 @@ async function getPolicyConfirmationCountsByState(params: {
   globalFilterState: FilterState;
   fromTimestamp: Date;
   toTimestamp: Date;
-  state: z.infer<typeof PolicyConfirmationStateSchema>;
+  state: z.infer<typeof HumanPolicyConfirmationStateSchema>;
   version: z.infer<typeof viewVersions>;
+  policyName?: string;
 }): Promise<Map<string, number>> {
   const dimensions: QueryType["dimensions"] = [
     { field: "policyName" },
@@ -215,11 +236,21 @@ async function getPolicyConfirmationCountsByState(params: {
     filters: [
       ...baseFilters,
       {
-        column: "policyConfirmationState",
+        column: "humanPolicyConfirmationState",
         operator: "=",
         value: params.state,
         type: "string",
       },
+      ...(params.policyName
+        ? [
+            {
+              column: "policyName",
+              operator: "=",
+              value: params.policyName,
+              type: "string",
+            } as const,
+          ]
+        : []),
     ],
     timeDimension: null,
     fromTimestamp: params.fromTimestamp.toISOString(),
@@ -228,24 +259,12 @@ async function getPolicyConfirmationCountsByState(params: {
     chartConfig: { type: "table", row_limit: 1000 },
   };
 
-  const queryByMetadata: QueryType = {
-    ...queryByDimension,
-    filters: [
-      ...baseFilters,
-      {
-        column: "metadata",
-        key: "policy_confirmation_state",
-        operator: "=",
-        value: params.state,
-        type: "stringObject",
-      },
-    ],
-  };
-  const [rowsByDimension, rowsByMetadata] = await Promise.all([
-    executeQuery(params.projectId, queryByDimension, params.version, false),
-    executeQuery(params.projectId, queryByMetadata, params.version, false),
-  ]);
-  const rows = [...rowsByDimension, ...rowsByMetadata];
+  const rows = await executeQuery(
+    params.projectId,
+    queryByDimension,
+    params.version,
+    false,
+  );
 
   const counts = new Map<string, number>();
   const dedupe = new Set<string>();
@@ -276,13 +295,67 @@ async function getPolicyConfirmationCountsByState(params: {
   return counts;
 }
 
+async function applyPolicyConfirmationResetOverrides(params: {
+  counts: Map<string, number>;
+  projectId: string;
+  globalFilterState: FilterState;
+  fromTimestamp: Date;
+  toTimestamp: Date;
+  state: z.infer<typeof HumanPolicyConfirmationStateSchema>;
+  version: z.infer<typeof viewVersions>;
+  resetTimestamps: Map<string, Date>;
+}): Promise<Map<string, number>> {
+  const nextCounts = new Map(params.counts);
+  const policyNames = new Set<string>([
+    ...nextCounts.keys(),
+    ...params.resetTimestamps.keys(),
+  ]);
+
+  await Promise.all(
+    Array.from(policyNames).map(async (policyName) => {
+      const effectiveFromTimestamp =
+        getEffectivePolicyConfirmationFromTimestamp({
+          fromTimestamp: params.fromTimestamp,
+          policyName,
+          resetTimestamps: params.resetTimestamps,
+        });
+      if (effectiveFromTimestamp.getTime() === params.fromTimestamp.getTime()) {
+        return;
+      }
+
+      if (effectiveFromTimestamp > params.toTimestamp) {
+        nextCounts.delete(policyName);
+        return;
+      }
+
+      const updatedCounts = await getPolicyConfirmationCountsByState({
+        projectId: params.projectId,
+        globalFilterState: params.globalFilterState,
+        fromTimestamp: effectiveFromTimestamp,
+        toTimestamp: params.toTimestamp,
+        state: params.state,
+        version: params.version,
+        policyName,
+      });
+      const count = updatedCounts.get(policyName) ?? 0;
+      if (count > 0) {
+        nextCounts.set(policyName, count);
+      } else {
+        nextCounts.delete(policyName);
+      }
+    }),
+  );
+
+  return nextCounts;
+}
+
 async function getPolicyConfirmationDetailsByState(params: {
   projectId: string;
   globalFilterState: FilterState;
   fromTimestamp: Date;
   toTimestamp: Date;
   policyName: string;
-  state: z.infer<typeof PolicyConfirmationStateSchema>;
+  state: z.infer<typeof HumanPolicyConfirmationStateSchema>;
   version: z.infer<typeof viewVersions>;
 }): Promise<
   Array<{
@@ -308,7 +381,7 @@ async function getPolicyConfirmationDetailsByState(params: {
     filters: [
       ...baseFilters,
       {
-        column: "policyConfirmationState",
+        column: "humanPolicyConfirmationState",
         operator: "=",
         value: params.state,
         type: "string",
@@ -320,24 +393,12 @@ async function getPolicyConfirmationDetailsByState(params: {
     orderBy: null,
     chartConfig: { type: "table", row_limit: 1000 },
   };
-  const queryByMetadata: QueryType = {
-    ...queryByDimension,
-    filters: [
-      ...baseFilters,
-      {
-        column: "metadata",
-        key: "policy_confirmation_state",
-        operator: "=",
-        value: params.state,
-        type: "stringObject",
-      },
-    ],
-  };
-  const [rowsByDimension, rowsByMetadata] = await Promise.all([
-    executeQuery(params.projectId, queryByDimension, params.version, false),
-    executeQuery(params.projectId, queryByMetadata, params.version, false),
-  ]);
-  const rows = [...rowsByDimension, ...rowsByMetadata];
+  const rows = await executeQuery(
+    params.projectId,
+    queryByDimension,
+    params.version,
+    false,
+  );
 
   const details = new Map<
     string,
@@ -481,8 +542,10 @@ async function getObservationsByTypeV2(params: {
   filter: FilterState;
   dimensionField: "costType" | "usageType";
   metricMeasure: "costByType" | "usageByType";
+  granularity: NonNullable<QueryType["timeDimension"]>["granularity"];
 }): Promise<DatabaseRow[]> {
-  const { projectId, filter, dimensionField, metricMeasure } = params;
+  const { projectId, filter, dimensionField, metricMeasure, granularity } =
+    params;
 
   const [from, to] = extractFromAndToTimestampsFromFilter(filter);
   if (!from?.value || !to?.value) {
@@ -526,7 +589,7 @@ async function getObservationsByTypeV2(params: {
     dimensions: [{ field: dimensionField }],
     metrics: [{ measure: metricMeasure, aggregation: "sum" }],
     filters: viewFilters,
-    timeDimension: { granularity: "auto" },
+    timeDimension: { granularity },
     fromTimestamp: new Date(from.value as Date).toISOString(),
     toTimestamp: new Date(to.value as Date).toISOString(),
     orderBy: null,
@@ -562,6 +625,9 @@ export const dashboardRouter = createTRPCRouter({
     )
     .query(async ({ input }) => {
       const [from, to] = extractFromAndToTimestampsFromFilter(input.filter);
+      const requestedGranularity =
+        input.groupBy?.find((groupBy) => groupBy.type === "datetime")
+          ?.temporalUnit ?? "auto";
 
       if (from.value && to.value && from.value > to.value) {
         logger.error(
@@ -596,6 +662,7 @@ export const dashboardRouter = createTRPCRouter({
               filter: input.filter ?? [],
               dimensionField: "usageType",
               metricMeasure: "usageByType",
+              granularity: requestedGranularity,
             });
           }
           const rowsObsType = await getObservationUsageByTypeByTime(
@@ -610,6 +677,7 @@ export const dashboardRouter = createTRPCRouter({
               filter: input.filter ?? [],
               dimensionField: "costType",
               metricMeasure: "costByType",
+              granularity: requestedGranularity,
             });
           }
           const rowsObsCostByType = await getObservationCostByTypeByTime(
@@ -735,24 +803,17 @@ export const dashboardRouter = createTRPCRouter({
         });
       }
 
-      const resetTimestamp = resolvePolicyConfirmationResetTimestamp(
+      const resetTimestamps = resolvePolicyConfirmationResetTimestamps(
         project.metadata,
       );
-      const effectiveFromTimestamp =
-        resetTimestamp && resetTimestamp > input.fromTimestamp
-          ? resetTimestamp
-          : input.fromTimestamp;
-      if (effectiveFromTimestamp > input.toTimestamp) {
-        return [];
-      }
 
-      // Only count confirmations where the user has explicitly accepted/rejected.
-      // Pending confirmation requests (state="ask") must not be included in the stats.
+      // Only count human confirmations where the user explicitly replied yes/no.
+      // Pending requests and automatic policy outcomes must not be included.
       const [acceptedCounts, rejectedCounts] = await Promise.all([
         getPolicyConfirmationCountsByState({
           projectId: input.projectId,
           globalFilterState: input.globalFilterState,
-          fromTimestamp: effectiveFromTimestamp,
+          fromTimestamp: input.fromTimestamp,
           toTimestamp: input.toTimestamp,
           state: "accepted",
           version: input.version,
@@ -760,39 +821,35 @@ export const dashboardRouter = createTRPCRouter({
         getPolicyConfirmationCountsByState({
           projectId: input.projectId,
           globalFilterState: input.globalFilterState,
-          fromTimestamp: effectiveFromTimestamp,
+          fromTimestamp: input.fromTimestamp,
           toTimestamp: input.toTimestamp,
           state: "rejected",
           version: input.version,
         }),
       ]);
 
-      const hasCounts = acceptedCounts.size > 0 || rejectedCounts.size > 0;
-      const shouldRetryWithoutReset =
-        !hasCounts &&
-        resetTimestamp != null &&
-        resetTimestamp > input.fromTimestamp &&
-        effectiveFromTimestamp.getTime() !== input.fromTimestamp.getTime();
-      const [finalAcceptedCounts, finalRejectedCounts] = shouldRetryWithoutReset
-        ? await Promise.all([
-            getPolicyConfirmationCountsByState({
-              projectId: input.projectId,
-              globalFilterState: input.globalFilterState,
-              fromTimestamp: input.fromTimestamp,
-              toTimestamp: input.toTimestamp,
-              state: "accepted",
-              version: input.version,
-            }),
-            getPolicyConfirmationCountsByState({
-              projectId: input.projectId,
-              globalFilterState: input.globalFilterState,
-              fromTimestamp: input.fromTimestamp,
-              toTimestamp: input.toTimestamp,
-              state: "rejected",
-              version: input.version,
-            }),
-          ])
-        : [acceptedCounts, rejectedCounts];
+      const [finalAcceptedCounts, finalRejectedCounts] = await Promise.all([
+        applyPolicyConfirmationResetOverrides({
+          counts: acceptedCounts,
+          projectId: input.projectId,
+          globalFilterState: input.globalFilterState,
+          fromTimestamp: input.fromTimestamp,
+          toTimestamp: input.toTimestamp,
+          state: "accepted",
+          version: input.version,
+          resetTimestamps,
+        }),
+        applyPolicyConfirmationResetOverrides({
+          counts: rejectedCounts,
+          projectId: input.projectId,
+          globalFilterState: input.globalFilterState,
+          fromTimestamp: input.fromTimestamp,
+          toTimestamp: input.toTimestamp,
+          state: "rejected",
+          version: input.version,
+          resetTimestamps,
+        }),
+      ]);
 
       const policyNames = new Set<string>([
         ...finalAcceptedCounts.keys(),
@@ -835,7 +892,7 @@ export const dashboardRouter = createTRPCRouter({
       z.object({
         projectId: z.string(),
         policyName: z.string(),
-        state: PolicyConfirmationStateSchema,
+        state: HumanPolicyConfirmationStateSchema,
         globalFilterState: z.array(singleFilter).default([]),
         fromTimestamp: z.date(),
         toTimestamp: z.date(),
@@ -873,13 +930,15 @@ export const dashboardRouter = createTRPCRouter({
         });
       }
 
-      const resetTimestamp = resolvePolicyConfirmationResetTimestamp(
+      const resetTimestamps = resolvePolicyConfirmationResetTimestamps(
         project.metadata,
       );
       const effectiveFromTimestamp =
-        resetTimestamp && resetTimestamp > input.fromTimestamp
-          ? resetTimestamp
-          : input.fromTimestamp;
+        getEffectivePolicyConfirmationFromTimestamp({
+          fromTimestamp: input.fromTimestamp,
+          policyName: input.policyName,
+          resetTimestamps,
+        });
       if (effectiveFromTimestamp > input.toTimestamp) {
         return [];
       }
@@ -893,22 +952,6 @@ export const dashboardRouter = createTRPCRouter({
         state: input.state,
         version: input.version,
       });
-      const shouldRetryWithoutReset =
-        details.length === 0 &&
-        resetTimestamp != null &&
-        resetTimestamp > input.fromTimestamp &&
-        effectiveFromTimestamp.getTime() !== input.fromTimestamp.getTime();
-      if (shouldRetryWithoutReset) {
-        return getPolicyConfirmationDetailsByState({
-          projectId: input.projectId,
-          policyName: input.policyName,
-          globalFilterState: input.globalFilterState,
-          fromTimestamp: input.fromTimestamp,
-          toTimestamp: input.toTimestamp,
-          state: input.state,
-          version: input.version,
-        });
-      }
       return details;
     }),
 

@@ -1328,6 +1328,7 @@ describe("dashboard v1 vs v2 consistency", () => {
     const typeInput = (
       version: "v1" | "v2",
       queryName: typeof COST_BY_TYPE_QUERY | typeof USAGE_BY_TYPE_QUERY,
+      temporalUnit?: "minute" | "hour",
     ) => ({
       projectId,
       from: "traces_observations" as const,
@@ -1352,6 +1353,15 @@ describe("dashboard v1 vs v2 consistency", () => {
           type: "stringOptions" as const,
         },
       ],
+      groupBy: temporalUnit
+        ? [
+            {
+              type: "datetime" as const,
+              column: "startTime",
+              temporalUnit,
+            },
+          ]
+        : undefined,
       limit: 10000,
       version,
       queryName,
@@ -1365,6 +1375,12 @@ describe("dashboard v1 vs v2 consistency", () => {
         acc.set(k, (acc.get(k) ?? 0) + Number(row["sum"] ?? 0));
       }
       return acc;
+    }
+
+    function countUniqueIntervals(rows: DatabaseRow[]): number {
+      return new Set(
+        rows.map((row) => new Date(row["intervalStart"] as Date).toISOString()),
+      ).size;
     }
 
     describe("cost by type timeseries v2", () => {
@@ -1387,6 +1403,18 @@ describe("dashboard v1 vs v2 consistency", () => {
           expect(keys.has("input")).toBe(true);
           expect(keys.has("output")).toBe(true);
         }
+      });
+
+      it("should respect requested time granularity in v2", async () => {
+        const caller = makeCaller();
+        const [minuteBuckets, hourBuckets] = await Promise.all([
+          caller.dashboard.chart(typeInput("v2", COST_BY_TYPE_QUERY, "minute")),
+          caller.dashboard.chart(typeInput("v2", COST_BY_TYPE_QUERY, "hour")),
+        ]);
+
+        expect(
+          countUniqueIntervals(minuteBuckets as DatabaseRow[]),
+        ).toBeGreaterThan(countUniqueIntervals(hourBuckets as DatabaseRow[]));
       });
 
       it("should return matching cost totals between v1 and v2", async () => {

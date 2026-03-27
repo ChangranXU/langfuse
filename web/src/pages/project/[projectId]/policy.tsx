@@ -314,7 +314,24 @@ export default function PolicyGovernancePage() {
     api.policyGovernance.savePolicyFiles.useMutation({
       onSuccess: async (data) => {
         applyLoadedPolicyData(data as LoadedPolicyData);
+        await utils.projects.getPolicyGovernanceSettings.invalidate({
+          projectId: projectId ?? "",
+        });
         toast.success(t("policy.filesSaved"));
+      },
+      onError: (error) => toast.error(error.message),
+    });
+  const resetPolicyConfirmationStatsMutation =
+    api.projects.resetPolicyConfirmationStats.useMutation({
+      onSuccess: async () => {
+        await Promise.all([
+          utils.projects.getPolicyGovernanceSettings.invalidate({
+            projectId: projectId ?? "",
+          }),
+          utils.dashboard.policyConfirmationStats.invalidate(),
+          utils.dashboard.policyConfirmationDetails.invalidate(),
+        ]);
+        toast.success(t("policy.confirmationStatsReset"));
       },
       onError: (error) => toast.error(error.message),
     });
@@ -805,6 +822,8 @@ export default function PolicyGovernancePage() {
     : null;
   const configuredModelLabel = errorAnalysisSettingsQuery.data?.model ?? null;
   const beginnerSummaries = policySettingsQuery.data?.beginnerSummaries ?? {};
+  const policyConfirmationResetTimestamps =
+    policySettingsQuery.data?.policyConfirmationResetTimestamps ?? {};
   const sourceLastModifiedLabel =
     policyFilesStatusQuery.data?.sourceLastModifiedAt ??
     loaded?.sourceLastModifiedAt ??
@@ -987,6 +1006,9 @@ export default function PolicyGovernancePage() {
                   settingsBySection={settingsBySection}
                   highlightThresholdPct={highlightThresholdPct}
                   confirmationStats={policyStatsMap.get(entry.name)}
+                  lastConfirmationStatsResetAt={
+                    policyConfirmationResetTimestamps[entry.name] ?? null
+                  }
                   guideInsight={policyGuideInsightsMap.get(entry.name)}
                   hasUpdateAccess={hasUpdateAccess}
                   sectionDrafts={sectionDrafts[entry.name] ?? {}}
@@ -1023,6 +1045,19 @@ export default function PolicyGovernancePage() {
                   onGenerateProposal={() => void onGenerateProposal(entry.name)}
                   isGeneratingProposal={
                     proposalPolicyNameLoading === entry.name
+                  }
+                  onResetConfirmationStats={() => {
+                    if (!projectId) return;
+                    resetPolicyConfirmationStatsMutation.mutate({
+                      projectId,
+                      policyNames: [entry.name],
+                    });
+                  }}
+                  isResettingConfirmationStats={
+                    resetPolicyConfirmationStatsMutation.isPending &&
+                    resetPolicyConfirmationStatsMutation.variables?.policyNames.includes(
+                      entry.name,
+                    ) === true
                   }
                   hasSectionErrors={hasSectionErrors}
                 />

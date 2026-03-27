@@ -54,6 +54,9 @@ const PolicyGovernanceSettingsSchema = z.object({
   kernelPolicyPathAbsolute: z.string().trim().min(1).nullable().default(null),
   lastPolicyUpdatedAt: z.string().trim().min(1).nullable().default(null),
   beginnerSummaries: z.record(z.string(), z.string()).default({}),
+  policyConfirmationResetTimestamps: z
+    .record(z.string(), z.string().trim().min(1))
+    .default({}),
 });
 
 export const POLICY_SECTION_MAP: Record<string, string[]> = {
@@ -333,6 +336,7 @@ function parsePolicyGovernanceSettings(metadata: unknown) {
       kernelPolicyPathAbsolute: null as string | null,
       lastPolicyUpdatedAt: null as string | null,
       beginnerSummaries: {} as Record<string, string>,
+      policyConfirmationResetTimestamps: {} as Record<string, string>,
     };
   }
 
@@ -343,6 +347,7 @@ function parsePolicyGovernanceSettings(metadata: unknown) {
       kernelPolicyPathAbsolute: null as string | null,
       lastPolicyUpdatedAt: null as string | null,
       beginnerSummaries: {} as Record<string, string>,
+      policyConfirmationResetTimestamps: {} as Record<string, string>,
     };
   return parsed.data;
 }

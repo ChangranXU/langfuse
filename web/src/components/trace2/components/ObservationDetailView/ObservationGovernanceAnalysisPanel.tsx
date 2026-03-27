@@ -4,6 +4,8 @@ import { Button } from "@/src/components/ui/button";
 import { api } from "@/src/utils/api";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import {
+  getGovernanceDisplayLevel,
+  getRelevantInactivateErrorType,
   getMetadataRecord,
   mergeRelevantPolicyMetadata,
   parseStringArray,
@@ -52,9 +54,34 @@ export function ObservationGovernanceAnalysisPanel(props: {
   hasProjectAccess: boolean;
 }) {
   const { language } = useLanguage();
-  const isPolicyViolation = props.level === "POLICY_VIOLATION";
+  const statusMessage = props.statusMessage?.trim();
+  const [isOutputExpanded, setIsOutputExpanded] = useState(false);
+  const observationPolicyMetadata = useMemo(
+    () => getMetadataRecord(props.metadata),
+    [props.metadata],
+  );
+  const effectiveLevel = useMemo(
+    () =>
+      getGovernanceDisplayLevel({
+        level: props.level,
+        observationMetadata: observationPolicyMetadata,
+        traceMetadata: props.traceMetadata,
+        observationName: props.observationName,
+        statusMessage,
+      }),
+    [
+      observationPolicyMetadata,
+      props.level,
+      props.observationName,
+      props.traceMetadata,
+      statusMessage,
+    ],
+  );
+  const isPolicyViolation = effectiveLevel === "POLICY_VIOLATION";
   const isGovernanceLevel =
-    props.level === "ERROR" || props.level === "WARNING" || isPolicyViolation;
+    effectiveLevel === "ERROR" ||
+    effectiveLevel === "WARNING" ||
+    isPolicyViolation;
 
   const canQueryGovernance = props.hasProjectAccess && isGovernanceLevel;
   const errorAnalysisQuery = api.errorAnalysis.get.useQuery(
@@ -69,12 +96,6 @@ export function ObservationGovernanceAnalysisPanel(props: {
     },
   );
 
-  const statusMessage = props.statusMessage?.trim();
-  const [isOutputExpanded, setIsOutputExpanded] = useState(false);
-  const observationPolicyMetadata = useMemo(
-    () => getMetadataRecord(props.metadata),
-    [props.metadata],
-  );
   const policyMetadata = useMemo(
     () =>
       mergeRelevantPolicyMetadata({
@@ -118,22 +139,18 @@ export function ObservationGovernanceAnalysisPanel(props: {
     [policyMetadata.policy_sources],
   );
   const inactivateErrorType = useMemo(() => {
-    if (typeof policyMetadata.inactivate_error_type === "string") {
-      const trimmed = policyMetadata.inactivate_error_type.trim();
-      if (trimmed.length > 0) return trimmed;
-    }
-
-    const normalizedFromArray = parseStringArray(
-      policyMetadata.inactivate_error_type,
-    )
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-    if (normalizedFromArray.length > 0) {
-      return normalizedFromArray.join("\n");
-    }
-
-    return null;
-  }, [policyMetadata.inactivate_error_type]);
+    return getRelevantInactivateErrorType({
+      observationMetadata: observationPolicyMetadata,
+      traceMetadata: props.traceMetadata,
+      observationName: props.observationName,
+      statusMessage,
+    });
+  }, [
+    observationPolicyMetadata,
+    props.observationName,
+    props.traceMetadata,
+    statusMessage,
+  ]);
   const policyNameList = useMemo(() => {
     const names = new Set(policyNames);
     Object.keys(policyDescriptions).forEach((name) => names.add(name));
@@ -143,18 +160,32 @@ export function ObservationGovernanceAnalysisPanel(props: {
 
   const panelTitle = isPolicyViolation
     ? localize(language, "Policy Enforcement", "策略执行")
-    : localize(language, "Governance Analysis & Suggestion", "治理分析与建议");
+    : inactivateErrorType
+      ? localize(language, "Governance Warning", "治理警告")
+      : localize(
+          language,
+          "Governance Analysis & Suggestion",
+          "治理分析与建议",
+        );
   const panelSubtitle = isPolicyViolation
     ? localize(
         language,
         "This node was blocked by policy. Action shows what was prevented.",
         "该节点被策略阻止。操作会显示被阻止的内容。",
       )
-    : localize(
-        language,
-        "Node-level diagnostics and mitigation guidance for this failure.",
-        "针对该失败的节点级诊断与缓解建议。",
-      );
+    : inactivateErrorType
+      ? localize(
+          language,
+          "This node triggered a non-blocking policy warning.",
+          "该节点触发了一个非阻断策略警告。",
+        )
+      : localize(
+          language,
+          "Node-level diagnostics and mitigation guidance for this failure.",
+          "针对该失败的节点级诊断与缓解建议。",
+        );
+  const shouldShowInactivePolicyWarning =
+    Boolean(inactivateErrorType) && !isPolicyViolation;
 
   const rawOutputContent = statusMessage ?? null;
   const policyActions = useMemo(
@@ -215,24 +246,28 @@ export function ObservationGovernanceAnalysisPanel(props: {
           </div>
           <Badge
             variant={
-              props.level === "ERROR"
+              effectiveLevel === "ERROR"
                 ? "destructive"
-                : props.level === "WARNING" || isPolicyViolation
+                : effectiveLevel === "WARNING" || isPolicyViolation
                   ? "warning"
                   : "secondary"
             }
           >
-            {props.level}
+            {effectiveLevel ?? props.level}
           </Badge>
         </div>
 
         <div className="space-y-3">
-          {inactivateErrorType ? (
+          {shouldShowInactivePolicyWarning ? (
             <div>
-              <div className="mb-1 min-w-0 text-xs font-medium text-muted-foreground">
-                {localize(language, "Inactive Policy Signal", "未激活策略信号")}
+              <div className="mb-1 min-w-0 text-xs font-medium text-amber-700 dark:text-amber-300">
+                {localize(
+                  language,
+                  "Inactive Policy Warning",
+                  "未激活策略警告",
+                )}
               </div>
-              <div className="min-w-0 whitespace-pre-wrap break-words rounded-md border bg-background p-2 font-mono text-xs text-muted-foreground">
+              <div className="min-w-0 whitespace-pre-wrap break-words rounded-md border border-amber-200 bg-amber-50/40 p-2 font-mono text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
                 {inactivateErrorType}
               </div>
             </div>

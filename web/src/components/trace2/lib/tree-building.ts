@@ -31,10 +31,14 @@ import {
 } from "@/src/features/trace-graph-view/nodeNameUtils";
 import {
   getMetadataRecord,
+  getGovernanceDisplayLevel,
   getObservationTurnIndex,
   parseStringArray,
 } from "@/src/features/governance/utils/policyMetadata";
-
+import {
+  getHumanPolicyConfirmationState,
+  getPolicyConfirmationState,
+} from "@/src/features/governance/utils/policyConfirmation";
 type TraceType = Omit<
   WithStringifiedMetadata<TraceDomain>,
   "input" | "output"
@@ -64,22 +68,6 @@ function parseSessionTurnIndex(
 
   const parsed = Number.parseInt(match.groups.turn, 10);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function getPolicyConfirmationState(
-  metadata: Record<string, unknown>,
-): "accepted" | "rejected" | null {
-  const rawState = metadata.policy_confirmation_state;
-  if (typeof rawState !== "string") {
-    return null;
-  }
-
-  const normalizedState = rawState.trim().toLowerCase();
-  if (normalizedState === "accepted" || normalizedState === "rejected") {
-    return normalizedState;
-  }
-
-  return null;
 }
 
 function normalizePolicyFallbackText(value: unknown): string | null {
@@ -159,7 +147,11 @@ function collectPolicyConfirmationTurnIndexes(params: {
       traceMetadata: params.trace.metadata,
       observation,
     });
-    const state = getPolicyConfirmationState(alignedMetadata);
+    const state = getHumanPolicyConfirmationState({
+      metadata: alignedMetadata,
+      traceInput: params.trace.input,
+      traceMetadata: params.trace.metadata,
+    });
     if (!state) {
       continue;
     }
@@ -455,6 +447,7 @@ function buildTreeNodesBottomUp(
   leafIds: string[],
   nodeMap: Map<string, TreeNode>,
   traceStartTime: Date,
+  traceMetadata: unknown,
   policyConfirmationTurnIndexes: Set<number>,
 ): string[] {
   // Queue starts with all leaf nodes (inDegree === 0)
@@ -545,6 +538,13 @@ function buildTreeNodesBottomUp(
       startTime: obs.startTime,
       endTime: obs.endTime,
       level: obs.level,
+      effectiveLevel: getGovernanceDisplayLevel({
+        level: obs.level,
+        observationMetadata: obs.metadata,
+        traceMetadata,
+        observationName: obs.name,
+        statusMessage: obs.statusMessage,
+      }),
       hasPolicyConfirmation:
         sessionTurnIndex != null &&
         policyConfirmationTurnIndexes.has(sessionTurnIndex),
@@ -656,6 +656,7 @@ function buildTraceTree(
     leafIds,
     nodeMap,
     trace.timestamp,
+    trace.metadata,
     policyConfirmationTurnIndexes,
   );
 

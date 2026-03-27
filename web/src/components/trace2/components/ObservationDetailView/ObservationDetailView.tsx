@@ -69,6 +69,7 @@ import {
   aggregateTraceMetrics,
   getDescendantIds,
 } from "@/src/components/trace2/lib/trace-aggregation";
+import { getGovernanceDisplayLevel } from "@/src/features/governance/utils/policyMetadata";
 import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 import { localize } from "@/src/features/i18n/localize";
 
@@ -267,10 +268,28 @@ export function ObservationDetailView({
     return null;
   }, [observation.latency, observation.startTime, observation.endTime]);
 
+  const effectiveGovernanceLevel = useMemo(
+    () =>
+      getGovernanceDisplayLevel({
+        level: observation.level,
+        observationMetadata: observation.metadata,
+        traceMetadata: trace.metadata,
+        observationName: observation.name,
+        statusMessage: observation.statusMessage,
+      }),
+    [
+      observation.level,
+      observation.metadata,
+      observation.name,
+      observation.statusMessage,
+      trace.metadata,
+    ],
+  );
+
   const showGovernanceSplitPanel =
-    observation.level === "ERROR" ||
-    observation.level === "WARNING" ||
-    observation.level === "POLICY_VIOLATION";
+    effectiveGovernanceLevel === "ERROR" ||
+    effectiveGovernanceLevel === "WARNING" ||
+    effectiveGovernanceLevel === "POLICY_VIOLATION";
   const governanceObservation = observationWithIOCompat.data ?? observation;
 
   return (
@@ -280,6 +299,7 @@ export function ObservationDetailView({
         observation={observation}
         projectId={projectId}
         traceId={traceId}
+        traceMetadata={trace.metadata}
         latencySeconds={latencySeconds}
         commentCount={comments.get(observation.id)}
         pendingSelection={pendingSelection}

@@ -20,6 +20,10 @@ import { CommentDrawerButton } from "@/src/features/comments/CommentDrawerButton
 import { ErrorAnalysisButton } from "@/src/features/error-analysis/components/ErrorAnalysisButton";
 import { api } from "@/src/utils/api";
 import {
+  getGovernanceDisplayLevel,
+  getRelevantInactivateErrorType,
+} from "@/src/features/governance/utils/policyMetadata";
+import {
   LatencyBadge,
   TimeToFirstTokenBadge,
   EnvironmentBadge,
@@ -44,6 +48,7 @@ export interface ObservationDetailViewHeaderProps {
   observation: ObservationReturnTypeWithMetadata;
   projectId: string;
   traceId: string;
+  traceMetadata?: unknown;
   latencySeconds: number | null;
   commentCount: number | undefined;
   // Inline comment props
@@ -60,6 +65,7 @@ export const ObservationDetailViewHeader = memo(
     observation,
     projectId,
     traceId,
+    traceMetadata,
     latencySeconds,
     commentCount,
     pendingSelection,
@@ -79,9 +85,24 @@ export const ObservationDetailViewHeader = memo(
       formatParserNodeName(rawObservationName, { multiline: false }) ??
       rawObservationName;
     const hasReadableAlias = readableObservationName !== rawObservationName;
+    const inactivateErrorType = getRelevantInactivateErrorType({
+      observationMetadata: observation.metadata,
+      traceMetadata,
+      observationName: observation.name,
+      statusMessage: observation.statusMessage,
+    });
+    const effectiveLevel = getGovernanceDisplayLevel({
+      level: observation.level,
+      observationMetadata: observation.metadata,
+      traceMetadata,
+      observationName: observation.name,
+      statusMessage: observation.statusMessage,
+    });
+    const shouldHideErrorAnalysis = Boolean(inactivateErrorType);
 
     const shouldFetchErrorType =
-      observation.level === "ERROR" || observation.level === "WARNING";
+      !shouldHideErrorAnalysis &&
+      (effectiveLevel === "ERROR" || effectiveLevel === "WARNING");
     const { data: errorTypeSummary } = api.errorAnalysis.getSummary.useQuery(
       {
         projectId,
@@ -197,26 +218,30 @@ export const ObservationDetailViewHeader = memo(
             <ModelParametersBadges
               modelParameters={observation.modelParameters}
             />
-            <LevelBadge level={observation.level} />
+            <LevelBadge level={effectiveLevel} />
             <PolicyNameBadges
               level={observation.level}
               metadata={observation.metadata}
             />
-            <ErrorTypeBadge
-              errorType={errorTypeSummary?.errorType}
-              errorTypeDescription={errorTypeSummary?.errorTypeDescription}
-              errorTypeWhy={errorTypeSummary?.errorTypeWhy}
-              errorTypeConfidence={errorTypeSummary?.errorTypeConfidence}
-            />
-            <ErrorAnalysisButton
-              projectId={projectId}
-              traceId={traceId}
-              observationId={observation.id}
-              level={observation.level}
-            />
+            {!shouldHideErrorAnalysis ? (
+              <>
+                <ErrorTypeBadge
+                  errorType={errorTypeSummary?.errorType}
+                  errorTypeDescription={errorTypeSummary?.errorTypeDescription}
+                  errorTypeWhy={errorTypeSummary?.errorTypeWhy}
+                  errorTypeConfidence={errorTypeSummary?.errorTypeConfidence}
+                />
+                <ErrorAnalysisButton
+                  projectId={projectId}
+                  traceId={traceId}
+                  observationId={observation.id}
+                  level={effectiveLevel}
+                />
+              </>
+            ) : null}
             <StatusMessageBadge
               statusMessage={observation.statusMessage}
-              level={observation.level}
+              level={effectiveLevel}
             />
           </div>
         </div>

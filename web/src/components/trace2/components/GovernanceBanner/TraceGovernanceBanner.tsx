@@ -5,7 +5,10 @@ import { useTraceData } from "@/src/components/trace2/contexts/TraceDataContext"
 import { useSelection } from "@/src/components/trace2/contexts/SelectionContext";
 import {
   derivePolicyNamesFromMetadata,
+  getGovernanceDisplayLevel,
+  getInactivateErrorTypeDisplayLabel,
   getMetadataRecord,
+  getRelevantInactivateErrorType,
   mergeRelevantPolicyMetadata,
 } from "@/src/features/governance/utils/policyMetadata";
 import { useLanguage } from "@/src/features/i18n/LanguageProvider";
@@ -23,6 +26,9 @@ export function TraceGovernanceBanner() {
   >({});
   const [isErrorTypeLoading, setIsErrorTypeLoading] = useState(false);
   const [expandedErrorType, setExpandedErrorType] = useState<string | null>(
+    null,
+  );
+  const [expandedWarningType, setExpandedWarningType] = useState<string | null>(
     null,
   );
   const [expandedPolicyViolationType, setExpandedPolicyViolationType] =
@@ -51,31 +57,65 @@ export function TraceGovernanceBanner() {
     return observations.filter((obs) => obs.level === "POLICY_VIOLATION");
   }, [observations]);
 
+  const observationGovernanceState = useMemo(
+    () =>
+      Object.fromEntries(
+        observations.map((obs) => [
+          obs.id,
+          {
+            effectiveLevel: getGovernanceDisplayLevel({
+              level: obs.level,
+              observationMetadata: obs.metadata,
+              traceMetadata: tracePolicyMetadata,
+              observationName: obs.name,
+              statusMessage: obs.statusMessage,
+            }),
+            inactivateErrorType: getRelevantInactivateErrorType({
+              observationMetadata: obs.metadata,
+              traceMetadata: tracePolicyMetadata,
+              observationName: obs.name,
+              statusMessage: obs.statusMessage,
+            }),
+          },
+        ]),
+      ),
+    [observations, tracePolicyMetadata],
+  );
+
   const {
     errorCount,
     warningCount,
     policyViolationCount,
     errorObservationIds,
+    warningObservationIds,
+    analysisObservationIds,
   } = useMemo(() => {
     const errorObservations = observations.filter(
-      (obs) => obs.level === "ERROR",
+      (obs) => observationGovernanceState[obs.id]?.effectiveLevel === "ERROR",
     );
     const errorCount = errorObservations.length;
-    const warningCount = observations.filter(
-      (obs) => obs.level === "WARNING",
-    ).length;
+    const warningObservations = observations.filter(
+      (obs) => observationGovernanceState[obs.id]?.effectiveLevel === "WARNING",
+    );
+    const warningCount = warningObservations.length;
     const policyViolationCount = policyViolationObservations.length;
+    const errorObservationIds = errorObservations.map((obs) => obs.id);
+    const warningObservationIds = warningObservations.map((obs) => obs.id);
 
     return {
       errorCount,
       warningCount,
       policyViolationCount,
-      errorObservationIds: errorObservations.map((obs) => obs.id),
+      errorObservationIds,
+      warningObservationIds,
+      analysisObservationIds: [
+        ...new Set([...errorObservationIds, ...warningObservationIds]),
+      ],
     };
-  }, [observations, policyViolationObservations]);
+  }, [observations, observationGovernanceState, policyViolationObservations]);
 
   useEffect(() => {
-    if (!hasProjectAccess || errorObservationIds.length === 0) {
+    if (!hasProjectAccess || analysisObservationIds.length === 0) {
       setErrorTypeByObservationId({});
       setIsErrorTypeLoading(false);
       return;
@@ -88,7 +128,7 @@ export function TraceGovernanceBanner() {
       }
 
       const results = await Promise.all(
-        errorObservationIds.map(async (observationId) => {
+        analysisObservationIds.map(async (observationId) => {
           try {
             const result = await directApi.errorAnalysis.getSummary.query({
               projectId: trace.projectId,
@@ -130,7 +170,7 @@ export function TraceGovernanceBanner() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [hasProjectAccess, errorObservationIds, trace.projectId, trace.id]);
+  }, [hasProjectAccess, analysisObservationIds, trace.projectId, trace.id]);
 
   useEffect(() => {
     if (!hasProjectAccess || policyViolationObservations.length === 0) {
@@ -207,7 +247,10 @@ export function TraceGovernanceBanner() {
     >();
 
     errorObservationIds.forEach((id) => {
-      const type = errorTypeByObservationId[id] ?? "unclassified";
+      const type =
+        observationGovernanceState[id]?.inactivateErrorType ??
+        errorTypeByObservationId[id] ??
+        "unclassified";
       const observation = observationById.get(id);
       const label = observation?.name?.trim() || id;
       const existing = groups.get(type);
@@ -228,11 +271,67 @@ export function TraceGovernanceBanner() {
       if (b.count !== a.count) return b.count - a.count;
       return a.type.localeCompare(b.type);
     });
-  }, [errorObservationIds, errorTypeByObservationId, observations]);
+  }, [
+    errorObservationIds,
+    errorTypeByObservationId,
+    observationGovernanceState,
+    observations,
+  ]);
+
+  const warningGroups = useMemo(() => {
+    const observationById = new Map(observations.map((obs) => [obs.id, obs]));
+    const groups = new Map<
+      string,
+      {
+        type: string;
+        count: number;
+        nodes: Array<{ id: string; label: string }>;
+      }
+    >();
+
+    warningObservationIds.forEach((id) => {
+      const type =
+        getInactivateErrorTypeDisplayLabel(
+          observationGovernanceState[id]?.inactivateErrorType,
+        ) ??
+        errorTypeByObservationId[id] ??
+        "unclassified";
+      const observation = observationById.get(id);
+      const label = observation?.name?.trim() || id;
+      const existing = groups.get(type);
+
+      if (existing) {
+        existing.count += 1;
+        existing.nodes.push({ id, label });
+      } else {
+        groups.set(type, {
+          type,
+          count: 1,
+          nodes: [{ id, label }],
+        });
+      }
+    });
+
+    return [...groups.values()].sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.type.localeCompare(b.type);
+    });
+  }, [
+    errorTypeByObservationId,
+    observationGovernanceState,
+    observations,
+    warningObservationIds,
+  ]);
 
   const activeErrorGroup = useMemo(
     () => errorGroups.find((group) => group.type === expandedErrorType) ?? null,
     [errorGroups, expandedErrorType],
+  );
+
+  const activeWarningGroup = useMemo(
+    () =>
+      warningGroups.find((group) => group.type === expandedWarningType) ?? null,
+    [warningGroups, expandedWarningType],
   );
 
   useEffect(() => {
@@ -244,6 +343,16 @@ export function TraceGovernanceBanner() {
       setExpandedErrorType(null);
     }
   }, [errorGroups, expandedErrorType]);
+
+  useEffect(() => {
+    if (!expandedWarningType) return;
+    const stillExists = warningGroups.some(
+      (group) => group.type === expandedWarningType,
+    );
+    if (!stillExists) {
+      setExpandedWarningType(null);
+    }
+  }, [expandedWarningType, warningGroups]);
 
   const policyViolationGroups = useMemo(() => {
     const groups = new Map<
@@ -387,6 +496,48 @@ export function TraceGovernanceBanner() {
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
         <span>
+          {localize(language, "Warning node types:", "警告节点类型：")}
+        </span>
+        {warningCount === 0 ? (
+          <span className="font-bold text-foreground">
+            {localize(language, "none", "无")}
+          </span>
+        ) : !hasProjectAccess ? (
+          <span>
+            {localize(
+              language,
+              "unavailable (project access required)",
+              "不可用（需要项目访问权限）",
+            )}
+          </span>
+        ) : isErrorTypeLoading && warningGroups.length === 0 ? (
+          <span>{localize(language, "loading...", "加载中...")}</span>
+        ) : (
+          warningGroups.map((group) => {
+            const isActive = expandedWarningType === group.type;
+            return (
+              <button
+                key={group.type}
+                type="button"
+                className={`rounded-md border px-2 py-0.5 text-xs font-medium transition-colors ${
+                  isActive
+                    ? "border-amber-500 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                    : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-900/40"
+                }`}
+                onClick={() =>
+                  setExpandedWarningType((prev) =>
+                    prev === group.type ? null : group.type,
+                  )
+                }
+              >
+                {group.type}({group.count})
+              </button>
+            );
+          })
+        )}
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+        <span>
           {localize(
             language,
             "Policy violation node types:",
@@ -457,6 +608,35 @@ export function TraceGovernanceBanner() {
           </div>
           <div className="max-h-40 space-y-1 overflow-y-auto">
             {activeErrorGroup.nodes.map((node) => {
+              const isSelected = selectedNodeId === node.id;
+              return (
+                <button
+                  key={node.id}
+                  type="button"
+                  className={`flex w-full items-start justify-between gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
+                    isSelected
+                      ? "bg-primary/10 text-primary"
+                      : "text-foreground hover:bg-muted"
+                  }`}
+                  onClick={() => setSelectedNodeId(node.id)}
+                >
+                  <span className="line-clamp-1 break-all">{node.label}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {node.id}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {activeWarningGroup ? (
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/40 p-2 dark:border-amber-900 dark:bg-amber-950/20">
+          <div className="mb-1 text-xs font-medium text-muted-foreground">
+            {activeWarningGroup.type} nodes ({activeWarningGroup.count})
+          </div>
+          <div className="max-h-40 space-y-1 overflow-y-auto">
+            {activeWarningGroup.nodes.map((node) => {
               const isSelected = selectedNodeId === node.id;
               return (
                 <button

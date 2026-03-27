@@ -1957,8 +1957,8 @@ describe("buildTraceUiData", () => {
       });
     });
 
-    it("marks session.turn nodes for accepted or rejected policy confirmations", () => {
-      const trace = createMockTrace();
+    it("marks session.turn nodes for accepted or rejected human confirmations", () => {
+      const trace = createMockTrace({ input: "yes" });
       const observations: ObservationWithOptionalMetadata[] = [
         createMockObservation({
           id: "turn-1",
@@ -1999,6 +1999,7 @@ describe("buildTraceUiData", () => {
 
     it("marks session.turn nodes when confirmation state falls back from trace metadata", () => {
       const trace = createMockTrace({
+        input: '{"content":"no"}',
         metadata: JSON.stringify({
           turn_index: "2",
           policy_confirmation_state: "rejected",
@@ -2026,8 +2027,69 @@ describe("buildTraceUiData", () => {
       expect(result.nodeMap.get("turn-2")?.hasPolicyConfirmation).toBe(true);
     });
 
+    it("marks turns when yes/no reply is only available in trace metadata preview", () => {
+      const trace = createMockTrace({
+        input:
+          '{"content":"two reads are consistent and here is the weekly summary"}',
+        metadata: JSON.stringify({
+          turn_index: "5",
+          text_preview: "no",
+          policy_confirmation_state: "rejected",
+          policy_names: ["UnaryGatePolicy"],
+          policy_protected: "tool=read_file action was blocked by policy",
+        }),
+      });
+      const observations: ObservationWithOptionalMetadata[] = [
+        createMockObservation({
+          id: "turn-5",
+          name: "session.turn.005",
+          startTime: new Date("2024-01-01T00:00:10.000Z"),
+        }),
+        createMockObservation({
+          id: "confirmation-output",
+          name: "session.output.turn_005",
+          startTime: new Date("2024-01-01T00:00:10.100Z"),
+          metadata: "{}",
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      expect(result.nodeMap.get("turn-5")?.hasPolicyConfirmation).toBe(true);
+    });
+
+    it("does not mark turns for accepted/rejected states without a yes/no reply", () => {
+      const trace = createMockTrace({
+        input: '{"content":"proceed with the deletion"}',
+        metadata: JSON.stringify({
+          turn_index: "2",
+          policy_confirmation_state: "rejected",
+          policy_names: ["P2"],
+          raw_output_content:
+            '{"content":"tool=exec action was blocked by policy"}',
+        }),
+      });
+      const observations: ObservationWithOptionalMetadata[] = [
+        createMockObservation({
+          id: "turn-2",
+          name: "session.turn.002",
+          startTime: new Date("2024-01-01T00:00:05.000Z"),
+        }),
+        createMockObservation({
+          id: "confirmation-output",
+          name: "session.output.turn_002",
+          startTime: new Date("2024-01-01T00:00:05.100Z"),
+          metadata: "{}",
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      expect(result.nodeMap.get("turn-2")?.hasPolicyConfirmation).toBe(false);
+    });
+
     it("does not mark turns when accepted/rejected state has no policy_names", () => {
-      const trace = createMockTrace();
+      const trace = createMockTrace({ input: "yes" });
       const observations: ObservationWithOptionalMetadata[] = [
         createMockObservation({
           id: "turn-1",
@@ -2077,6 +2139,35 @@ describe("buildTraceUiData", () => {
       const result = buildTraceUiData(trace, observations);
 
       expect(result.nodeMap.get("turn-2")?.hasPolicyConfirmation).toBe(false);
+    });
+
+    it("stores warning as effective level for inactive delete-policy hits", () => {
+      const trace = createMockTrace({
+        metadata: JSON.stringify({
+          turn_index: 3,
+          inactivate_error_type:
+            "DeletePolicy(inactive) hit: tool=exec | detail=delete-like pattern",
+        }),
+      });
+      const observations: ObservationWithOptionalMetadata[] = [
+        createMockObservation({
+          id: "turn-3-output",
+          name: "session.output.turn_3",
+          level: "ERROR",
+          statusMessage: "normal response",
+          startTime: new Date("2024-01-01T00:00:03.000Z"),
+          metadata: JSON.stringify({
+            turn_index: 3,
+          }),
+        }),
+      ];
+
+      const result = buildTraceUiData(trace, observations);
+
+      expect(result.nodeMap.get("turn-3-output")?.level).toBe("ERROR");
+      expect(result.nodeMap.get("turn-3-output")?.effectiveLevel).toBe(
+        "WARNING",
+      );
     });
   });
 });

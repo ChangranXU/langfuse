@@ -241,3 +241,77 @@ export function derivePolicyNamesFromMetadata(metadata: unknown): string[] {
 
   return Array.from(policyNames);
 }
+
+export function getInactivateErrorTypeFromMetadata(
+  metadata: unknown,
+): string | null {
+  const record = getMetadataRecord(metadata);
+
+  if (typeof record.inactivate_error_type === "string") {
+    const trimmed = record.inactivate_error_type.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+
+  const normalizedFromArray = parseStringArray(record.inactivate_error_type)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  if (normalizedFromArray.length > 0) {
+    return normalizedFromArray.join("\n");
+  }
+
+  return null;
+}
+
+export function getRelevantInactivateErrorType(params: {
+  observationMetadata: unknown;
+  traceMetadata?: unknown;
+  observationName?: string | null;
+  statusMessage?: string | null;
+}): string | null {
+  return getInactivateErrorTypeFromMetadata(
+    mergeRelevantPolicyMetadata(params),
+  );
+}
+
+export function getInactivateErrorTypeDisplayLabel(
+  inactivateErrorType: string | null | undefined,
+): string | null {
+  if (typeof inactivateErrorType !== "string") return null;
+  const firstLine = inactivateErrorType
+    .replace(/\r\n/g, "\n")
+    .split("\n")[0]
+    ?.trim();
+  if (!firstLine) return null;
+
+  const hitMatch = /^(.+?)\s+hit:/i.exec(firstLine);
+  if (hitMatch?.[1]) {
+    return hitMatch[1].trim();
+  }
+
+  const compact = firstLine.split("|")[0]?.trim();
+  return compact || firstLine;
+}
+
+export function getGovernanceDisplayLevel(params: {
+  level: string | null | undefined;
+  observationMetadata: unknown;
+  traceMetadata?: unknown;
+  observationName?: string | null;
+  statusMessage?: string | null;
+}): string | null {
+  if (params.level === "POLICY_VIOLATION") {
+    return "POLICY_VIOLATION";
+  }
+
+  const inactivateErrorType = getRelevantInactivateErrorType({
+    observationMetadata: params.observationMetadata,
+    traceMetadata: params.traceMetadata,
+    observationName: params.observationName,
+    statusMessage: params.statusMessage,
+  });
+  if (inactivateErrorType && params.level === "ERROR") {
+    return "WARNING";
+  }
+
+  return params.level ?? null;
+}

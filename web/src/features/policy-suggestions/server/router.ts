@@ -38,6 +38,7 @@ import {
   parseStringArray,
   parseStringRecord,
 } from "@/src/features/governance/utils/policyMetadata";
+import { getHumanPolicyConfirmationState } from "@/src/features/governance/utils/policyConfirmation";
 import {
   PolicySuggestionGenerateOutputSchema,
   PolicySuggestionModelSchema,
@@ -160,6 +161,26 @@ function extractObservationPrompt(observation: Observation): string | null {
   if (input == null) return null;
   const raw = safeStringify(input).trim();
   return raw ? truncateString(raw, MAX_IO_CHARS) : null;
+}
+
+function getObservationHumanConfirmationState(params: {
+  observation: Observation;
+  traceInput?: unknown;
+  traceMetadata?: unknown;
+}) {
+  const metadata = mergeRelevantPolicyMetadata({
+    observationMetadata: params.observation.metadata,
+    traceMetadata: params.traceMetadata,
+    observationName: params.observation.name,
+    statusMessage: params.observation.statusMessage,
+  });
+
+  return getHumanPolicyConfirmationState({
+    metadata,
+    observationInput: params.observation.input,
+    traceInput: params.traceInput,
+    traceMetadata: params.traceMetadata,
+  });
 }
 
 function isPolicyViolationObservation(params: {
@@ -382,7 +403,7 @@ export async function getRejectedTurnDetails(params: {
     filters: [
       ...mapLegacyUiTableFilterToView("observations", params.globalFilterState),
       {
-        column: "policyConfirmationState",
+        column: "humanPolicyConfirmationState",
         operator: "=",
         value: "rejected",
         type: "string",
@@ -395,7 +416,12 @@ export async function getRejectedTurnDetails(params: {
     chartConfig: { type: "table", row_limit: 500 },
   };
 
-  const rows = await executeQuery(params.projectId, query, "v1", false);
+  const rows = await executeQuery(
+    params.projectId,
+    query,
+    params.version,
+    false,
+  );
 
   const deduped = new Map<string, RejectedTurnDetail>();
   for (const row of rows) {
@@ -437,6 +463,31 @@ export function buildSampledTurnContext(params: {
   if (!trace) return null;
   const rawTrace = trace as unknown as Record<string, unknown>;
   const traceMetadata = getMetadataRecord(rawTrace.metadata);
+  const acceptedConfirmationTurnIndices = new Set(
+    observations
+      .flatMap((observation) => {
+        const humanConfirmationState = getObservationHumanConfirmationState({
+          observation,
+          traceInput: rawTrace.input,
+          traceMetadata,
+        });
+        if (humanConfirmationState !== "accepted") {
+          return [];
+        }
+
+        const turnIndex = getObservationTurnIndex({
+          metadata: mergeRelevantPolicyMetadata({
+            observationMetadata: observation.metadata,
+            traceMetadata,
+            observationName: observation.name,
+            statusMessage: observation.statusMessage,
+          }),
+          observationName: observation.name,
+        });
+        return turnIndex != null ? [turnIndex] : [];
+      })
+      .filter((turnIndex): turnIndex is number => turnIndex != null),
+  );
 
   const policyViolationTurnIndices = Array.from(
     new Set(
@@ -455,7 +506,11 @@ export function buildSampledTurnContext(params: {
             observationName: observation.name,
           }),
         )
-        .filter((turnIndex): turnIndex is number => turnIndex != null),
+        .filter(
+          (turnIndex): turnIndex is number =>
+            turnIndex != null &&
+            !acceptedConfirmationTurnIndices.has(turnIndex),
+        ),
     ),
   ).sort((a, b) => a - b);
 

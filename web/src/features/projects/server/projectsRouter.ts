@@ -60,6 +60,9 @@ const ProjectPolicyGovernanceSettingsSchema = z.object({
   kernelPolicyPathAbsolute: z.string().trim().min(1).nullable().default(null),
   lastPolicyUpdatedAt: z.string().trim().min(1).nullable().default(null),
   beginnerSummaries: z.record(z.string(), z.string()).default({}),
+  policyConfirmationResetTimestamps: z
+    .record(z.string(), z.string().trim().min(1))
+    .default({}),
 });
 type ProjectPolicyGovernanceSettings = z.infer<
   typeof ProjectPolicyGovernanceSettingsSchema
@@ -78,6 +81,7 @@ const DEFAULT_POLICY_GOVERNANCE_SETTINGS: ProjectPolicyGovernanceSettings = {
   kernelPolicyPathAbsolute: null,
   lastPolicyUpdatedAt: null,
   beginnerSummaries: {},
+  policyConfirmationResetTimestamps: {},
 };
 
 function parseAutoErrorAnalysisSettings(
@@ -367,6 +371,9 @@ export const projectsRouter = createTRPCRouter({
         beginnerSummaries: parsePolicyGovernanceSettings(
           existingProject.metadata,
         ).beginnerSummaries,
+        policyConfirmationResetTimestamps: parsePolicyGovernanceSettings(
+          existingProject.metadata,
+        ).policyConfirmationResetTimestamps,
       };
       const mergedMetadata = mergePolicyGovernanceSettingsIntoMetadata({
         metadata: existingProject.metadata,
@@ -390,6 +397,87 @@ export const projectsRouter = createTRPCRouter({
         action: "update",
         after: {
           policyGovernance: settings,
+        },
+      });
+
+      return settings;
+    }),
+
+  resetPolicyConfirmationStats: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        policyNames: z.array(z.string().trim().min(1)).min(1),
+      }),
+    )
+    .output(ProjectPolicyGovernanceSettingsSchema)
+    .mutation(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "project:update",
+      });
+
+      const existingProject = await ctx.prisma.project.findUnique({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        select: {
+          metadata: true,
+        },
+      });
+
+      if (!existingProject) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
+      const existingSettings = parsePolicyGovernanceSettings(
+        existingProject.metadata,
+      );
+      const resetAt = new Date().toISOString();
+      const policyNames = Array.from(
+        new Set(input.policyNames.map((name) => name.trim()).filter(Boolean)),
+      );
+
+      const settings: ProjectPolicyGovernanceSettings = {
+        ...existingSettings,
+        policyConfirmationResetTimestamps: {
+          ...existingSettings.policyConfirmationResetTimestamps,
+          ...Object.fromEntries(
+            policyNames.map((policyName) => [policyName, resetAt] as const),
+          ),
+        },
+      };
+      const mergedMetadata = mergePolicyGovernanceSettingsIntoMetadata({
+        metadata: existingProject.metadata,
+        settings,
+      });
+
+      await ctx.prisma.project.update({
+        where: {
+          id: input.projectId,
+          orgId: ctx.session.orgId,
+        },
+        data: {
+          metadata: mergedMetadata as any,
+        },
+      });
+
+      await auditLog({
+        session: ctx.session,
+        resourceType: "project",
+        resourceId: input.projectId,
+        action: "update",
+        after: {
+          policyGovernance: settings,
+          resetPolicyConfirmationStats: {
+            policyNames,
+            resetAt,
+          },
         },
       });
 

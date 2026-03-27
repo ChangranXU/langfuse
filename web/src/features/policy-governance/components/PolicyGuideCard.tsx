@@ -250,6 +250,7 @@ export function PolicyGuideCard(props: {
   settingsBySection: Record<string, unknown>;
   highlightThresholdPct: number;
   confirmationStats?: PolicyStatsRow;
+  lastConfirmationStatsResetAt?: string | null;
   guideInsight?: PolicyGuideInsight;
   hasUpdateAccess: boolean;
   sectionDrafts: Record<string, string>;
@@ -260,6 +261,8 @@ export function PolicyGuideCard(props: {
   onSectionChange: (section: string, value: string) => void;
   onGenerateProposal: () => void;
   isGeneratingProposal: boolean;
+  onResetConfirmationStats: () => void;
+  isResettingConfirmationStats: boolean;
   hasSectionErrors: boolean;
 }) {
   const { t } = useLanguage();
@@ -271,6 +274,7 @@ export function PolicyGuideCard(props: {
     settingsBySection,
     highlightThresholdPct,
     confirmationStats,
+    lastConfirmationStatsResetAt,
     guideInsight,
     hasUpdateAccess,
     sectionDrafts,
@@ -281,6 +285,8 @@ export function PolicyGuideCard(props: {
     onSectionChange,
     onGenerateProposal,
     isGeneratingProposal,
+    onResetConfirmationStats,
+    isResettingConfirmationStats,
     hasSectionErrors,
   } = props;
   const [isAdvancedEditorOpen, setIsAdvancedEditorOpen] = useState(false);
@@ -308,6 +314,7 @@ export function PolicyGuideCard(props: {
   );
   const shouldHighlightByStats =
     (confirmationStats?.rejectedRate ?? 0) * 100 >= highlightThresholdPct;
+  const hasConfirmationStats = (confirmationStats?.totalCount ?? 0) > 0;
   const viewViolationsHref = `/project/${projectId}/analysis?analysisLevel=policy_violation&policyType=${encodeURIComponent(entry.name)}`;
   const guideDescription =
     POLICY_PURPOSES[entry.name] ??
@@ -554,6 +561,31 @@ export function PolicyGuideCard(props: {
                   {t("policyCard.noConfirmationData")}
                 </div>
               )}
+              <div className="mt-3 space-y-2">
+                <div className="rounded-md border bg-background px-2.5 py-2 text-xs text-muted-foreground">
+                  {t("policyCard.lastStatsReset")}{" "}
+                  {formatTimestamp(lastConfirmationStatsResetAt ?? null) ??
+                    t("policyCard.noStatsReset")}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  loading={isResettingConfirmationStats}
+                  disabled={!hasUpdateAccess || !hasConfirmationStats}
+                  onClick={onResetConfirmationStats}
+                  className={cn(
+                    "border-destructive/30 text-destructive transition-colors duration-150",
+                    "hover:border-destructive hover:bg-destructive hover:text-destructive-foreground",
+                    "focus-visible:ring-destructive/40",
+                    "disabled:border-border disabled:text-muted-foreground disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
+                  )}
+                >
+                  {isResettingConfirmationStats
+                    ? t("policyCard.resettingConfirmationStats")
+                    : t("policyCard.resetConfirmationStats")}
+                </Button>
+              </div>
             </div>
 
             <div className="rounded-lg border bg-muted/20 p-3">

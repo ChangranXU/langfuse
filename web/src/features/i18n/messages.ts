@@ -421,6 +421,7 @@ export const messages = {
     "policy.saveAndLeave": "Save and leave",
     "policy.pathSaved": "Policy path saved",
     "policy.filesSaved": "Policy files saved",
+    "policy.confirmationStatsReset": "Policy confirmation stats reset.",
     "policy.invalidJson": "Invalid JSON",
     "policy.fixInvalidBeforeGenerate":
       "Fix invalid JSON section drafts before generating a proposal.",
@@ -459,6 +460,10 @@ export const messages = {
     "policyCard.highlightThresholdSuffix": "rejected.",
     "policyCard.noConfirmationData":
       "No confirmation data found for this policy in the selected range.",
+    "policyCard.lastStatsReset": "Last stats reset:",
+    "policyCard.noStatsReset": "No manual reset yet",
+    "policyCard.resetConfirmationStats": "Reset confirmation stats",
+    "policyCard.resettingConfirmationStats": "Resetting...",
     "policyCard.policyEvidence": "Policy evidence",
     "policyCard.recentViolations": "Recent violations",
     "policyCard.matchedPastCases": "Matched past cases",
@@ -933,6 +938,7 @@ export const messages = {
     "policy.saveAndLeave": "保存并离开",
     "policy.pathSaved": "策略路径已保存",
     "policy.filesSaved": "策略文件已保存",
+    "policy.confirmationStatsReset": "策略确认统计已重置。",
     "policy.invalidJson": "无效 JSON",
     "policy.fixInvalidBeforeGenerate":
       "请先修复无效 JSON section 草稿，再生成提案。",
@@ -966,6 +972,10 @@ export const messages = {
     "policyCard.highlightThresholdPrefix": "首页高亮阈值：",
     "policyCard.highlightThresholdSuffix": "拒绝。",
     "policyCard.noConfirmationData": "所选范围内未找到该策略确认数据。",
+    "policyCard.lastStatsReset": "上次统计重置：",
+    "policyCard.noStatsReset": "尚未手动重置",
+    "policyCard.resetConfirmationStats": "重置确认统计",
+    "policyCard.resettingConfirmationStats": "重置中...",
     "policyCard.policyEvidence": "策略证据",
     "policyCard.recentViolations": "近期违规",
     "policyCard.matchedPastCases": "匹配历史案例",

@@ -13,6 +13,54 @@ import { InvalidRequestError } from "@langfuse/shared";
 const buildTurnIndexFromObservationNameSql = (observationAlias: string) =>
   `nullIf(extract(${observationAlias}.name, 'turn[_\\\\.](\\\\d+)'), '')`;
 
+const buildRawPolicyConfirmationStateSql = (
+  observationAlias: string,
+  traceAlias: string,
+) => `coalesce(
+  nullIf(${observationAlias}.metadata['policy_confirmation_state'], ''),
+  if(
+    ${buildTracePolicyFallbackMatchSql(observationAlias, traceAlias)}
+    AND notEmpty(ifNull(${traceAlias}.metadata['policy_confirmation_state'], '')),
+    ${traceAlias}.metadata['policy_confirmation_state'],
+    CAST(NULL AS Nullable(String))
+  )
+)`;
+
+const buildHumanPolicyConfirmationReplyMatchSql = (valueSql: string) => `(
+  match(lowerUTF8(ifNull(${valueSql}, '')), '^\\s*"?(yes|no)"?\\s*$')
+  OR match(
+    lowerUTF8(ifNull(${valueSql}, '')),
+    '"(?:content|parsed_content|raw_content)"\\s*:\\s*"\\s*(yes|no)\\s*"'
+  )
+  OR match(
+    lowerUTF8(ifNull(${valueSql}, '')),
+    '\\\\\"(?:content|parsed_content|raw_content)\\\\\"\\s*:\\s*\\\\\"\\s*(yes|no)\\s*\\\\\"'
+  )
+)`;
+
+const buildHumanPolicyConfirmationStateSql = (
+  observationAlias: string,
+  traceAlias: string,
+) => {
+  const rawStateSql = buildRawPolicyConfirmationStateSql(
+    observationAlias,
+    traceAlias,
+  );
+  return `if(
+    (${buildHumanPolicyConfirmationReplyMatchSql(`${observationAlias}.input`)}
+      OR ${buildHumanPolicyConfirmationReplyMatchSql(`${traceAlias}.input`)}
+      OR ${buildHumanPolicyConfirmationReplyMatchSql(`${observationAlias}.metadata['text_preview']`)}
+      OR ${buildHumanPolicyConfirmationReplyMatchSql(`${traceAlias}.metadata['text_preview']`)}
+      OR ${buildHumanPolicyConfirmationReplyMatchSql(`${observationAlias}.metadata['input_preview']`)}
+      OR ${buildHumanPolicyConfirmationReplyMatchSql(`${traceAlias}.metadata['input_preview']`)}
+      OR ${buildHumanPolicyConfirmationReplyMatchSql(`${observationAlias}.metadata['latest_user_preview']`)}
+      OR ${buildHumanPolicyConfirmationReplyMatchSql(`${traceAlias}.metadata['latest_user_preview']`)})
+    AND (${rawStateSql}) IN ('accepted', 'rejected'),
+    ${rawStateSql},
+    CAST(NULL AS Nullable(String))
+  )`;
+};
+
 const buildTracePolicyFallbackMatchSql = (
   observationAlias: string,
   traceAlias: string,
@@ -354,20 +402,20 @@ export const observationsView: ViewDeclarationType = {
         "Turn index extracted from observation metadata for policy confirmation deduplication.",
     },
     policyConfirmationState: {
-      sql: `coalesce(
-        nullIf(observations.metadata['policy_confirmation_state'], ''),
-        if(
-          ${buildTracePolicyFallbackMatchSql("observations", "traces")}
-          AND notEmpty(ifNull(traces.metadata['policy_confirmation_state'], '')),
-          traces.metadata['policy_confirmation_state'],
-          CAST(NULL AS Nullable(String))
-        )
-      )`,
+      sql: buildRawPolicyConfirmationStateSql("observations", "traces"),
       alias: "policyConfirmationState",
       type: "string",
       relationTable: "traces",
       description:
         "Policy confirmation state derived from observation metadata with trace-level fallback for confirmation output nodes.",
+    },
+    humanPolicyConfirmationState: {
+      sql: buildHumanPolicyConfirmationStateSql("observations", "traces"),
+      alias: "humanPolicyConfirmationState",
+      type: "string",
+      relationTable: "traces",
+      description:
+        "Human confirmation state derived from accepted/rejected policy confirmations with a compact yes/no reply signal.",
     },
     traceName: {
       sql: "traces.name",
@@ -1073,20 +1121,26 @@ export const eventsObservationsView: ViewDeclarationType = {
         "Turn index extracted from observation metadata for policy confirmation deduplication.",
     },
     policyConfirmationState: {
-      sql: `coalesce(
-        nullIf(events_observations.metadata['policy_confirmation_state'], ''),
-        if(
-          ${buildTracePolicyFallbackMatchSql("events_observations", "events_traces")}
-          AND notEmpty(ifNull(events_traces.metadata['policy_confirmation_state'], '')),
-          events_traces.metadata['policy_confirmation_state'],
-          CAST(NULL AS Nullable(String))
-        )
-      )`,
+      sql: buildRawPolicyConfirmationStateSql(
+        "events_observations",
+        "events_traces",
+      ),
       alias: "policyConfirmationState",
       type: "string",
       relationTable: "events_traces",
       description:
         "Policy confirmation state derived from observation metadata with trace-level fallback for confirmation output nodes.",
+    },
+    humanPolicyConfirmationState: {
+      sql: buildHumanPolicyConfirmationStateSql(
+        "events_observations",
+        "events_traces",
+      ),
+      alias: "humanPolicyConfirmationState",
+      type: "string",
+      relationTable: "events_traces",
+      description:
+        "Human confirmation state derived from accepted/rejected policy confirmations with a compact yes/no reply signal.",
     },
     environment: {
       sql: "nullIf(events_observations.environment, '')",

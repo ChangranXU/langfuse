@@ -105,7 +105,7 @@ async function getPolicyConfirmationTurnIndexesForTrace(params: {
             type: "string",
           },
           {
-            column: "policyConfirmationState",
+            column: "humanPolicyConfirmationState",
             operator: "=",
             value: state,
             type: "string",
