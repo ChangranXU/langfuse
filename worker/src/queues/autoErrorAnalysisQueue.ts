@@ -321,12 +321,14 @@ function inferErrorTypeKeyFromObservation(params: {
   input: unknown;
   output: unknown;
   metadata: unknown;
+  traceMetadata?: unknown;
 }): ErrorTypeKey {
   const combined = [
     params.statusMessage ?? "",
     safeStringify(params.input),
     safeStringify(params.output),
     safeStringify(params.metadata),
+    safeStringify(params.traceMetadata),
   ]
     .filter((v) => typeof v === "string" && v.trim().length > 0)
     .join("\n");
@@ -691,6 +693,16 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
     return;
   }
 
+  const trace = await prisma.legacyPrismaTrace.findFirst({
+    where: {
+      id: traceId,
+      projectId,
+    },
+    select: {
+      metadata: true,
+    },
+  });
+
   const model = AutoErrorAnalysisModelSchema.catch("gpt-5.2").parse(
     job.data.payload.model ?? settings.model,
   );
@@ -767,6 +779,10 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
 
   const userPayload = {
     issue,
+    traceMetadata:
+      trace?.metadata == null
+        ? null
+        : truncateString(safeStringify(trace.metadata), 5000),
     currentObservation: {
       id: current.id,
       name: current.name,
@@ -798,7 +814,7 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       })),
     },
     instruction:
-      'Analyze the ERROR/WARNING and return ONLY JSON matching the schema (rootCause, resolveNow, preventionNextCall, relevantObservations, contextSufficient, confidence). Keep it concise: rootCause max 2 sentences; resolveNow max 3 items; preventionNextCall max 5 items. Treat policy constraints as required safety/privacy/compliance protections.\n\nWhen the failure is access/blocked/forbidden/rate-limit related (e.g., HTTP 401/403/429 or similar), explicitly name what was blocked and by what: include the domain/URL/host (or best identifier available) and the tool/provider/adapter if present in issue/statusMessage/input/output/metadata. Do not invent missing identifiers; if not present, write "unknown".\n\nIn resolveNow and preventionNextCall, include only prompt-level actions that can be applied in the next LLM call (edits to system/developer/user prompt text, format constraints, tool-use instructions, or context selection). Avoid generic advice that omits identifiers when identifiers are available. Exclude implementation-heavy or non-prompt actions (code/config changes, retries/backoff/circuit-breaker logic, scheduler or long-running behavior changes, model/provider/account changes). Never suggest bypassing, weakening, or evading policy controls. If no valid prompt-only action exists, return an empty list for that field.',
+      'Analyze the ERROR/WARNING and return ONLY JSON matching the schema (rootCause, resolveNow, preventionNextCall, relevantObservations, contextSufficient, confidence). Keep it concise: rootCause max 2 sentences; resolveNow max 3 items; preventionNextCall max 5 items. Treat policy constraints as required safety/privacy/compliance protections.\n\nPay close attention to metadata on both the trace and the observation. Explicit exception/error class names in metadata or status text (for example AttributeError, TypeError, KeyError, ValueError) are strong evidence for the root cause and should be reflected in the explanation.\n\nWhen the failure is access/blocked/forbidden/rate-limit related (e.g., HTTP 401/403/429 or similar), explicitly name what was blocked and by what: include the domain/URL/host (or best identifier available) and the tool/provider/adapter if present in issue/statusMessage/input/output/metadata. Do not invent missing identifiers; if not present, write "unknown".\n\nIn resolveNow and preventionNextCall, include only prompt-level actions that can be applied in the next LLM call (edits to system/developer/user prompt text, format constraints, tool-use instructions, or context selection). Avoid generic advice that omits identifiers when identifiers are available. Exclude implementation-heavy or non-prompt actions (code/config changes, retries/backoff/circuit-breaker logic, scheduler or long-running behavior changes, model/provider/account changes). Never suggest bypassing, weakening, or evading policy controls. If no valid prompt-only action exists, return an empty list for that field.',
   };
 
   const messages: ChatMessage[] = [
@@ -806,7 +822,7 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       type: ChatMessageType.System,
       role: ChatMessageRole.System,
       content:
-        "You are an expert at analyzing LLM pipeline ERROR/WARNING events. Policy gates are intentional safeguards for security, privacy, and compliance. Keep output concise and prevention-oriented.\n\nIf the error indicates blocked/forbidden/unauthorized/rate-limited access, explicitly identify (from the provided context) what was blocked (domain/URL/host) and which tool/provider/adapter was involved; do not fabricate identifiers.\n\nRecommend only prompt-level actions that are directly applicable in the next LLM call; reject implementation-heavy proposals such as retries/backoff/circuit breakers, system settings, infrastructure/config changes, or persistent behavior changes. Do not provide workaround or bypass suggestions. Return ONLY JSON matching the schema.",
+        "You are an expert at analyzing LLM pipeline ERROR/WARNING events. Policy gates are intentional safeguards for security, privacy, and compliance. Keep output concise and prevention-oriented.\n\nUse metadata from both the trace and the observation as first-class evidence. If the payload includes an explicit exception/error class name (for example AttributeError, TypeError, KeyError, ValueError), reflect it in the root cause rather than ignoring it.\n\nIf the error indicates blocked/forbidden/unauthorized/rate-limited access, explicitly identify (from the provided context) what was blocked (domain/URL/host) and which tool/provider/adapter was involved; do not fabricate identifiers.\n\nRecommend only prompt-level actions that are directly applicable in the next LLM call; reject implementation-heavy proposals such as retries/backoff/circuit breakers, system settings, infrastructure/config changes, or persistent behavior changes. Do not provide workaround or bypass suggestions. Return ONLY JSON matching the schema.",
     },
     {
       type: ChatMessageType.User,
@@ -935,7 +951,7 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
         type: ChatMessageType.System,
         role: ChatMessageRole.System,
         content:
-          "You are an expert at classifying error/warning types in LLM traces. Return ONLY the structured JSON object that matches the provided schema.\n\nGuidance:\n- If the observation is a TOOL (or the name indicates a tool call) and it failed with file/path I/O errors (e.g. file not found, permission denied), classify as tool_execution_error.\n- Only use model_not_found when the missing thing is explicitly a model/deployment (e.g. provider message about an unavailable model, or HTTP 404 for a model/deployment endpoint). Do NOT treat generic 'not found' as model_not_found.",
+          "You are an expert at classifying error/warning types in LLM traces. Return ONLY the structured JSON object that matches the provided schema.\n\nGuidance:\n- If the observation is a TOOL (or the name indicates a tool call) and it failed with file/path I/O errors (e.g. file not found, permission denied), classify as tool_execution_error.\n- Only use model_not_found when the missing thing is explicitly a model/deployment (e.g. provider message about an unavailable model, or HTTP 404 for a model/deployment endpoint). Do NOT treat generic 'not found' as model_not_found.\n- If metadata or status text contains an explicit exception/error class name (for example AttributeError, TypeError, KeyError, ValueError) and no catalog entry fits well, prefer selectedType=OTHER and use that exception class as otherTypeLabel.",
       },
       {
         type: ChatMessageType.User,
@@ -944,9 +960,13 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
           issue,
           rootCause: validated.data.rootCause,
           observation: observationPreview,
+          traceMetadata:
+            trace?.metadata == null
+              ? null
+              : truncateString(safeStringify(trace.metadata), 4_000),
           typeCatalog,
           instruction:
-            "Classify the error/warning type. Choose from the catalog. If none match well, set selectedType=OTHER and propose a short label + description. Be careful with 'not found': file/path not found -> tool_execution_error; only model/deployment not found -> model_not_found.",
+            "Classify the error/warning type. Choose from the catalog. If none match well, set selectedType=OTHER and propose a short label + description. If the payload includes an explicit exception/error class name (for example AttributeError, TypeError, KeyError, ValueError) and no catalog entry fits well, prefer selectedType=OTHER and use that exception class as otherTypeLabel with a concise description. Do not fall back to unknown when a concrete exception class is available. Be careful with 'not found': file/path not found -> tool_execution_error; only model/deployment not found -> model_not_found.",
         }),
       },
     ];
@@ -1118,6 +1138,7 @@ export const autoErrorAnalysisQueueProcessor: Processor = async (
       input: current.input,
       output: current.output,
       metadata: current.metadata,
+      traceMetadata: trace?.metadata,
     });
     classificationFields = {
       errorType: inferred,

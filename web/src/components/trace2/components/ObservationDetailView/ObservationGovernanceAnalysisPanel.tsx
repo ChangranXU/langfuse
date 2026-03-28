@@ -82,20 +82,6 @@ export function ObservationGovernanceAnalysisPanel(props: {
     effectiveLevel === "ERROR" ||
     effectiveLevel === "WARNING" ||
     isPolicyViolation;
-
-  const canQueryGovernance = props.hasProjectAccess && isGovernanceLevel;
-  const errorAnalysisQuery = api.errorAnalysis.get.useQuery(
-    {
-      projectId: props.projectId,
-      traceId: props.traceId,
-      observationId: props.observationId,
-    },
-    {
-      enabled: canQueryGovernance,
-      refetchOnWindowFocus: false,
-    },
-  );
-
   const policyMetadata = useMemo(
     () =>
       mergeRelevantPolicyMetadata({
@@ -186,6 +172,21 @@ export function ObservationGovernanceAnalysisPanel(props: {
         );
   const shouldShowInactivePolicyWarning =
     Boolean(inactivateErrorType) && !isPolicyViolation;
+  const canQueryGovernance =
+    props.hasProjectAccess &&
+    isGovernanceLevel &&
+    !shouldShowInactivePolicyWarning;
+  const errorAnalysisQuery = api.errorAnalysis.get.useQuery(
+    {
+      projectId: props.projectId,
+      traceId: props.traceId,
+      observationId: props.observationId,
+    },
+    {
+      enabled: canQueryGovernance,
+      refetchOnWindowFocus: false,
+    },
+  );
 
   const rawOutputContent = statusMessage ?? null;
   const policyActions = useMemo(
@@ -310,224 +311,232 @@ export function ObservationGovernanceAnalysisPanel(props: {
             </div>
           ) : null}
 
-          <div>
-            <div className="mb-1 min-w-0 text-xs font-medium text-muted-foreground">
-              {isPolicyViolation
-                ? localize(language, "Policy Details", "策略详情")
-                : localize(language, "Output", "输出")}
-            </div>
-            {isPolicyViolation ? (
-              <div className="divide-y rounded-md border bg-background text-xs">
-                <div className="space-y-2 p-3">
-                  <div className="text-sm font-semibold text-foreground">
-                    {localize(language, "Policy Protected", "策略保护")}
-                  </div>
-                  {normalizedPolicyProtectedLines.length > 0 ? (
-                    <div className="mt-1 space-y-1">
-                      {normalizedPolicyProtectedLines.map((line, idx) => (
-                        <div
-                          key={`policy-protected-line-${idx}`}
-                          className="whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground"
-                        >
-                          {line}
-                        </div>
-                      ))}
+          {isPolicyViolation || !shouldShowInactivePolicyWarning ? (
+            <div>
+              <div className="mb-1 min-w-0 text-xs font-medium text-muted-foreground">
+                {isPolicyViolation
+                  ? localize(language, "Policy Details", "策略详情")
+                  : localize(language, "Output", "输出")}
+              </div>
+              {isPolicyViolation ? (
+                <div className="divide-y rounded-md border bg-background text-xs">
+                  <div className="space-y-2 p-3">
+                    <div className="text-sm font-semibold text-foreground">
+                      {localize(language, "Policy Protected", "策略保护")}
                     </div>
-                  ) : (
-                    <div className="mt-1 text-muted-foreground">
-                      {localize(language, "Not available", "不可用")}
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2 p-3">
-                  <div className="text-sm font-semibold text-foreground">
-                    {localize(language, "Policy Names", "策略名称")}
-                  </div>
-                  {policyNameList.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {policyNameList.map((policyName) => (
-                        <Badge
-                          key={`policy-name-${policyName}`}
-                          variant="warning"
-                        >
-                          {policyName}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-1 text-muted-foreground">
-                      {localize(language, "Not available", "不可用")}
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2 p-3">
-                  <div className="text-sm font-semibold text-foreground">
-                    {localize(language, "Policy Descriptions", "策略说明")}
-                  </div>
-                  <div className="space-y-1 text-muted-foreground">
-                    {policyNameList.length > 0 ? (
-                      policyNameList.map((policyName) => (
-                        <div key={`policy-description-${policyName}`}>
-                          <span className="font-medium text-foreground">
-                            {policyName}:
-                          </span>{" "}
-                          {policyDescriptions[policyName] ??
-                            localize(language, "Not available", "不可用")}
-                        </div>
-                      ))
+                    {normalizedPolicyProtectedLines.length > 0 ? (
+                      <div className="mt-1 space-y-1">
+                        {normalizedPolicyProtectedLines.map((line, idx) => (
+                          <div
+                            key={`policy-protected-line-${idx}`}
+                            className="whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground"
+                          >
+                            {line}
+                          </div>
+                        ))}
+                      </div>
                     ) : (
-                      <div>{localize(language, "Not available", "不可用")}</div>
+                      <div className="mt-1 text-muted-foreground">
+                        {localize(language, "Not available", "不可用")}
+                      </div>
                     )}
                   </div>
-                </div>
-                <div className="space-y-2 p-3">
-                  <div className="text-sm font-semibold text-foreground">
-                    {localize(language, "Policy Sources", "策略来源")}
-                  </div>
-                  <div className="space-y-2 text-muted-foreground">
+                  <div className="space-y-2 p-3">
+                    <div className="text-sm font-semibold text-foreground">
+                      {localize(language, "Policy Names", "策略名称")}
+                    </div>
                     {policyNameList.length > 0 ? (
-                      policyNameList.map((policyName) => (
-                        <div
-                          key={`policy-source-${policyName}`}
-                          className="rounded border bg-muted/20 p-2"
-                        >
-                          <div className="font-medium text-foreground">
+                      <div className="flex flex-wrap gap-1">
+                        {policyNameList.map((policyName) => (
+                          <Badge
+                            key={`policy-name-${policyName}`}
+                            variant="warning"
+                          >
                             {policyName}
-                          </div>
-                          <div className="mt-1 whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
-                            {policySources[policyName] ??
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-muted-foreground">
+                        {localize(language, "Not available", "不可用")}
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2 p-3">
+                    <div className="text-sm font-semibold text-foreground">
+                      {localize(language, "Policy Descriptions", "策略说明")}
+                    </div>
+                    <div className="space-y-1 text-muted-foreground">
+                      {policyNameList.length > 0 ? (
+                        policyNameList.map((policyName) => (
+                          <div key={`policy-description-${policyName}`}>
+                            <span className="font-medium text-foreground">
+                              {policyName}:
+                            </span>{" "}
+                            {policyDescriptions[policyName] ??
                               localize(language, "Not available", "不可用")}
                           </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div>{localize(language, "Not available", "不可用")}</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            {!isPolicyViolation && rawOutputContent ? (
-              <div className="rounded-md border bg-background">
-                <div
-                  className={`whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs text-muted-foreground ${
-                    isOutputExpanded ? "block" : "line-clamp-6"
-                  }`}
-                  onClick={() => {
-                    if (!isOutputExpanded && canExpandOutput) {
-                      setIsOutputExpanded(true);
-                    }
-                  }}
-                >
-                  {rawOutputContent}
-                </div>
-                {canExpandOutput ? (
-                  <div className="flex justify-center px-2 pb-2">
-                    <Button
-                      variant="secondary"
-                      size="icon-xs"
-                      onClick={() => setIsOutputExpanded((prev) => !prev)}
-                      title={
-                        isOutputExpanded
-                          ? localize(language, "Collapse", "收起")
-                          : localize(language, "Expand", "展开")
-                      }
-                    >
-                      {isOutputExpanded ? (
-                        <ChevronUp className="h-3 w-3" />
+                        ))
                       ) : (
-                        <ChevronDown className="h-3 w-3" />
+                        <div>
+                          {localize(language, "Not available", "不可用")}
+                        </div>
                       )}
-                    </Button>
+                    </div>
                   </div>
-                ) : null}
-              </div>
-            ) : !isPolicyViolation ? (
+                  <div className="space-y-2 p-3">
+                    <div className="text-sm font-semibold text-foreground">
+                      {localize(language, "Policy Sources", "策略来源")}
+                    </div>
+                    <div className="space-y-2 text-muted-foreground">
+                      {policyNameList.length > 0 ? (
+                        policyNameList.map((policyName) => (
+                          <div
+                            key={`policy-source-${policyName}`}
+                            className="rounded border bg-muted/20 p-2"
+                          >
+                            <div className="font-medium text-foreground">
+                              {policyName}
+                            </div>
+                            <div className="mt-1 whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
+                              {policySources[policyName] ??
+                                localize(language, "Not available", "不可用")}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div>
+                          {localize(language, "Not available", "不可用")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {!isPolicyViolation && rawOutputContent ? (
+                <div className="rounded-md border bg-background">
+                  <div
+                    className={`whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs text-muted-foreground ${
+                      isOutputExpanded ? "block" : "line-clamp-6"
+                    }`}
+                    onClick={() => {
+                      if (!isOutputExpanded && canExpandOutput) {
+                        setIsOutputExpanded(true);
+                      }
+                    }}
+                  >
+                    {rawOutputContent}
+                  </div>
+                  {canExpandOutput ? (
+                    <div className="flex justify-center px-2 pb-2">
+                      <Button
+                        variant="secondary"
+                        size="icon-xs"
+                        onClick={() => setIsOutputExpanded((prev) => !prev)}
+                        title={
+                          isOutputExpanded
+                            ? localize(language, "Collapse", "收起")
+                            : localize(language, "Expand", "展开")
+                        }
+                      >
+                        {isOutputExpanded ? (
+                          <ChevronUp className="h-3 w-3" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3" />
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : !isPolicyViolation ? (
+                <div className="min-w-0 rounded-md border bg-background p-2 text-xs text-muted-foreground">
+                  {localize(
+                    language,
+                    "No status message available.",
+                    "没有可用的状态消息。",
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!shouldShowInactivePolicyWarning ? (
+            !canQueryGovernance ? (
               <div className="min-w-0 rounded-md border bg-background p-2 text-xs text-muted-foreground">
                 {localize(
                   language,
-                  "No status message available.",
-                  "没有可用的状态消息。",
+                  "Governance analysis is available for project members.",
+                  "治理分析仅对项目成员可用。",
                 )}
               </div>
-            ) : null}
-          </div>
-
-          {!canQueryGovernance ? (
-            <div className="min-w-0 rounded-md border bg-background p-2 text-xs text-muted-foreground">
-              {localize(
-                language,
-                "Governance analysis is available for project members.",
-                "治理分析仅对项目成员可用。",
-              )}
-            </div>
-          ) : errorAnalysisQuery.isLoading ? (
-            <div className="min-w-0 rounded-md border bg-background p-2 text-xs text-muted-foreground">
-              {localize(
-                language,
-                "Loading governance analysis...",
-                "正在加载治理分析...",
-              )}
-            </div>
-          ) : errorAnalysisQuery.data ? (
-            <div className="min-w-0">
-              <div className="mb-1 text-xs font-medium text-muted-foreground">
-                {localize(language, "Analysis", "分析")}
+            ) : errorAnalysisQuery.isLoading ? (
+              <div className="min-w-0 rounded-md border bg-background p-2 text-xs text-muted-foreground">
+                {localize(
+                  language,
+                  "Loading governance analysis...",
+                  "正在加载治理分析...",
+                )}
               </div>
-              <div className="min-w-0 rounded-md border bg-background p-2 text-sm">
-                <div className="font-medium">
-                  {localize(language, "Root cause", "根本原因")}
+            ) : errorAnalysisQuery.data ? (
+              <div className="min-w-0">
+                <div className="mb-1 text-xs font-medium text-muted-foreground">
+                  {localize(language, "Analysis", "分析")}
                 </div>
-                <div className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
-                  {errorAnalysisQuery.data.rendered.rootCause}
+                <div className="min-w-0 rounded-md border bg-background p-2 text-sm">
+                  <div className="font-medium">
+                    {localize(language, "Root cause", "根本原因")}
+                  </div>
+                  <div className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
+                    {errorAnalysisQuery.data.rendered.rootCause}
+                  </div>
+
+                  {errorAnalysisQuery.data.rendered.resolveNow.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-xs font-medium">
+                        {localize(language, "Resolve now", "立即处理")}
+                      </div>
+                      <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                        {errorAnalysisQuery.data.rendered.resolveNow.map(
+                          (item, idx) => (
+                            <li
+                              key={`resolve-now-${idx}`}
+                              className="break-words"
+                            >
+                              {item}
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+                  )}
+
+                  {errorAnalysisQuery.data.rendered.preventionNextCall.length >
+                    0 && (
+                    <div className="mt-3">
+                      <div className="text-xs font-medium">
+                        {localize(
+                          language,
+                          "Prevention next call",
+                          "下次调用预防措施",
+                        )}
+                      </div>
+                      <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                        {errorAnalysisQuery.data.rendered.preventionNextCall.map(
+                          (item, idx) => (
+                            <li
+                              key={`prevention-next-call-${idx}`}
+                              className="break-words"
+                            >
+                              {item}
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-
-                {errorAnalysisQuery.data.rendered.resolveNow.length > 0 && (
-                  <div className="mt-3">
-                    <div className="text-xs font-medium">
-                      {localize(language, "Resolve now", "立即处理")}
-                    </div>
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                      {errorAnalysisQuery.data.rendered.resolveNow.map(
-                        (item, idx) => (
-                          <li
-                            key={`resolve-now-${idx}`}
-                            className="break-words"
-                          >
-                            {item}
-                          </li>
-                        ),
-                      )}
-                    </ul>
-                  </div>
-                )}
-
-                {errorAnalysisQuery.data.rendered.preventionNextCall.length >
-                  0 && (
-                  <div className="mt-3">
-                    <div className="text-xs font-medium">
-                      {localize(
-                        language,
-                        "Prevention next call",
-                        "下次调用预防措施",
-                      )}
-                    </div>
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                      {errorAnalysisQuery.data.rendered.preventionNextCall.map(
-                        (item, idx) => (
-                          <li
-                            key={`prevention-next-call-${idx}`}
-                            className="break-words"
-                          >
-                            {item}
-                          </li>
-                        ),
-                      )}
-                    </ul>
-                  </div>
-                )}
               </div>
-            </div>
+            ) : null
           ) : null}
         </div>
       </div>

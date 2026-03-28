@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import type { FilterState } from "@langfuse/shared";
 import {
   UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL,
+  UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL_EN,
   UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE,
 } from "../types";
 
@@ -21,7 +22,9 @@ function isUnclassifiedErrorTypeValue(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   return (
     normalized === UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE.toLowerCase() ||
-    normalized === UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL.toLowerCase()
+    normalized === UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL.toLowerCase() ||
+    normalized === UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL_EN.toLowerCase() ||
+    normalized === "unclassified"
   );
 }
 
@@ -345,12 +348,20 @@ export async function getErrorTypeFilterOptions(params: {
     return [];
   }
 
-  const classified = grouped
-    .filter((g) => g?.errorType)
-    .map((g) => ({
-      value: String(g.errorType),
-      count: Number(g?._count?.errorType ?? g?._count?._all ?? 0),
-    }));
+  const classifiedMap = new Map<string, number>();
+  for (const g of grouped) {
+    const raw = g?.errorType != null ? String(g.errorType).trim() : "";
+    if (!raw || isUnclassifiedErrorTypeValue(raw)) continue;
+    const count = Number(g?._count?.errorType ?? g?._count?._all ?? 0);
+    classifiedMap.set(raw, (classifiedMap.get(raw) ?? 0) + count);
+  }
+
+  const classified = Array.from(classifiedMap.entries()).map(
+    ([value, count]) => ({
+      value,
+      count,
+    }),
+  );
 
   // Always include an "unclassified" option.
   // We intentionally omit a count here because in events-table mode, not all observations

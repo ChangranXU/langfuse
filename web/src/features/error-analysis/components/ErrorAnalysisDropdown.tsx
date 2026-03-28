@@ -69,8 +69,8 @@ function FormattedAnalysisView(props: {
               {rendered.errorTypeFromList != null ? (
                 <span className="text-xs text-muted-foreground">
                   {rendered.errorTypeFromList
-                    ? localize(language, "catalog", "目录")
-                    : localize(language, "generated", "生成")}
+                    ? localize(language, "predefined", "预设")
+                    : localize(language, "custom", "自定义")}
                 </span>
               ) : null}
             </div>

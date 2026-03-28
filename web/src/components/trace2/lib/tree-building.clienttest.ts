@@ -2058,12 +2058,12 @@ describe("buildTraceUiData", () => {
       expect(result.nodeMap.get("turn-5")?.hasPolicyConfirmation).toBe(true);
     });
 
-    it("does not mark turns for accepted/rejected states without a yes/no reply", () => {
+    it("marks turns for accepted states with free-form ArbiterOS replies", () => {
       const trace = createMockTrace({
         input: '{"content":"proceed with the deletion"}',
         metadata: JSON.stringify({
           turn_index: "2",
-          policy_confirmation_state: "rejected",
+          policy_confirmation_state: "accepted",
           policy_names: ["P2"],
           raw_output_content:
             '{"content":"tool=exec action was blocked by policy"}',
@@ -2085,7 +2085,7 @@ describe("buildTraceUiData", () => {
 
       const result = buildTraceUiData(trace, observations);
 
-      expect(result.nodeMap.get("turn-2")?.hasPolicyConfirmation).toBe(false);
+      expect(result.nodeMap.get("turn-2")?.hasPolicyConfirmation).toBe(true);
     });
 
     it("does not mark turns when accepted/rejected state has no policy_names", () => {
@@ -2141,21 +2141,32 @@ describe("buildTraceUiData", () => {
       expect(result.nodeMap.get("turn-2")?.hasPolicyConfirmation).toBe(false);
     });
 
-    it("stores warning as effective level for inactive delete-policy hits", () => {
+    it("stores warning as effective level for inactive delete-policy hits on session outputs", () => {
+      const inactivateMsg =
+        "DeletePolicy(inactive) hit: tool=exec | detail=delete-like pattern";
       const trace = createMockTrace({
         metadata: JSON.stringify({
           turn_index: 3,
-          inactivate_error_type:
-            "DeletePolicy(inactive) hit: tool=exec | detail=delete-like pattern",
+          inactivate_error_type: inactivateMsg,
         }),
       });
       const observations: ObservationWithOptionalMetadata[] = [
         createMockObservation({
           id: "turn-3-output",
-          name: "session.output.turn_3",
+          name: "session.output.turn_003",
+          level: "WARNING",
+          statusMessage: inactivateMsg,
+          startTime: new Date("2024-01-01T00:00:03.000Z"),
+          metadata: JSON.stringify({
+            inactivate_error_type: inactivateMsg,
+          }),
+        }),
+        createMockObservation({
+          id: "turn-3-kernel",
+          name: "topic - kernel.cognitive_core__respond",
           level: "ERROR",
           statusMessage: "normal response",
-          startTime: new Date("2024-01-01T00:00:03.000Z"),
+          startTime: new Date("2024-01-01T00:00:03.100Z"),
           metadata: JSON.stringify({
             turn_index: 3,
           }),
@@ -2164,10 +2175,11 @@ describe("buildTraceUiData", () => {
 
       const result = buildTraceUiData(trace, observations);
 
-      expect(result.nodeMap.get("turn-3-output")?.level).toBe("ERROR");
+      expect(result.nodeMap.get("turn-3-output")?.level).toBe("WARNING");
       expect(result.nodeMap.get("turn-3-output")?.effectiveLevel).toBe(
         "WARNING",
       );
+      expect(result.nodeMap.get("turn-3-kernel")?.effectiveLevel).toBe("ERROR");
     });
   });
 });

@@ -6,7 +6,7 @@ import {
 } from "./policyConfirmation";
 
 describe("policy confirmation helpers", () => {
-  it("detects compact yes/no replies from direct and nested payloads", () => {
+  it("detects ArbiterOS-style reply payloads from direct and nested content", () => {
     expect(
       hasHumanPolicyConfirmationReply({
         observationInput: '"yes"',
@@ -14,7 +14,12 @@ describe("policy confirmation helpers", () => {
     ).toBe(true);
     expect(
       hasHumanPolicyConfirmationReply({
-        traceInput: '{"raw_content":"{\\"content\\":\\"no\\"}"}',
+        observationInput: "continue with the deletion",
+      }),
+    ).toBe(true);
+    expect(
+      hasHumanPolicyConfirmationReply({
+        traceInput: '{"raw_content":"{\\"content\\":\\"nope\\"}"}',
       }),
     ).toBe(true);
     expect(
@@ -33,7 +38,7 @@ describe("policy confirmation helpers", () => {
     ).toBe(false);
   });
 
-  it("only returns human confirmation states for accepted or rejected yes/no turns", () => {
+  it("returns human confirmation states for accepted or rejected reply turns", () => {
     expect(
       getHumanPolicyConfirmationState({
         metadata: { policy_confirmation_state: "accepted" },
@@ -42,8 +47,20 @@ describe("policy confirmation helpers", () => {
     ).toBe("accepted");
     expect(
       getHumanPolicyConfirmationState({
-        metadata: { policy_confirmation_state: "rejected" },
+        metadata: { policy_confirmation_state: "accepted" },
         traceInput: '{"content":"continue with the deletion"}',
+      }),
+    ).toBe("accepted");
+    expect(
+      getHumanPolicyConfirmationState({
+        metadata: { policy_confirmation_state: "rejected" },
+        traceInput: '{"content":"nope, keep the original response"}',
+      }),
+    ).toBe("rejected");
+    expect(
+      getHumanPolicyConfirmationState({
+        metadata: { policy_confirmation_state: "rejected" },
+        traceInput: "   ",
       }),
     ).toBeNull();
     expect(

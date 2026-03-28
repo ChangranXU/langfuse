@@ -175,6 +175,12 @@ export function getObservationTurnIndex(params: {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+export function isSessionOutputTurnObservationName(
+  observationName: string | null | undefined,
+): boolean {
+  return /^session\.output\.turn_\d+$/i.test(observationName ?? "");
+}
+
 export function mergeRelevantPolicyMetadata(params: {
   observationMetadata: unknown;
   traceMetadata?: unknown;
@@ -268,28 +274,47 @@ export function getRelevantInactivateErrorType(params: {
   observationName?: string | null;
   statusMessage?: string | null;
 }): string | null {
-  return getInactivateErrorTypeFromMetadata(
-    mergeRelevantPolicyMetadata(params),
-  );
+  if (!isSessionOutputTurnObservationName(params.observationName)) {
+    return null;
+  }
+
+  const observationRecord = getMetadataRecord(params.observationMetadata);
+  const ownValue = getInactivateErrorTypeFromMetadata(observationRecord);
+  if (ownValue) {
+    return ownValue;
+  }
+
+  const traceRecord = getMetadataRecord(params.traceMetadata);
+  const traceValue = getInactivateErrorTypeFromMetadata(traceRecord);
+  if (!traceValue) {
+    return null;
+  }
+
+  // Only inherit from trace metadata when the observation's statusMessage
+  // matches the inactivate_error_type, confirming this observation actually
+  // triggered the warning (prevents drift to later turns).
+  const normalizedStatus = normalizeComparableText(params.statusMessage);
+  const normalizedError = normalizeComparableText(traceValue);
+  if (
+    normalizedStatus != null &&
+    normalizedError != null &&
+    (normalizedStatus === normalizedError ||
+      normalizedStatus.includes(normalizedError) ||
+      normalizedError.includes(normalizedStatus))
+  ) {
+    return traceValue;
+  }
+
+  return null;
 }
 
 export function getInactivateErrorTypeDisplayLabel(
   inactivateErrorType: string | null | undefined,
 ): string | null {
   if (typeof inactivateErrorType !== "string") return null;
-  const firstLine = inactivateErrorType
-    .replace(/\r\n/g, "\n")
-    .split("\n")[0]
-    ?.trim();
-  if (!firstLine) return null;
-
-  const hitMatch = /^(.+?)\s+hit:/i.exec(firstLine);
-  if (hitMatch?.[1]) {
-    return hitMatch[1].trim();
-  }
-
-  const compact = firstLine.split("|")[0]?.trim();
-  return compact || firstLine;
+  return inactivateErrorType.trim().length > 0
+    ? "Inactive Policy Warning"
+    : null;
 }
 
 export function getGovernanceDisplayLevel(params: {
@@ -309,7 +334,7 @@ export function getGovernanceDisplayLevel(params: {
     observationName: params.observationName,
     statusMessage: params.statusMessage,
   });
-  if (inactivateErrorType && params.level === "ERROR") {
+  if (inactivateErrorType) {
     return "WARNING";
   }
 

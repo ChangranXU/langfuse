@@ -26,16 +26,24 @@ const buildRawPolicyConfirmationStateSql = (
   )
 )`;
 
+const buildPolicyConfirmationPromptMatchSql = (valueSql: string) => `match(
+  lowerUTF8(ifNull(${valueSql}, '')),
+  'do you want to apply the protection\\?\\s*please reply yes/no'
+)`;
+
 const buildHumanPolicyConfirmationReplyMatchSql = (valueSql: string) => `(
-  match(lowerUTF8(ifNull(${valueSql}, '')), '^\\s*"?(yes|no)"?\\s*$')
-  OR match(
-    lowerUTF8(ifNull(${valueSql}, '')),
-    '"(?:content|parsed_content|raw_content)"\\s*:\\s*"\\s*(yes|no)\\s*"'
+  (
+    notEmpty(trim(BOTH ' \t\n\r"' FROM ifNull(${valueSql}, '')))
+    OR match(
+      lowerUTF8(ifNull(${valueSql}, '')),
+      '"(?:content|parsed_content|raw_content)"\\s*:\\s*"[^"]+"'
+    )
+    OR match(
+      lowerUTF8(ifNull(${valueSql}, '')),
+      '\\\\\"(?:content|parsed_content|raw_content)\\\\\"\\s*:\\s*\\\\\"[^\\\\"]+\\\\\"'
+    )
   )
-  OR match(
-    lowerUTF8(ifNull(${valueSql}, '')),
-    '\\\\\"(?:content|parsed_content|raw_content)\\\\\"\\s*:\\s*\\\\\"\\s*(yes|no)\\s*\\\\\"'
-  )
+  AND NOT ${buildPolicyConfirmationPromptMatchSql(valueSql)}
 )`;
 
 const buildHumanPolicyConfirmationStateSql = (
@@ -415,7 +423,7 @@ export const observationsView: ViewDeclarationType = {
       type: "string",
       relationTable: "traces",
       description:
-        "Human confirmation state derived from accepted/rejected policy confirmations with a compact yes/no reply signal.",
+        "Human confirmation state derived from accepted/rejected policy confirmations with any ArbiterOS-style reply payload, excluding the ask prompt.",
     },
     traceName: {
       sql: "traces.name",
@@ -1140,7 +1148,7 @@ export const eventsObservationsView: ViewDeclarationType = {
       type: "string",
       relationTable: "events_traces",
       description:
-        "Human confirmation state derived from accepted/rejected policy confirmations with a compact yes/no reply signal.",
+        "Human confirmation state derived from accepted/rejected policy confirmations with any ArbiterOS-style reply payload, excluding the ask prompt.",
     },
     environment: {
       sql: "nullIf(events_observations.environment, '')",

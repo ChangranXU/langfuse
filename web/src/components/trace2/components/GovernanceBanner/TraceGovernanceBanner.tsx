@@ -9,6 +9,7 @@ import {
   getInactivateErrorTypeDisplayLabel,
   getMetadataRecord,
   getRelevantInactivateErrorType,
+  isSessionOutputTurnObservationName,
   mergeRelevantPolicyMetadata,
 } from "@/src/features/governance/utils/policyMetadata";
 import { useLanguage } from "@/src/features/i18n/LanguageProvider";
@@ -290,13 +291,27 @@ export function TraceGovernanceBanner() {
     >();
 
     warningObservationIds.forEach((id) => {
-      const type =
-        getInactivateErrorTypeDisplayLabel(
-          observationGovernanceState[id]?.inactivateErrorType,
-        ) ??
-        errorTypeByObservationId[id] ??
-        "unclassified";
-      const observation = observationById.get(id);
+      const obs = observationById.get(id);
+      const inactivateType =
+        observationGovernanceState[id]?.inactivateErrorType;
+
+      let type: string;
+      if (inactivateType) {
+        type =
+          getInactivateErrorTypeDisplayLabel(inactivateType) ?? "unclassified";
+      } else if (
+        obs &&
+        isSessionOutputTurnObservationName(obs.name) &&
+        obs.statusMessage?.trim()
+      ) {
+        type =
+          getInactivateErrorTypeDisplayLabel(obs.statusMessage) ??
+          "unclassified";
+      } else {
+        type = errorTypeByObservationId[id] ?? "unclassified";
+      }
+
+      const observation = obs;
       const label = observation?.name?.trim() || id;
       const existing = groups.get(type);
 

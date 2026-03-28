@@ -531,11 +531,15 @@ function inferErrorTypeKeyFromObservation(params: {
   statusMessage: string | null | undefined;
   input: unknown;
   output: unknown;
+  metadata?: unknown;
+  traceMetadata?: unknown;
 }): ErrorTypeKey {
   const combined = [
     params.statusMessage ?? "",
     safeStringify(params.input),
     safeStringify(params.output),
+    safeStringify(params.metadata),
+    safeStringify(params.traceMetadata),
   ]
     .filter((v) => typeof v === "string" && v.trim().length > 0)
     .join("\n");
@@ -548,6 +552,7 @@ function buildErrorTypeClassificationUserContent(params: {
   issue: string;
   rootCause: string;
   observation: ReturnType<typeof buildObservationPreview>;
+  traceMetadata?: unknown;
 }): string {
   return safeStringify({
     issue: params.issue,
@@ -568,12 +573,20 @@ function buildErrorTypeClassificationUserContent(params: {
         params.observation.output == null
           ? null
           : truncateString(params.observation.output, 2_000),
+      metadata:
+        params.observation.metadata == null
+          ? null
+          : truncateString(params.observation.metadata, 2_000),
     },
+    traceMetadata:
+      params.traceMetadata == null
+        ? null
+        : truncateString(safeStringify(params.traceMetadata), 4_000),
     typeCatalog: Object.fromEntries(
       Object.entries(ERROR_TYPE_CATALOG).map(([k, v]) => [k, v.description]),
     ),
     instruction:
-      "Classify the error/warning type. Choose from the catalog. If none match well, set selectedType=OTHER and propose a short label + description.\n\nBe careful with 'not found': file/path not found -> tool_execution_error; only model/deployment not found -> model_not_found.",
+      "Classify the error/warning type. Choose from the catalog. If none match well, set selectedType=OTHER and propose a short label + description.\n\nIf the payload includes an explicit exception/error class name (for example AttributeError, TypeError, KeyError, ValueError) and no catalog entry fits well, prefer selectedType=OTHER and use that exception class as otherTypeLabel with a concise description. Do not fall back to unknown when a concrete exception class is available.\n\nBe careful with 'not found': file/path not found -> tool_execution_error; only model/deployment not found -> model_not_found.",
   });
 }
 
@@ -603,6 +616,10 @@ function buildObservationPreview(params: {
     internalModelId: observation.internalModelId,
     input: inputStr,
     output: outputStr,
+    metadata:
+      observation.metadata == null
+        ? null
+        : truncateString(safeStringify(observation.metadata), ioMaxChars),
   };
 }
 
@@ -709,6 +726,7 @@ type TraceLikeForContext = {
   tags: string[] | null;
   input: unknown;
   output: unknown;
+  metadata?: unknown;
 };
 
 function isContextLengthExceededError(e: unknown): boolean {
@@ -769,6 +787,10 @@ function buildErrorAnalysisContextPayload(params: {
       output: trace.output
         ? truncateString(safeStringify(trace.output), 10_000)
         : null,
+      metadata:
+        trace.metadata == null
+          ? null
+          : truncateString(safeStringify(trace.metadata), 10_000),
     },
     currentObservation: buildObservationPreview({
       observation: currentObservation,
@@ -789,7 +811,7 @@ function buildErrorAnalysisContextPayload(params: {
     ),
     note: {
       instruction:
-        'Analyze the ERROR/WARNING. Output MUST match the schema. Keep concise: rootCause max 2 sentences; resolveNow max 3 items; preventionNextCall max 5 items. Decide whether contextWindow is sufficient; if not, set contextSufficient=false and provide best-effort hypotheses.\n\nIf the failure is access/blocked/forbidden/unauthorized/rate-limit related (e.g., HTTP 401/403/429 or similar), explicitly include what was blocked and by what: domain/URL/host (or best available identifier) and the tool/provider/adapter if present in the payload. Do not fabricate missing identifiers; if not present, write "unknown".\n\nFor resolveNow and preventionNextCall, include only prompt-level actions directly applicable in the next LLM call (edits to system/developer/user prompt text, output-format constraints, tool-use instructions, or context selection). Avoid generic advice that omits identifiers when identifiers are available. Exclude non-prompt or implementation-heavy actions (code/config/system changes, retries/backoff/circuit-breaker logic, scheduler/long-running behavior changes, model/provider/account changes). Never suggest bypassing policy/safety constraints.',
+        'Analyze the ERROR/WARNING. Output MUST match the schema. Keep concise: rootCause max 2 sentences; resolveNow max 3 items; preventionNextCall max 5 items. Decide whether contextWindow is sufficient; if not, set contextSufficient=false and provide best-effort hypotheses.\n\nPay close attention to metadata on both the trace and the observation. Explicit exception/error class names in metadata or status text (for example AttributeError, TypeError, KeyError, ValueError) are strong evidence for the root cause and should be reflected in the explanation.\n\nIf the failure is access/blocked/forbidden/unauthorized/rate-limit related (e.g., HTTP 401/403/429 or similar), explicitly include what was blocked and by what: domain/URL/host (or best available identifier) and the tool/provider/adapter if present in the payload. Do not fabricate missing identifiers; if not present, write "unknown".\n\nFor resolveNow and preventionNextCall, include only prompt-level actions directly applicable in the next LLM call (edits to system/developer/user prompt text, output-format constraints, tool-use instructions, or context selection). Avoid generic advice that omits identifiers when identifiers are available. Exclude non-prompt or implementation-heavy actions (code/config/system changes, retries/backoff/circuit-breaker logic, scheduler/long-running behavior changes, model/provider/account changes). Never suggest bypassing policy/safety constraints.',
     },
   };
 }
@@ -1237,7 +1259,7 @@ export const errorAnalysisRouter = createTRPCRouter({
               type: ChatMessageType.System,
               role: ChatMessageRole.System,
               content:
-                "You are an expert debugger for LLM application traces. Keep output concise and focused on preventing repeat failures.\n\nIf the error indicates blocked/forbidden/unauthorized/rate-limited access, explicitly identify (from the provided payload) what was blocked (domain/URL/host) and which tool/provider/adapter was involved; do not fabricate identifiers.\n\nRecommend only prompt-level actions directly applicable in the next LLM call; reject implementation-heavy proposals (retries/backoff/circuit breakers, system settings, infrastructure/config updates, persistent behavior changes). Return ONLY the structured JSON object that matches the provided schema.",
+                "You are an expert debugger for LLM application traces. Keep output concise and focused on preventing repeat failures.\n\nUse metadata from both the trace and the observation as first-class evidence. If the payload includes an explicit exception/error class name (for example AttributeError, TypeError, KeyError, ValueError), reflect it in the root cause rather than ignoring it.\n\nIf the error indicates blocked/forbidden/unauthorized/rate-limited access, explicitly identify (from the provided payload) what was blocked (domain/URL/host) and which tool/provider/adapter was involved; do not fabricate identifiers.\n\nRecommend only prompt-level actions directly applicable in the next LLM call; reject implementation-heavy proposals (retries/backoff/circuit breakers, system settings, infrastructure/config updates, persistent behavior changes). Return ONLY the structured JSON object that matches the provided schema.",
             },
             {
               type: ChatMessageType.User,
@@ -1345,7 +1367,7 @@ export const errorAnalysisRouter = createTRPCRouter({
             type: ChatMessageType.System,
             role: ChatMessageRole.System,
             content:
-              "You are an expert at classifying error/warning types in LLM traces. Return ONLY the structured JSON object that matches the provided schema.\n\nGuidance:\n- If the observation is a TOOL (or the name indicates a tool call) and it failed with file/path I/O errors (e.g. file not found, permission denied), classify as tool_execution_error.\n- Only use model_not_found when the missing thing is explicitly a model/deployment (e.g. provider message about an unavailable model, or HTTP 404 for a model/deployment endpoint). Do NOT treat generic 'not found' as model_not_found.",
+              "You are an expert at classifying error/warning types in LLM traces. Return ONLY the structured JSON object that matches the provided schema.\n\nGuidance:\n- If the observation is a TOOL (or the name indicates a tool call) and it failed with file/path I/O errors (e.g. file not found, permission denied), classify as tool_execution_error.\n- Only use model_not_found when the missing thing is explicitly a model/deployment (e.g. provider message about an unavailable model, or HTTP 404 for a model/deployment endpoint). Do NOT treat generic 'not found' as model_not_found.\n- If metadata or status text contains an explicit exception/error class name (for example AttributeError, TypeError, KeyError, ValueError) and no catalog entry fits well, prefer selectedType=OTHER and use that exception class as otherTypeLabel.",
           },
           {
             type: ChatMessageType.User,
@@ -1357,6 +1379,7 @@ export const errorAnalysisRouter = createTRPCRouter({
                 observation: currentObservation,
                 ioMaxChars: 2_000,
               }),
+              traceMetadata: trace.metadata,
             }),
           },
         ];
@@ -1516,6 +1539,8 @@ export const errorAnalysisRouter = createTRPCRouter({
           statusMessage: currentObservation.statusMessage,
           input: currentObservation.input,
           output: currentObservation.output,
+          metadata: currentObservation.metadata,
+          traceMetadata: trace.metadata,
         });
         errorType = inferred;
         errorTypeDescription =

@@ -22,6 +22,7 @@ export const ERROR_TYPE_KEYS = [
 export type ErrorTypeKey = (typeof ERROR_TYPE_KEYS)[number];
 
 export const UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE = "pending_to_analysis";
+export const UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL_EN = "unclassified";
 export const UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL = "未分类";
 
 export const ERROR_TYPE_CATALOG: Record<ErrorTypeKey, { description: string }> =

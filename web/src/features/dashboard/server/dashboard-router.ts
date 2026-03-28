@@ -807,8 +807,8 @@ export const dashboardRouter = createTRPCRouter({
         project.metadata,
       );
 
-      // Only count human confirmations where the user explicitly replied yes/no.
-      // Pending requests and automatic policy outcomes must not be included.
+      // Only count human confirmation decisions emitted after a real ArbiterOS
+      // reply turn. Pending ask prompts must not be included.
       const [acceptedCounts, rejectedCounts] = await Promise.all([
         getPolicyConfirmationCountsByState({
           projectId: input.projectId,

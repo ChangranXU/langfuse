@@ -6,7 +6,8 @@ export type HumanPolicyConfirmationState = Exclude<
   "ask"
 >;
 
-const DIRECT_REPLY_RE = /^["']?\s*(yes|no)\s*["']?$/i;
+const POLICY_CONFIRMATION_PROMPT_RE =
+  /do you want to apply the protection\?\s*please reply yes\/no\.?$/i;
 const NESTED_REPLY_KEYS = ["content", "raw_content", "parsed_content"] as const;
 const METADATA_REPLY_KEYS = [
   "text_preview",
@@ -22,7 +23,11 @@ function parseNestedJson(value: string): unknown {
   }
 }
 
-function hasYesNoReply(value: unknown, seen = new Set<unknown>()): boolean {
+function isPolicyConfirmationPrompt(value: string): boolean {
+  return POLICY_CONFIRMATION_PROMPT_RE.test(value.trim());
+}
+
+function hasReplyPayload(value: unknown, seen = new Set<unknown>()): boolean {
   if (value == null || seen.has(value)) {
     return false;
   }
@@ -31,12 +36,13 @@ function hasYesNoReply(value: unknown, seen = new Set<unknown>()): boolean {
     if (!trimmed) {
       return false;
     }
-    if (DIRECT_REPLY_RE.test(trimmed)) {
-      return true;
-    }
 
     const nested = parseNestedJson(trimmed);
-    return nested != null ? hasYesNoReply(nested, seen) : false;
+    if (nested != null) {
+      return hasReplyPayload(nested, seen);
+    }
+
+    return !isPolicyConfirmationPrompt(trimmed);
   }
   if (typeof value !== "object") {
     return false;
@@ -45,11 +51,11 @@ function hasYesNoReply(value: unknown, seen = new Set<unknown>()): boolean {
   seen.add(value);
 
   if (Array.isArray(value)) {
-    return value.some((item) => hasYesNoReply(item, seen));
+    return value.some((item) => hasReplyPayload(item, seen));
   }
 
   return NESTED_REPLY_KEYS.some((key) =>
-    hasYesNoReply((value as Record<string, unknown>)[key], seen),
+    hasReplyPayload((value as Record<string, unknown>)[key], seen),
   );
 }
 
@@ -95,7 +101,7 @@ export function hasHumanPolicyConfirmationReply(params: {
     params.observationInput,
     params.traceInput,
     ...metadataCandidates,
-  ].some((value) => hasYesNoReply(value));
+  ].some((value) => hasReplyPayload(value));
 }
 
 export function getHumanPolicyConfirmationState(params: {

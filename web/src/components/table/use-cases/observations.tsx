@@ -102,6 +102,12 @@ import { Button } from "@/src/components/ui/button";
 import { BulkErrorAnalysisButton } from "@/src/features/error-analysis/components/BulkErrorAnalysisButton";
 import { useLanguage } from "@/src/features/i18n/LanguageProvider";
 import { localize } from "@/src/features/i18n/localize";
+import {
+  UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL,
+  UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL_EN,
+  UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE,
+} from "@/src/features/error-analysis/types";
+import { isSessionOutputTurnObservationName } from "@/src/features/governance/utils/policyMetadata";
 
 export type ObservationsTableRow = {
   // Shown by default
@@ -189,6 +195,50 @@ function parsePolicyNamesFromMetadata(metadata: unknown): string[] {
 }
 
 const UNCLASSIFIED_POLICY_TYPE = "unclassified";
+const INACTIVE_POLICY_WARNING_TYPE = "inactive_policy_warning";
+
+function isUnclassifiedErrorTypeValue(
+  value: string | null | undefined,
+): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE.toLowerCase() ||
+    normalized === UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL.toLowerCase() ||
+    normalized === UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL_EN.toLowerCase() ||
+    normalized === "unclassified"
+  );
+}
+
+function normalizeErrorTypeFilterValue(value: string): string {
+  return isUnclassifiedErrorTypeValue(value)
+    ? UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE
+    : value.trim();
+}
+
+function getUnclassifiedErrorTypeLabel(
+  language: Parameters<typeof localize>[0],
+): string {
+  return localize(
+    language,
+    UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL_EN,
+    UNCLASSIFIED_ERROR_TYPE_FILTER_LABEL,
+  );
+}
+
+function formatErrorTypeDisplayValue(params: {
+  value: string | null | undefined;
+  language: Parameters<typeof localize>[0];
+}): string {
+  const { value, language } = params;
+  if (!value || isUnclassifiedErrorTypeValue(value)) {
+    return getUnclassifiedErrorTypeLabel(language);
+  }
+  if (value === INACTIVE_POLICY_WARNING_TYPE) {
+    return localize(language, "Inactive Policy Warning", "闲置策略警告");
+  }
+  return value;
+}
 
 function normalizePolicyTypeFilter(
   value: string | null | undefined,
@@ -578,52 +628,48 @@ export default function ObservationsTable({
 
   const errorTypeDropdownOptions = useMemo(() => {
     const optionsByValue = new Map<string, { value: string; label: string }>();
+    const unclassifiedLabel = getUnclassifiedErrorTypeLabel(language);
 
-    // Prefer globally available options from backend filter options so selecting
-    // one type does not collapse the dropdown to only the selected type.
-    filterOptions.data?.errorType?.forEach((option) => {
-      const value = option.value?.trim();
-      if (!value) return;
-      optionsByValue.set(value, {
-        value,
-        label:
-          typeof option.displayValue === "string" &&
-          option.displayValue.length > 0
-            ? option.displayValue
-            : value,
+    Object.values(errorTypeByObservationId).forEach((value) => {
+      if (value == null) {
+        optionsByValue.set(UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE, {
+          value: UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE,
+          label: unclassifiedLabel,
+        });
+        return;
+      }
+      if (value === INACTIVE_POLICY_WARNING_TYPE) {
+        optionsByValue.set(INACTIVE_POLICY_WARNING_TYPE, {
+          value: INACTIVE_POLICY_WARNING_TYPE,
+          label: formatErrorTypeDisplayValue({
+            value: INACTIVE_POLICY_WARNING_TYPE,
+            language,
+          }),
+        });
+        return;
+      }
+      const normalizedValue = normalizeErrorTypeFilterValue(value);
+      if (optionsByValue.has(normalizedValue)) return;
+      optionsByValue.set(normalizedValue, {
+        value: normalizedValue,
+        label: isUnclassifiedErrorTypeValue(normalizedValue)
+          ? unclassifiedLabel
+          : normalizedValue,
       });
     });
 
-    // Add currently loaded row types as fallback while options are loading.
-    Object.values(errorTypeByObservationId).forEach((value) => {
-      if (!value || value.length === 0 || optionsByValue.has(value)) return;
-      optionsByValue.set(value, { value, label: value });
-    });
-
-    // Keep the selected option visible even if it is not in current option sets.
     if (selectedErrorType && !optionsByValue.has(selectedErrorType)) {
       optionsByValue.set(selectedErrorType, {
         value: selectedErrorType,
-        label: selectedErrorType,
-      });
-    }
-
-    if (
-      Object.values(errorTypeByObservationId).some((value) => value === null) &&
-      !optionsByValue.has("unclassified")
-    ) {
-      optionsByValue.set("unclassified", {
-        value: "unclassified",
-        label: "unclassified",
+        label: formatErrorTypeDisplayValue({
+          value: selectedErrorType,
+          language,
+        }),
       });
     }
 
     return Array.from(optionsByValue.values());
-  }, [
-    errorTypeByObservationId,
-    filterOptions.data?.errorType,
-    selectedErrorType,
-  ]);
+  }, [errorTypeByObservationId, language, selectedErrorType]);
 
   const policyTypeDropdownOptions = useMemo(() => {
     const options = new Set<string>();
@@ -711,15 +757,29 @@ export default function ObservationsTable({
       if (replaceLevelWithErrorType) {
         next = next.filter((f) => normalizeColumn(f.column) !== "errortype");
         if (selectedErrorType) {
-          next = [
-            ...next,
-            {
-              column: "errorType",
-              type: "stringOptions",
-              operator: "any of",
-              value: [selectedErrorType],
-            },
-          ];
+          if (selectedErrorType === INACTIVE_POLICY_WARNING_TYPE) {
+            next = [
+              ...next.filter((f) => String(f.column).toLowerCase() !== "level"),
+              {
+                column: "level",
+                type: "stringOptions",
+                operator: "any of",
+                value: ["WARNING"],
+              },
+            ];
+          } else {
+            const normalizedSelectedErrorType =
+              normalizeErrorTypeFilterValue(selectedErrorType);
+            next = [
+              ...next,
+              {
+                column: "errorType",
+                type: "stringOptions",
+                operator: "any of",
+                value: [normalizedSelectedErrorType],
+              },
+            ];
+          }
         }
       }
       if (replaceLevelWithPolicyType) {
@@ -1173,7 +1233,12 @@ export default function ObservationsTable({
                       )}
                     >
                       <span>
-                        {selectedErrorType ?? localize(language, "all", "全部")}
+                        {selectedErrorType
+                          ? formatErrorTypeDisplayValue({
+                              value: selectedErrorType,
+                              language,
+                            })
+                          : localize(language, "all", "全部")}
                       </span>
                       <ChevronDown className="h-3 w-3 opacity-70" />
                     </Button>
@@ -1252,14 +1317,31 @@ export default function ObservationsTable({
           }
 
           const errorType = errorTypeByObservationId[row.original.id];
-          const displayValue =
-            isErrorTypeLoading && errorType === undefined
+
+          const isInactivePolicy = errorType === INACTIVE_POLICY_WARNING_TYPE;
+
+          const displayValue = isInactivePolicy
+            ? formatErrorTypeDisplayValue({
+                value: INACTIVE_POLICY_WARNING_TYPE,
+                language,
+              })
+            : isErrorTypeLoading && errorType === undefined
               ? "..."
-              : (errorType ?? "unclassified");
+              : formatErrorTypeDisplayValue({
+                  value: errorType,
+                  language,
+                });
 
           return (
             <div className="flex flex-wrap items-start gap-2 whitespace-normal py-0.5">
-              <span className="inline-flex max-w-full whitespace-normal break-all rounded-md bg-red-100 px-2 py-0.5 text-xs leading-normal text-red-700 dark:bg-red-900/40 dark:text-red-300">
+              <span
+                className={cn(
+                  "inline-flex max-w-full whitespace-normal break-all rounded-md px-2 py-0.5 text-xs leading-normal",
+                  isInactivePolicy
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                    : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+                )}
+              >
                 {displayValue}
               </span>
             </div>
@@ -1897,6 +1979,8 @@ export default function ObservationsTable({
             .map((row) => ({
               id: row.id,
               traceId: row.traceId as string,
+              level: row.level,
+              name: row.name,
             }))
         : [],
     [replaceLevelWithErrorType, rows],
@@ -1964,11 +2048,29 @@ export default function ObservationsTable({
             observationId: target.id,
           });
 
+          let errorType = result?.errorType ?? null;
+          if (
+            errorType == null &&
+            target.level === "WARNING" &&
+            isSessionOutputTurnObservationName(target.name)
+          ) {
+            errorType = INACTIVE_POLICY_WARNING_TYPE;
+          }
+
           return {
             observationId: target.id,
-            errorType: result?.errorType ?? null,
+            errorType,
           };
         } catch {
+          if (
+            target.level === "WARNING" &&
+            isSessionOutputTurnObservationName(target.name)
+          ) {
+            return {
+              observationId: target.id,
+              errorType: INACTIVE_POLICY_WARNING_TYPE,
+            };
+          }
           return {
             observationId: target.id,
             errorType: null,
