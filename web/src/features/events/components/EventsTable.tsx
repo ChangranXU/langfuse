@@ -345,6 +345,9 @@ export default function ObservationsEventsTable({
     Record<string, string | null>
   >({});
   const [isErrorTypeLoading, setIsErrorTypeLoading] = useState(false);
+  const accumulatedErrorTypesRef = useRef<
+    Map<string, { value: string; label: string }>
+  >(new Map());
   const [selectedErrorType, setSelectedErrorType] = useState<string | null>(
     null,
   );
@@ -548,19 +551,19 @@ export default function ObservationsEventsTable({
   );
 
   const errorTypeDropdownOptions = useMemo(() => {
-    const optionsByValue = new Map<string, { value: string; label: string }>();
     const unclassifiedLabel = getUnclassifiedErrorTypeLabel(language);
+    const ref = accumulatedErrorTypesRef.current;
 
     Object.values(errorTypeByObservationId).forEach((value) => {
       if (value == null) {
-        optionsByValue.set(UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE, {
+        ref.set(UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE, {
           value: UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE,
           label: unclassifiedLabel,
         });
         return;
       }
       if (value === INACTIVE_POLICY_WARNING_TYPE) {
-        optionsByValue.set(INACTIVE_POLICY_WARNING_TYPE, {
+        ref.set(INACTIVE_POLICY_WARNING_TYPE, {
           value: INACTIVE_POLICY_WARNING_TYPE,
           label: formatErrorTypeDisplayValue({
             value: INACTIVE_POLICY_WARNING_TYPE,
@@ -570,17 +573,18 @@ export default function ObservationsEventsTable({
         return;
       }
       const normalizedValue = normalizeErrorTypeFilterValue(value);
-      if (optionsByValue.has(normalizedValue)) return;
-      optionsByValue.set(normalizedValue, {
-        value: normalizedValue,
-        label: isUnclassifiedErrorTypeValue(normalizedValue)
-          ? unclassifiedLabel
-          : normalizedValue,
-      });
+      if (!ref.has(normalizedValue)) {
+        ref.set(normalizedValue, {
+          value: normalizedValue,
+          label: isUnclassifiedErrorTypeValue(normalizedValue)
+            ? unclassifiedLabel
+            : normalizedValue,
+        });
+      }
     });
 
-    if (selectedErrorType && !optionsByValue.has(selectedErrorType)) {
-      optionsByValue.set(selectedErrorType, {
+    if (selectedErrorType && !ref.has(selectedErrorType)) {
+      ref.set(selectedErrorType, {
         value: selectedErrorType,
         label: formatErrorTypeDisplayValue({
           value: selectedErrorType,
@@ -589,7 +593,15 @@ export default function ObservationsEventsTable({
       });
     }
 
-    return Array.from(optionsByValue.values());
+    ref.forEach((opt, key) => {
+      if (key === UNCLASSIFIED_ERROR_TYPE_FILTER_VALUE) {
+        opt.label = unclassifiedLabel;
+      } else if (key === INACTIVE_POLICY_WARNING_TYPE) {
+        opt.label = formatErrorTypeDisplayValue({ value: key, language });
+      }
+    });
+
+    return Array.from(ref.values());
   }, [errorTypeByObservationId, language, selectedErrorType]);
 
   const serializeSidebarFilterState = useCallback((state: FilterState) => {
@@ -652,32 +664,30 @@ export default function ObservationsEventsTable({
         ];
       }
 
-      if (replaceLevelWithErrorType) {
-        next = next.filter((f) => normalizeColumn(f.column) !== "errortype");
-        if (selectedErrorType) {
-          if (selectedErrorType === INACTIVE_POLICY_WARNING_TYPE) {
-            next = [
-              ...next.filter((f) => String(f.column).toLowerCase() !== "level"),
-              {
-                column: "level",
-                type: "stringOptions",
-                operator: "any of",
-                value: ["WARNING"],
-              },
-            ];
-          } else {
-            const normalizedSelectedErrorType =
-              normalizeErrorTypeFilterValue(selectedErrorType);
-            next = [
-              ...next,
-              {
-                column: "errorType",
-                type: "stringOptions",
-                operator: "any of",
-                value: [normalizedSelectedErrorType],
-              },
-            ];
-          }
+      next = next.filter((f) => normalizeColumn(f.column) !== "errortype");
+      if (replaceLevelWithErrorType && selectedErrorType) {
+        if (selectedErrorType === INACTIVE_POLICY_WARNING_TYPE) {
+          next = [
+            ...next.filter((f) => String(f.column).toLowerCase() !== "level"),
+            {
+              column: "level",
+              type: "stringOptions",
+              operator: "any of",
+              value: ["WARNING"],
+            },
+          ];
+        } else {
+          const normalizedSelectedErrorType =
+            normalizeErrorTypeFilterValue(selectedErrorType);
+          next = [
+            ...next,
+            {
+              column: "errorType",
+              type: "stringOptions",
+              operator: "any of",
+              value: [normalizedSelectedErrorType],
+            },
+          ];
         }
       }
       if (replaceLevelWithPolicyType) {
@@ -828,10 +838,14 @@ export default function ObservationsEventsTable({
 
   const policyTypeDropdownOptions = useMemo(() => {
     const options = new Set<string>();
+    let hasUnclassified = false;
     (observations.rows ?? []).forEach((observation) => {
       const policyNames = parsePolicyNamesFromMetadata(observation.metadata);
-      if (policyNames.length === 0) return;
-      policyNames.forEach((policyName) => options.add(policyName));
+      if (policyNames.length === 0) {
+        hasUnclassified = true;
+      } else {
+        policyNames.forEach((policyName) => options.add(policyName));
+      }
     });
     if (
       selectedPolicyType &&
@@ -843,7 +857,7 @@ export default function ObservationsEventsTable({
     const sortedOptions = Array.from(options)
       .sort((a, b) => a.localeCompare(b))
       .map((value) => ({ value, label: value }));
-    if (!options.has(UNCLASSIFIED_POLICY_TYPE)) {
+    if (hasUnclassified || selectedPolicyType === UNCLASSIFIED_POLICY_TYPE) {
       sortedOptions.push({
         value: UNCLASSIFIED_POLICY_TYPE,
         label: UNCLASSIFIED_POLICY_TYPE,
