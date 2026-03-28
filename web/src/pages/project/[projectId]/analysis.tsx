@@ -78,10 +78,6 @@ export default function AnalysisPage() {
         pageIndex: "0",
         page: "1",
       };
-      if (nextTab !== "policy_violation") {
-        delete nextQuery.policyType;
-      }
-
       await router.replace(
         {
           pathname: router.pathname,

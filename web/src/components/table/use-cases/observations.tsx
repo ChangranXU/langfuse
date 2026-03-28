@@ -314,6 +314,8 @@ export default function ObservationsTable({
   const accumulatedErrorTypesRef = useRef<
     Map<string, { value: string; label: string }>
   >(new Map());
+  const accumulatedPolicyTypesRef = useRef<Set<string>>(new Set());
+  const hasSeenUnclassifiedPolicyRef = useRef(false);
   const [selectedErrorType, setSelectedErrorType] = useState<string | null>(
     null,
   );
@@ -324,7 +326,10 @@ export default function ObservationsTable({
     if (!replaceLevelWithPolicyType) {
       return;
     }
-    setSelectedPolicyType(normalizePolicyTypeFilter(initialPolicyTypeFilter));
+    const normalized = normalizePolicyTypeFilter(initialPolicyTypeFilter);
+    if (normalized != null) {
+      setSelectedPolicyType(normalized);
+    }
   }, [initialPolicyTypeFilter, replaceLevelWithPolicyType]);
   const [policyNamesByObservationId, setPolicyNamesByObservationId] = useState<
     Record<string, string[]>
@@ -684,26 +689,24 @@ export default function ObservationsTable({
   }, [errorTypeByObservationId, language, selectedErrorType]);
 
   const policyTypeDropdownOptions = useMemo(() => {
-    const options = new Set<string>();
-    let hasUnclassified = false;
+    const typesRef = accumulatedPolicyTypesRef.current;
     Object.values(policyNamesByObservationId).forEach((policyNames) => {
       if (policyNames.length === 0) {
-        hasUnclassified = true;
+        hasSeenUnclassifiedPolicyRef.current = true;
       } else {
-        policyNames.forEach((policyName) => options.add(policyName));
+        policyNames.forEach((policyName) => typesRef.add(policyName));
       }
     });
-    if (
-      selectedPolicyType &&
-      selectedPolicyType !== UNCLASSIFIED_POLICY_TYPE &&
-      !options.has(selectedPolicyType)
-    ) {
-      options.add(selectedPolicyType);
+    if (selectedPolicyType && selectedPolicyType !== UNCLASSIFIED_POLICY_TYPE) {
+      typesRef.add(selectedPolicyType);
     }
-    const sortedOptions = Array.from(options)
+    const sortedOptions = Array.from(typesRef)
       .sort((a, b) => a.localeCompare(b))
       .map((value) => ({ value, label: value }));
-    if (hasUnclassified || selectedPolicyType === UNCLASSIFIED_POLICY_TYPE) {
+    if (
+      hasSeenUnclassifiedPolicyRef.current ||
+      selectedPolicyType === UNCLASSIFIED_POLICY_TYPE
+    ) {
       sortedOptions.push({
         value: UNCLASSIFIED_POLICY_TYPE,
         label: UNCLASSIFIED_POLICY_TYPE,
