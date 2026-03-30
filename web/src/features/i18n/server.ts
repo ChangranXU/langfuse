@@ -56,10 +56,16 @@ export function getLanguageInstruction(params: {
 }) {
   const { language, mode } = params;
 
-  if (language === "en") return null;
-
   if (mode === "structured") {
+    if (language === "en") {
+      return "If your output includes free-form text, write that text in English except technical terminology and exact original literals. Keep JSON keys, enum values, schema-required field names, code snippets, and other exact literals unchanged.";
+    }
+
     return "If your output includes free-form text, write that text in Simplified Chinese except technical terminology and exact original literals. Keep JSON keys, enum values, schema-required field names, code snippets, and other exact literals unchanged.";
+  }
+
+  if (language === "en") {
+    return "Please respond in English except technical terminology and exact original literals.";
   }
 
   return "Please respond in Simplified Chinese except technical terminology and exact original literals.";
