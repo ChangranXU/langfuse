@@ -13,7 +13,7 @@
  * All preferences are managed via ViewPreferencesContext and persisted to localStorage.
  */
 
-import { ObservationLevel } from "@langfuse/shared";
+import { type ObservationLevelType, ObservationLevel } from "@langfuse/shared";
 import { Settings2 } from "lucide-react";
 import { Button } from "@/src/components/ui/button";
 import {
@@ -67,7 +67,7 @@ export function TraceSettingsDropdown({
   // Color coding is only available when duration or cost metrics are shown
   const isColorCodeEnabled = showDuration || showCostTokens;
   const isHierarchyGraphMode = graphViewMode === "hierarchy";
-  const localizeObservationLevel = (level: ObservationLevel) => {
+  const localizeObservationLevel = (level: ObservationLevelType) => {
     switch (level) {
       case ObservationLevel.DEBUG:
         return localize(language, "DEBUG", "调试");

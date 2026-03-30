@@ -177,7 +177,7 @@ function collectPolicyConfirmationTurnIndexes(params: {
  * Tracks parent-child relationships and processing state for bottom-up traversal.
  */
 interface ProcessingNode {
-  observation: ObservationReturnType;
+  observation: ObservationWithOptionalMetadata;
   childrenIds: string[];
   inDegree: number; // Number of unprocessed children (for topological sort)
   depth: number; // Tree depth (calculated during graph building)
@@ -369,7 +369,9 @@ function filterAndPrepareObservations(
  * Calculates in-degrees for topological sort (children count per node).
  * Calculates depth for each node based on parent relationships.
  */
-function buildDependencyGraph(sortedObservations: ObservationReturnType[]): {
+function buildDependencyGraph(
+  sortedObservations: ObservationWithOptionalMetadata[],
+): {
   nodeRegistry: Map<string, ProcessingNode>;
   leafIds: string[];
 } {
